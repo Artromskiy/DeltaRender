@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Silk.NET.Vulkan" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.MoltenVK.Native" Version="2.23.0" />
+    <PackageVersion Include="SDL3-CS" Version="3.4.12.6" />
+    <PackageVersion Include="SDL3-CS.Windows" Version="3.4.12.6" />
+    <PackageVersion Include="SDL3-CS.Linux" Version="3.4.12.6" />
+    <PackageVersion Include="SDL3-CS.MacOS" Version="3.4.12.6" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.5.8" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
+  </ItemGroup>
+</Project>

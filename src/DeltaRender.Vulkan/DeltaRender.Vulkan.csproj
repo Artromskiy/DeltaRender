@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DVG.Render.Vulkan</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Silk.NET 2.23.0 generated Vulkan overloads are ABI-compatible by value; C# 13 ref-safety hints are not applicable here. -->
+    <NoWarn>$(NoWarn);CS9192;CS9193;CS9195</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\DeltaRender.Core\\DeltaRender.Core.csproj" />
+    <PackageReference Include="Silk.NET.Vulkan" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
+    <PackageReference Include="Silk.NET.MoltenVK.Native" />
+  </ItemGroup>
+
+  <PropertyGroup Condition=" '$(RuntimeIdentifier)' == 'osx-arm64' Or '$(RuntimeIdentifier)' == 'osx-x64' ">
+    <DefineConstants>DRIVER_MACOS</DefineConstants>
+  </PropertyGroup>
+</Project>

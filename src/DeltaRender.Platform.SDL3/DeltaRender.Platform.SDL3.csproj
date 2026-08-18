@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DVG.Render.Platform.SDL3</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\DeltaRender.Core\\DeltaRender.Core.csproj" />
+    <PackageReference Include="SDL3-CS" />
+    <PackageReference Include="SDL3-CS.Windows" />
+    <PackageReference Include="SDL3-CS.Linux" />
+    <PackageReference Include="SDL3-CS.MacOS" />
+  </ItemGroup>
+</Project>
