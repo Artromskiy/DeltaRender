@@ -1,4 +1,4 @@
-namespace DVG.Render.Core;
+namespace Delta.Render.Core;
 
 public enum RenderDiagnosticSeverity
 {

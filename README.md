@@ -1,6 +1,6 @@
-# DeltaRender
+# Delta.Render
 
-DeltaRender is the standalone Vulkan renderer and platform presentation layer
+Delta.Render is the standalone Vulkan renderer and platform presentation layer
 for DeltaEngine. The same renderer must draw the game, editor chrome, editor
 viewports, and runtime UI. Avalonia and browser rendering are not part of the
 new architecture.
@@ -48,29 +48,29 @@ a deployment dependency, not a second renderer backend.
 Suggested solution layout:
 
 ```text
-DeltaRender/
+Delta.Render/
   src/
-    DeltaRender.Core/           handles, descriptions, frame/render graph
-    DeltaRender.Vulkan/         Vulkan implementation and resource lifetime
-    DeltaRender.Platform.SDL3/  windows, input, surfaces, DPI
-    DeltaRender.UI/             retained tree, layout, styling, draw extraction
-    DeltaRender.UI.Xaml/        XAML parser/compiler and diagnostics
+    Delta.Render.Core/           handles, descriptions, frame/render graph
+    Delta.Render.Vulkan/         Vulkan implementation and resource lifetime
+    Delta.Render.Platform.SDL3/  windows, input, surfaces, DPI
+    Delta.Render.UI/             retained tree, layout, styling, draw extraction
+    Delta.Render.UI.Xaml/        XAML parser/compiler and diagnostics
   tests/
-    DeltaRender.Tests/
-    DeltaRender.Vulkan.Tests/
-    DeltaRender.UI.Tests/
+    Delta.Render.Tests/
+    Delta.Render.Vulkan.Tests/
+    Delta.Render.UI.Tests/
   samples/
 ```
 
 The public core API must not expose raw SDL handles. Raw Vulkan handles remain
 inside the Vulkan implementation except for narrow diagnostics/interop points.
-DeltaEngine consumes DeltaRender; DeltaRender does not depend on DeltaEngine or
+DeltaEngine consumes Delta.Render; Delta.Render does not depend on DeltaEngine or
 DeltaECS.
 
-All own source namespaces use the `DVG.Render` root (`DVG.Render.Core`,
-`DVG.Render.Platform.SDL3`, `DVG.Render.Vulkan`, and corresponding test/sample
-namespaces). Project and assembly names remain `DeltaRender.*` in this delivery;
-only CLR namespaces and `RootNamespace` values are changing.
+All own source namespaces use the `Delta.Render` root (`Delta.Render.Core`,
+`Delta.Render.Platform.SDL3`, `Delta.Render.Vulkan`, and corresponding test/sample
+namespaces). Project, assembly, package, solution, and directory names use the
+same `Delta.Render.*` identity.
 
 ## Rendering architecture
 
@@ -99,6 +99,12 @@ The renderer needs bindless/descriptor-indexing only after a capability/fallback
 design exists. A conservative descriptor-set path is acceptable for the first
 vertical slice.
 
+Delivery 1 frame contract additions:
+
+- `IRenderWindow` now carries a typed `Handle`, `WindowMetrics`, and `IRenderWindowSurfaceSource` for Vulkan session creation.
+- `IRenderWindowFrameSession` is the minimal renderer-facing session API: `BeginFrame()`, `EndFrame(in RenderFrameState, ReadOnlySpan<RenderRecordChange>)`, and `Resize(WindowMetrics)`.
+- `RenderRecordChange` is the explicit dirty-asset envelope from glue code; the renderer accepts pre-collected records and does not own ECS iteration.
+
 ## XAML UI
 
 XAML describes a retained component tree; it is not Avalonia XAML compatibility
@@ -122,7 +128,7 @@ source location.
 
 ## GLSH contract
 
-DeltaRender consumes SPIR-V plus a versioned GLSH reflection manifest. It does
+Delta.Render consumes SPIR-V plus a versioned GLSH reflection manifest. It does
 not parse C# shader source or reproduce GLSH layout rules. The canonical shared
 structure ABI is `std430` with explicit member `offset` and `stride` metadata;
 SSBO is the supported resource kind for this delivery. The manifest reader

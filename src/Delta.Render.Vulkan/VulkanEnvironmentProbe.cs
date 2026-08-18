@@ -1,9 +1,9 @@
-using DVG.Render.Core;
+using Delta.Render.Core;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
-namespace DVG.Render.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public static unsafe class VulkanEnvironmentProbe
 {
@@ -14,8 +14,8 @@ public static unsafe class VulkanEnvironmentProbe
         try
         {
             var vk = Vk.GetApi();
-            byte* appName = (byte*)SilkMarshal.StringToPtr("DeltaRender");
-            byte* engineName = (byte*)SilkMarshal.StringToPtr("DeltaRender");
+            byte* appName = (byte*)SilkMarshal.StringToPtr("Delta.Render");
+            byte* engineName = (byte*)SilkMarshal.StringToPtr("Delta.Render");
             try
             {
                 ApplicationInfo appInfo = new()

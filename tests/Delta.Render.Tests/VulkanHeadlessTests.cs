@@ -1,10 +1,10 @@
-using DVG.Render.Core;
-using DVG.Render.Platform.SDL3;
-using DVG.Render.Vulkan;
+using Delta.Render.Core;
+using Delta.Render.Platform.SDL3;
+using Delta.Render.Vulkan;
 using System.IO;
 using Xunit;
 
-namespace DVG.Render.Tests;
+namespace Delta.Render.Tests;
 
 public class VulkanHeadlessTests
 {

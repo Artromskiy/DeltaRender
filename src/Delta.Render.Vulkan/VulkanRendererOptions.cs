@@ -1,12 +1,12 @@
 using Silk.NET.Vulkan;
 
-namespace DVG.Render.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public sealed class VulkanRendererOptions
 {
-    public string ApplicationName { get; init; } = "DeltaRender";
+    public string ApplicationName { get; init; } = "Delta.Render";
 
-    public string EngineName { get; init; } = "DeltaRender";
+    public string EngineName { get; init; } = "Delta.Render";
 
     public bool EnableValidation { get; init; } = true;
 

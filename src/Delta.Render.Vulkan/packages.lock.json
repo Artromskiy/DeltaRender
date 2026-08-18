@@ -56,7 +56,7 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
-      "deltarender.core": {
+      "delta.render.core": {
         "type": "Project"
       }
     },

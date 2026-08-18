@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Delta.Render.Tests</RootNamespace>
+    <AssemblyName>Delta.Render.Tests</AssemblyName>
+    <PackageId>Delta.Render.Tests</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\..\\src\\Delta.Render.Core\\Delta.Render.Core.csproj" />
+    <ProjectReference Include="..\\..\\src\\Delta.Render.Platform.SDL3\\Delta.Render.Platform.SDL3.csproj" />
+    <ProjectReference Include="..\\..\\src\\Delta.Render.Vulkan\\Delta.Render.Vulkan.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="fixtures\clear-triangle.glsl.manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\compute_double.spv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

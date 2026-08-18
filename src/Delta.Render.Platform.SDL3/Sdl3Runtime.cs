@@ -1,7 +1,7 @@
-using DVG.Render.Core;
+using Delta.Render.Core;
 using SDL3;
 
-namespace DVG.Render.Platform.SDL3;
+namespace Delta.Render.Platform.SDL3;
 
 internal static class Sdl3Runtime
 {

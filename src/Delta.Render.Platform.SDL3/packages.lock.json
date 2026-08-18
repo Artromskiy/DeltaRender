@@ -26,7 +26,7 @@
         "resolved": "3.4.12.6",
         "contentHash": "ZILtbNxwhV8/dcmPukYD/ZWwYT3q7cNU1H+XeG6WBC3yxXotBX3cvX4WdmRZV8B4FiOjH8pahoQjlF/0hNnp6g=="
       },
-      "deltarender.core": {
+      "delta.render.core": {
         "type": "Project"
       }
     },

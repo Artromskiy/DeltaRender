@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DVG.Render.Vulkan</RootNamespace>
+    <RootNamespace>Delta.Render.Vulkan</RootNamespace>
+    <AssemblyName>Delta.Render.Vulkan</AssemblyName>
+    <PackageId>Delta.Render.Vulkan</PackageId>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Silk.NET 2.23.0 generated Vulkan overloads are ABI-compatible by value; C# 13 ref-safety hints are not applicable here. -->
     <NoWarn>$(NoWarn);CS9192;CS9193;CS9195</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\DeltaRender.Core\\DeltaRender.Core.csproj" />
+    <ProjectReference Include="..\\Delta.Render.Core\\Delta.Render.Core.csproj" />
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />

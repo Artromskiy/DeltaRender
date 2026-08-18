@@ -1,6 +1,6 @@
-using DVG.Render.Core;
+using Delta.Render.Core;
 
-namespace DVG.Render.Platform.SDL3;
+namespace Delta.Render.Platform.SDL3;
 
 public sealed class Sdl3Window : IRenderWindow
 {
@@ -10,6 +10,7 @@ public sealed class Sdl3Window : IRenderWindow
     public Sdl3Window(ulong handle, WindowConfiguration configuration)
     {
         Id = RenderWindowId.New();
+        Handle = new RenderWindowHandle(handle);
         _handle = handle;
         Title = configuration.Title;
         Metrics = new WindowMetrics(configuration.Width, configuration.Height, 1.0f);
@@ -17,6 +18,8 @@ public sealed class Sdl3Window : IRenderWindow
     }
 
     public RenderWindowId Id { get; }
+
+    public RenderWindowHandle Handle { get; }
 
     public string Title { get; }
 

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using DVG.Render.Core;
+using Delta.Render.Core;
 using Silk.NET.Core;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
@@ -9,7 +9,7 @@ using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
-namespace DVG.Render.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public sealed unsafe class VulkanRenderer : IAsyncDisposable
 {
@@ -58,7 +58,9 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     public ValueTask DisposeAsync() => DisposeResourcesAsync();
 
-    public VulkanWindowSession CreateWindowSession(IRenderWindow window)
+    public IComputeDevice CreateComputeDevice() => new VulkanComputeDevice(Options);
+
+    public IRenderWindowFrameSession CreateWindowSession(IRenderWindow window)
     {
         var sessionDiagnostics = new RenderDiagnosticBag();
         if (window is null)
@@ -116,7 +118,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 throw new InvalidOperationException("Failed to load VK_KHR_swapchain device extension.");
             }
 
-            return new VulkanWindowSession(this, surface, window.Metrics);
+            return new VulkanWindowSession(this, surface, window.Id, window.Metrics);
         }
         catch
         {
@@ -648,11 +650,13 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     }
 }
 
-public sealed unsafe class VulkanWindowSession : IAsyncDisposable
+public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
 {
     private bool _disposed;
+    private bool _inFrame;
 
     private readonly VulkanRenderer _renderer;
+    private readonly RenderWindowId _windowId;
     private readonly SurfaceKHR _surface;
     private readonly KhrSurface _khrSurface;
     private readonly KhrSwapchain _khrSwapchain;
@@ -663,9 +667,9 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
     private readonly uint _presentFamily;
 
     private readonly RenderPass _renderPass;
-    private readonly SwapchainKHR _swapchain;
-    private readonly ImageView[] _imageViews;
-    private readonly Framebuffer[] _frameBuffers;
+    private SwapchainKHR _swapchain;
+    private ImageView[] _imageViews;
+    private Framebuffer[] _frameBuffers;
 
     private readonly VulkanSemaphore _imageAvailable;
     private readonly VulkanSemaphore _renderComplete;
@@ -673,12 +677,17 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
 
-    private readonly Extent2D _extent;
-    private readonly Format _imageFormat;
+    private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
 
-    internal VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, WindowMetrics metrics)
+    private Extent2D _extent;
+    private readonly Format _imageFormat;
+    private WindowMetrics _metrics;
+    private uint _activeImageIndex;
+
+    internal VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
         _renderer = renderer;
+        _windowId = windowId;
         _surface = surface;
 
         _device = renderer.GetDevice();
@@ -690,6 +699,7 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
         _khrSwapchain = renderer.GetKhrSwapchain();
 
         _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
+        _metrics = metrics;
         if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
         {
             throw new InvalidOperationException("No swapchain support for selected surface.");
@@ -736,12 +746,18 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
         _commandBuffer = commandBuffer;
     }
 
-    public bool RenderClearFrame(float r, float g, float b, float a)
+    public RenderWindowId WindowId => _windowId;
+    public RenderFrameState BeginFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_inFrame)
+        {
+            return RenderFrameState.ResizeRequested(_metrics);
+        }
+
         if (_frameBuffers.Length == 0)
         {
-            throw new InvalidOperationException("The Vulkan window session has no swapchain framebuffers.");
+            return RenderFrameState.NotReady(_metrics);
         }
 
         var api = _renderer.Api;
@@ -750,12 +766,12 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
         var acquireResult = _khrSwapchain.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref imageIndex);
         if (acquireResult == Result.ErrorOutOfDateKhr || acquireResult == Result.SuboptimalKhr)
         {
-            return false;
+            return RenderFrameState.ResizeRequested(_metrics);
         }
 
         if (acquireResult != Result.Success)
         {
-            return false;
+            return RenderFrameState.NotReady(_metrics);
         }
 
         if (imageIndex >= (uint)_frameBuffers.Length)
@@ -767,69 +783,161 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
             api.ResetFences(_device, 1, _renderFence) != Result.Success ||
             api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
         {
+            return RenderFrameState.NotReady(_metrics);
+        }
+
+        _inFrame = true;
+        _activeImageIndex = imageIndex;
+        return RenderFrameState.Ready(imageIndex, _metrics);
+    }
+
+    public bool EndFrame(in RenderFrameState frameState, ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex)
+        {
             return false;
         }
 
-        ClearValue clearColor = new ClearValue(new ClearColorValue(r, g, b, a));
-        var renderPassInfo = new RenderPassBeginInfo
+        return EndFrame(in frameState, in _clearColor, dirtyRecords);
+    }
+
+    public bool RenderClearFrame(float r, float g, float b, float a)
+    {
+        _clearColor = new ClearColorValue(r, g, b, a);
+        var frameState = BeginFrame();
+        if (!frameState.IsValid)
         {
-            SType = StructureType.RenderPassBeginInfo,
-            RenderPass = _renderPass,
-            Framebuffer = _frameBuffers[(int)imageIndex],
-            RenderArea = new Rect2D
+            return false;
+        }
+
+        return EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+    }
+
+    public bool Resize(WindowMetrics metrics)
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        if (metrics.Width == 0 || metrics.Height == 0)
+        {
+            _metrics = metrics;
+            return true;
+        }
+
+        if (_inFrame)
+        {
+            return false;
+        }
+
+        if (_metrics.Width == metrics.Width && _metrics.Height == metrics.Height)
+        {
+            return true;
+        }
+
+        var api = _renderer.Api;
+        var device = _renderer.GetDevice();
+
+        api.DeviceWaitIdle(device);
+
+        foreach (var frameBuffer in _frameBuffers)
+        {
+            api.DestroyFramebuffer(device, frameBuffer, null);
+        }
+
+        foreach (var imageView in _imageViews)
+        {
+            api.DestroyImageView(device, imageView, null);
+        }
+
+        _khrSwapchain.DestroySwapchain(device, _swapchain, null);
+
+        _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
+        _metrics = metrics;
+
+        if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
+        {
+            return false;
+        }
+
+        _swapchain = CreateSwapchain(_renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
+        (_imageViews, _frameBuffers) = CreateSwapchainImageViews(_renderer.Api, _khrSwapchain, _device, _extent, _renderPass, _swapchain, _imageFormat);
+        return _frameBuffers.Length > 0;
+    }
+
+    private bool EndFrame(in RenderFrameState frameState, in ClearColorValue clearColor, ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        _ = frameState;
+        _ = dirtyRecords;
+        var api = _renderer.Api;
+        var success = false;
+
+        try
+        {
+            var clearValue = new ClearValue(clearColor);
+            var renderPassInfo = new RenderPassBeginInfo
             {
-                Offset = new Offset2D(0, 0),
-                Extent = _extent
-            },
-            ClearValueCount = 1,
-            PClearValues = &clearColor
-        };
+                SType = StructureType.RenderPassBeginInfo,
+                RenderPass = _renderPass,
+                Framebuffer = _frameBuffers[(int)_activeImageIndex],
+                RenderArea = new Rect2D
+                {
+                    Offset = new Offset2D(0, 0),
+                    Extent = _extent
+                },
+                ClearValueCount = 1,
+                PClearValues = &clearValue
+            };
 
-        var commandBufferBeginInfo = new CommandBufferBeginInfo
-        {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-        };
-        if (api.BeginCommandBuffer(_commandBuffer, commandBufferBeginInfo) != Result.Success)
-        {
-            return false;
-        }
-        api.CmdBeginRenderPass(_commandBuffer, &renderPassInfo, SubpassContents.Inline);
-        api.CmdEndRenderPass(_commandBuffer);
-        if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
-        {
-            return false;
-        }
+            var commandBufferBeginInfo = new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            };
+            if (api.BeginCommandBuffer(_commandBuffer, commandBufferBeginInfo) != Result.Success)
+            {
+                return false;
+            }
+
+            api.CmdBeginRenderPass(_commandBuffer, &renderPassInfo, SubpassContents.Inline);
+            api.CmdEndRenderPass(_commandBuffer);
+            if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
+            {
+                return false;
+            }
 
         var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
         var imageAvailable = _imageAvailable;
         var renderComplete = _renderComplete;
         var commandBuffer = _commandBuffer;
+        var imageIndex = _activeImageIndex;
         var swapchain = _swapchain;
         var submitInfo = new SubmitInfo
         {
             SType = StructureType.SubmitInfo,
             WaitSemaphoreCount = 1,
-            PWaitSemaphores = &imageAvailable,
-            PWaitDstStageMask = waitStages,
-            CommandBufferCount = 1,
-            PCommandBuffers = &commandBuffer,
-            SignalSemaphoreCount = 1,
-            PSignalSemaphores = &renderComplete
-        };
+                PWaitSemaphores = &imageAvailable,
+                PWaitDstStageMask = waitStages,
+                CommandBufferCount = 1,
+                PCommandBuffers = &commandBuffer,
+                SignalSemaphoreCount = 1,
+                PSignalSemaphores = &renderComplete
+            };
 
-        if (api.QueueSubmit(_graphicsQueue, 1, &submitInfo, _renderFence) != Result.Success)
-        {
-            return false;
-        }
+            if (api.QueueSubmit(_graphicsQueue, 1, &submitInfo, _renderFence) != Result.Success)
+            {
+                return false;
+            }
 
-        if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success)
-        {
-            return false;
-        }
+            if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success)
+            {
+                return false;
+            }
 
-        var presentInfo = new PresentInfoKHR
-        {
+            var presentInfo = new PresentInfoKHR
+            {
             SType = StructureType.PresentInfoKhr,
             WaitSemaphoreCount = 1,
             PWaitSemaphores = &renderComplete,
@@ -838,9 +946,16 @@ public sealed unsafe class VulkanWindowSession : IAsyncDisposable
             PImageIndices = &imageIndex
         };
 
-        var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
-        return (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
-            api.QueueWaitIdle(_presentQueue) == Result.Success;
+            var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
+            success = (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
+                api.QueueWaitIdle(_presentQueue) == Result.Success;
+        }
+        finally
+        {
+            _inFrame = false;
+        }
+
+        return success;
     }
 
     private static void EnsureSuccess(Result result, string operation)
