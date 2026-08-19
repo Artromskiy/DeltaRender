@@ -56,7 +56,7 @@ jobs:
       - name: Checkout Delta.Maths shader contract
         uses: actions/checkout@v7
         with:
-          repository: Artromskiy/DVG.Maths
+          repository: Artromskiy/Delta.Maths
           path: Maths
       - name: Install .NET 10
         uses: actions/setup-dotnet@v6
