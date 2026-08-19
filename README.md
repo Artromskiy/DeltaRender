@@ -13,7 +13,7 @@ new architecture.
 - macOS: MoltenVK translates Vulkan/SPIR-V to Metal.
 - Windows and Linux: native Vulkan loader and drivers.
 - UI authoring: a Delta-owned XAML dialect and retained UI tree.
-- Shader source: C# shader -> Delta.Shader-generated GLSL -> SPIR-V; checked-in
+- Shader source: C# shader -> DeltaShader-generated GLSL -> SPIR-V; checked-in
   SPIR-V/GLSL fixtures remain available only for low-level fallback tests.
 - Math types: Delta.Maths where runtime/layout contracts allow it.
 
@@ -126,7 +126,7 @@ Do not implement the full WPF/Avalonia property system in the first milestone.
 Document every supported XAML construct and reject unknown constructs with a
 source location.
 
-## Delta.Shader contract
+## DeltaShader contract
 
 Delta.Render consumes `ShaderArtifact` from `Delta.Shader.Abstractions`. The
 artifact contains SPIR-V bytes and a versioned reflection manifest; Delta.Render
@@ -210,7 +210,7 @@ text shaping, atlas uploads, or hierarchy.
 7. Render extraction and a small render graph.
 8. Retained UI tree, layout, input routing, and rectangle/image batches.
 9. XAML subset parser/compiler and one editor-style sample.
-10. Text shaping/rasterization, docking, multiple windows, and Delta.Shader integration.
+10. Text shaping/rasterization, docking, multiple windows, and DeltaShader integration.
 
 The first delivery ends at step 4. It must include a macOS arm64 run through
 MoltenVK and platform code structured so Windows/Linux do not inherit Apple-only
@@ -223,7 +223,7 @@ requirements.
 - complete WPF/Avalonia XAML compatibility;
 - a general web/HTML/CSS engine;
 - ray tracing, virtual texturing, or a production material system;
-- modifying DeltaECS or Delta.Shader internals.
+- modifying DeltaECS or DeltaShader internals.
 
 
 ## CI, tests, and benchmarks

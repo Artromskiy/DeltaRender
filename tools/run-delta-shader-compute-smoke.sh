@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DELTA_SHADER_ROOT="${DELTA_SHADER_ROOT:-"$ROOT/../Delta.Shader"}"
+DELTA_SHADER_ROOT="${DELTA_SHADER_ROOT:-"$ROOT/../DeltaShader"}"
 OUT="${TMPDIR:-/tmp}/delta-render-delta-shader-compute-$$"
 mkdir -p "$OUT"
 trap 'rm -rf "$OUT"' EXIT

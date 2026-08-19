@@ -8,6 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../Delta.Shader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
   </ItemGroup>
 </Project>
