@@ -14,7 +14,7 @@ internal static class Program
     {
         if (args.Any(a => string.Equals(a, "--compute", StringComparison.OrdinalIgnoreCase)))
         {
-            return await RunComputeSmokeAsync();
+            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"));
         }
 
         var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
@@ -66,9 +66,16 @@ internal static class Program
         return 0;
     }
 
-    private static async Task<int> RunComputeSmokeAsync()
+    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath)
     {
-        var shaderPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
+        var shaderPath = externalShaderPath ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
+        if (!File.Exists(shaderPath))
+        {
+            Console.Error.WriteLine($"Compute shader was not found: {shaderPath}");
+            return 1;
+        }
+
+        Console.WriteLine($"compute-shader={Path.GetFullPath(shaderPath)}");
         var shader = File.ReadAllBytes(shaderPath);
         var metadata = new ComputeShaderMetadata(
             ComputeAbiLayout.Std430,
@@ -141,6 +148,16 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static string? GetOption(string[] args, string option)
+    {
+        for (var i = 0; i + 1 < args.Length; i++)
+        {
+            if (string.Equals(args[i], option, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        }
+
+        return null;
     }
 
     private static int FailCompute(int size, string reason)

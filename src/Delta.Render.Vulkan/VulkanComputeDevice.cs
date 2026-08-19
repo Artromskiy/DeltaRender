@@ -19,6 +19,9 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
     private readonly Vk _api;
     private readonly List<VulkanStorageBuffer> _buffers = new();
     private readonly List<VulkanComputePipeline> _pipelines = new();
+    private BufferAllocation _uploadStaging;
+    private int _uploadStagingAllocationCount;
+    private int _dirtyBatchSubmitCount;
     private PhysicalDevice _physicalDevice;
     private Device _device;
     private Queue _queue;
@@ -95,6 +98,11 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
 
     internal Device Device => _device;
 
+    internal VulkanUploadStatistics UploadStatistics => new(
+        _uploadStagingAllocationCount,
+        _dirtyBatchSubmitCount,
+        _uploadStaging.AllocationSize);
+
     public ComputeDeviceLimits Limits { get; }
 
     public IComputeStorageBuffer CreateStorageBuffer(ulong byteLength)
@@ -128,54 +136,12 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             return true;
         }
 
-        var staging = CreateBuffer((ulong)source.Length, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit, MemoryPropertyFlags.HostCoherentBit);
-        try
-        {
-            WriteMapped(staging.Memory, staging.AllocationSize, source, staging.MemoryProperties);
-            BeginCommandBuffer();
+        EnsureUploadStagingCapacity((ulong)source.Length);
+        WriteMapped(_uploadStaging.Memory, _uploadStaging.AllocationSize, source, _uploadStaging.MemoryProperties);
 
-            var barriers = new[]
-            {
-                new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.HostWriteBit,
-                    DstAccessMask = AccessFlags.TransferReadBit,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Buffer = staging.Buffer,
-                    Offset = 0,
-                    Size = staging.AllocationSize
-                },
-                new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Buffer = target.Buffer,
-                    Offset = destinationOffset,
-                    Size = (ulong)source.Length
-                }
-            };
-            _api.CmdPipelineBarrier(
-                _commandBuffer,
-                PipelineStageFlags.HostBit | PipelineStageFlags.TransferBit,
-                PipelineStageFlags.TransferBit | PipelineStageFlags.ComputeShaderBit,
-                DependencyFlags.None,
-                ReadOnlySpan<MemoryBarrier>.Empty,
-                barriers,
-                ReadOnlySpan<ImageMemoryBarrier>.Empty);
-
-            var copy = new BufferCopy { SrcOffset = 0, DstOffset = destinationOffset, Size = (ulong)source.Length };
-            _api.CmdCopyBuffer(_commandBuffer, staging.Buffer, target.Buffer, new[] { copy });
-            return EndAndWait();
-        }
-        finally
-        {
-            DestroyAllocation(staging);
-        }
+        Span<BufferCopy> copy = stackalloc BufferCopy[1];
+        copy[0] = new BufferCopy { SrcOffset = 0, DstOffset = destinationOffset, Size = (ulong)source.Length };
+        return SubmitUploadBatch(target, copy);
     }
 
     public bool Readback(IComputeStorageBuffer source, Span<byte> destination, ulong sourceOffset = 0)
@@ -439,9 +405,9 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         {
             return ComputeDirtyUpdateResult.Empty;
         }
-        if (!TryGetBuffer(destination, out var target) || recordStride == 0 || recordStride > int.MaxValue)
+        if (!TryGetBuffer(destination, out var target) || recordStride == 0 || recordStride > int.MaxValue || (recordStride & 3) != 0)
         {
-            return new ComputeDirtyUpdateResult(0, dirtyRecords.Length, 0, "Invalid destination buffer or record stride.");
+            return new ComputeDirtyUpdateResult(0, dirtyRecords.Length, 0, "Invalid destination buffer or record stride; Vulkan copy ranges require a four-byte aligned stride.");
         }
 
         ulong requiredBytes;
@@ -461,57 +427,101 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             {
                 var change = dirtyRecords[i];
                 if (change.EntityId >= recordCapacity || change.PayloadSize > recordStride ||
-                    (change.Kind == RenderRecordChangeKind.Upserted && change.PayloadSize != 0 && change.PayloadAddress == 0))
+                    (change.PayloadSize != 0 && change.PayloadAddress == 0))
                 {
                     rejected++;
                     continue;
                 }
 
-                ranges[validCount++] = new DirtyRange(change.EntityId * recordStride, change.PayloadAddress, change.PayloadSize, recordStride);
+                ranges[validCount++] = new DirtyRange(
+                    checked((ulong)change.EntityId * recordStride),
+                    change.PayloadAddress,
+                    change.PayloadSize,
+                    recordStride,
+                    i);
             }
 
             Array.Sort(ranges, 0, validCount, DirtyRangeComparer.Instance);
-            var uploads = 0;
-            var accepted = 0;
-            var start = 0;
-            while (start < validCount)
+            var accepted = validCount;
+            var uniqueCount = 0;
+            for (var i = 0; i < validCount; i++)
             {
-                var end = start + 1;
-                while (end < validCount && ranges[end].Offset == ranges[end - 1].Offset + recordStride)
+                if (uniqueCount != 0 && ranges[uniqueCount - 1].Offset == ranges[i].Offset)
                 {
-                    end++;
+                    // Multiple changes for one record are last-change-wins after sorting by input sequence.
+                    ranges[uniqueCount - 1] = ranges[i];
+                }
+                else
+                {
+                    ranges[uniqueCount++] = ranges[i];
+                }
+            }
+
+            var runs = ArrayPool<DirtyUploadRun>.Shared.Rent(uniqueCount);
+            try
+            {
+                var runCount = 0;
+                ulong stagingBytes = 0;
+                var start = 0;
+                while (start < uniqueCount)
+                {
+                    var end = start + 1;
+                    while (end < uniqueCount && ranges[end].Offset == checked(ranges[end - 1].Offset + recordStride))
+                    {
+                        end++;
+                    }
+
+                    var runLength = checked((int)((ulong)(end - start) * recordStride));
+                    var stagingOffset = AlignFourBytes(stagingBytes);
+                    stagingBytes = checked(stagingOffset + (ulong)runLength);
+                    runs[runCount++] = new DirtyUploadRun(start, end, stagingOffset, ranges[start].Offset, runLength);
+                    start = end;
                 }
 
-                var runLength = checked((int)((ulong)(end - start) * recordStride));
-                var temporary = ArrayPool<byte>.Shared.Rent(runLength);
+                if (runCount == 0)
+                {
+                    return new ComputeDirtyUpdateResult(accepted, rejected, 0, rejected == 0 ? null : "One or more dirty records were rejected.");
+                }
+
+                if (stagingBytes > int.MaxValue)
+                {
+                    return new ComputeDirtyUpdateResult(0, dirtyRecords.Length, 0, "Dirty record staging batch exceeds the managed buffer span limit.");
+                }
+
+                EnsureUploadStagingCapacity(stagingBytes);
+                FillUploadStaging(ranges.AsSpan(0, uniqueCount), runs.AsSpan(0, runCount), stagingBytes);
+
+                var copies = ArrayPool<BufferCopy>.Shared.Rent(runCount);
                 try
                 {
-                    var run = temporary.AsSpan(0, runLength);
-                    run.Clear();
-                    for (var i = start; i < end; i++)
+                    for (var i = 0; i < runCount; i++)
                     {
-                        var range = ranges[i];
-                        if (range.PayloadSize != 0)
+                        var run = runs[i];
+                        copies[i] = new BufferCopy
                         {
-                            Marshal.Copy((nint)range.PayloadAddress, temporary, checked((int)((ulong)(i - start) * recordStride)), checked((int)range.PayloadSize));
-                        }
-                        accepted++;
+                            SrcOffset = run.StagingOffset,
+                            DstOffset = run.DestinationOffset,
+                            Size = (ulong)run.ByteLength
+                        };
                     }
 
-                    if (!Upload(destination, run, ranges[start].Offset))
+                    if (!SubmitUploadBatch(target, copies.AsSpan(0, runCount)))
                     {
-                        return new ComputeDirtyUpdateResult(accepted, rejected, uploads, "Dirty record upload failed.");
+                        return new ComputeDirtyUpdateResult(accepted, rejected, runCount, "Dirty record upload failed.");
                     }
-                    uploads++;
+
+                    _dirtyBatchSubmitCount++;
+                    return new ComputeDirtyUpdateResult(accepted, rejected, runCount, rejected == 0 ? null : "One or more dirty records were rejected.");
                 }
                 finally
                 {
-                    ArrayPool<byte>.Shared.Return(temporary);
+                    ArrayPool<BufferCopy>.Shared.Return(copies);
                 }
-                start = end;
             }
-
-            return new ComputeDirtyUpdateResult(accepted, rejected, uploads, rejected == 0 ? null : "One or more dirty records were rejected.");
+            finally
+            {
+                ArrayPool<DirtyUploadRun>.Shared.Return(runs);
+            }
         }
         catch (OverflowException ex)
         {
@@ -551,6 +561,8 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             _api.DeviceWaitIdle(_device);
             foreach (var pipeline in _pipelines.ToArray()) DestroyPipeline(pipeline);
             foreach (var buffer in _buffers.ToArray()) DestroyBuffer(buffer);
+            DestroyAllocation(_uploadStaging);
+            _uploadStaging = default;
             if (_fence.Handle != default) _api.DestroyFence(_device, _fence, null);
             if (_commandPool.Handle != default) _api.DestroyCommandPool(_device, _commandPool, null);
             if (_device.Handle != default) _api.DestroyDevice(_device, null);
@@ -604,6 +616,140 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         if (_api.QueueSubmit(_queue, 1, &submit, _fence) != Result.Success) return false;
         return _api.WaitForFences(_device, 1, _fence, true, ulong.MaxValue) == Result.Success;
     }
+
+    private bool SubmitUploadBatch(VulkanStorageBuffer target, ReadOnlySpan<BufferCopy> copies)
+    {
+        if (copies.IsEmpty) return true;
+
+        var preBarriers = ArrayPool<BufferMemoryBarrier>.Shared.Rent(copies.Length + 1);
+        var postBarriers = ArrayPool<BufferMemoryBarrier>.Shared.Rent(copies.Length);
+        try
+        {
+            preBarriers[0] = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.HostWriteBit,
+                DstAccessMask = AccessFlags.TransferReadBit,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Buffer = _uploadStaging.Buffer,
+                Offset = 0,
+                Size = _uploadStaging.AllocationSize
+            };
+
+            for (var i = 0; i < copies.Length; i++)
+            {
+                var copy = copies[i];
+                preBarriers[i + 1] = new BufferMemoryBarrier
+                {
+                    SType = StructureType.BufferMemoryBarrier,
+                    SrcAccessMask = AccessFlags.TransferWriteBit | AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+                    DstAccessMask = AccessFlags.TransferWriteBit,
+                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    Buffer = target.Buffer,
+                    Offset = copy.DstOffset,
+                    Size = copy.Size
+                };
+                postBarriers[i] = new BufferMemoryBarrier
+                {
+                    SType = StructureType.BufferMemoryBarrier,
+                    SrcAccessMask = AccessFlags.TransferWriteBit,
+                    DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    Buffer = target.Buffer,
+                    Offset = copy.DstOffset,
+                    Size = copy.Size
+                };
+            }
+
+            BeginCommandBuffer();
+            _api.CmdPipelineBarrier(
+                _commandBuffer,
+                PipelineStageFlags.HostBit | PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.TransferBit,
+                PipelineStageFlags.TransferBit,
+                DependencyFlags.None,
+                ReadOnlySpan<MemoryBarrier>.Empty,
+                preBarriers.AsSpan(0, copies.Length + 1),
+                ReadOnlySpan<ImageMemoryBarrier>.Empty);
+            _api.CmdCopyBuffer(_commandBuffer, _uploadStaging.Buffer, target.Buffer, copies);
+            _api.CmdPipelineBarrier(
+                _commandBuffer,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.ComputeShaderBit,
+                DependencyFlags.None,
+                ReadOnlySpan<MemoryBarrier>.Empty,
+                postBarriers.AsSpan(0, copies.Length),
+                ReadOnlySpan<ImageMemoryBarrier>.Empty);
+            return EndAndWait();
+        }
+        finally
+        {
+            ArrayPool<BufferMemoryBarrier>.Shared.Return(preBarriers);
+            ArrayPool<BufferMemoryBarrier>.Shared.Return(postBarriers);
+        }
+    }
+
+    private void EnsureUploadStagingCapacity(ulong requiredBytes)
+    {
+        if (_uploadStaging.Buffer.Handle != default && _uploadStaging.AllocationSize >= requiredBytes) return;
+
+        var requestedSize = Math.Max(requiredBytes, MinimumVulkanBufferSize);
+        var currentSize = _uploadStaging.AllocationSize;
+        while (currentSize != 0 && currentSize < requestedSize)
+        {
+            if (currentSize > ulong.MaxValue / 2)
+            {
+                currentSize = requestedSize;
+                break;
+            }
+
+            currentSize *= 2;
+        }
+
+        var replacement = CreateBuffer(
+            Math.Max(requestedSize, currentSize),
+            BufferUsageFlags.TransferSrcBit,
+            MemoryPropertyFlags.HostVisibleBit,
+            MemoryPropertyFlags.HostCoherentBit);
+        var previous = _uploadStaging;
+        _uploadStaging = replacement;
+        _uploadStagingAllocationCount++;
+        DestroyAllocation(previous);
+    }
+
+    private void FillUploadStaging(ReadOnlySpan<DirtyRange> ranges, ReadOnlySpan<DirtyUploadRun> runs, ulong stagingBytes)
+    {
+        void* mapped = null;
+        Ensure(_api.MapMemory(_device, _uploadStaging.Memory, 0, _uploadStaging.AllocationSize, 0, &mapped), "MapMemory");
+        try
+        {
+            var mappedBytes = new Span<byte>(mapped, checked((int)stagingBytes));
+            for (var runIndex = 0; runIndex < runs.Length; runIndex++)
+            {
+                var run = runs[runIndex];
+                var destination = mappedBytes.Slice(checked((int)run.StagingOffset), run.ByteLength);
+                destination.Clear();
+                for (var rangeIndex = run.Start; rangeIndex < run.End; rangeIndex++)
+                {
+                    var range = ranges[rangeIndex];
+                    if (range.PayloadSize == 0) continue;
+                    var destinationOffset = checked((int)((ulong)(rangeIndex - run.Start) * range.RecordStride));
+                    var payload = new ReadOnlySpan<byte>((void*)(nuint)range.PayloadAddress, checked((int)range.PayloadSize));
+                    payload.CopyTo(destination.Slice(destinationOffset, checked((int)range.PayloadSize)));
+                }
+            }
+
+            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+        }
+        finally
+        {
+            _api.UnmapMemory(_device, _uploadStaging.Memory);
+        }
+    }
+
+    private static ulong AlignFourBytes(ulong value) => checked((value + 3) & ~3UL);
 
     private void WriteMapped(DeviceMemory memory, ulong allocationSize, ReadOnlySpan<byte> source, MemoryPropertyFlags properties)
     {
@@ -769,14 +915,24 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
     }
 
     private readonly record struct BufferAllocation(VulkanBuffer Buffer, DeviceMemory Memory, ulong AllocationSize, MemoryPropertyFlags MemoryProperties);
-    private readonly record struct DirtyRange(ulong Offset, ulong PayloadAddress, uint PayloadSize, uint RecordStride);
+    private readonly record struct DirtyRange(ulong Offset, ulong PayloadAddress, uint PayloadSize, uint RecordStride, int Sequence);
+    private readonly record struct DirtyUploadRun(int Start, int End, ulong StagingOffset, ulong DestinationOffset, int ByteLength);
 
     private sealed class DirtyRangeComparer : IComparer<DirtyRange>
     {
         public static DirtyRangeComparer Instance { get; } = new();
-        public int Compare(DirtyRange x, DirtyRange y) => x.Offset.CompareTo(y.Offset);
+        public int Compare(DirtyRange x, DirtyRange y)
+        {
+            var offset = x.Offset.CompareTo(y.Offset);
+            return offset != 0 ? offset : x.Sequence.CompareTo(y.Sequence);
+        }
     }
 }
+
+internal readonly record struct VulkanUploadStatistics(
+    int StagingAllocationCount,
+    int DirtyBatchSubmitCount,
+    ulong StagingCapacity);
 
 public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
 {

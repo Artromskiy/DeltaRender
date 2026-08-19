@@ -81,4 +81,96 @@ public sealed class VulkanComputeTests
             Marshal.FreeHGlobal(payload);
         }
     }
+
+    [Fact]
+    public async Task Dirty_records_batch_disjoint_ranges_reuses_and_grows_staging()
+    {
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var buffer = device.CreateStorageBuffer(4096);
+        var payload = Marshal.AllocHGlobal(16 * 32);
+        try
+        {
+            var bytes = Enumerable.Range(0, 16 * 32).Select(static value => (byte)value).ToArray();
+            Marshal.Copy(bytes, 0, payload, bytes.Length);
+
+            var before = device.UploadStatistics;
+            var first = device.ApplyDirtyRecords(
+                buffer,
+                new[]
+                {
+                    RenderRecordChange.Upsert(1, 7, (ulong)payload, 16),
+                    RenderRecordChange.Upsert(3, 7, (ulong)(payload + 16), 16)
+                },
+                16,
+                256);
+
+            Assert.True(first.Succeeded, first.Error);
+            Assert.Equal(2, first.UploadRuns);
+            var afterFirst = device.UploadStatistics;
+            Assert.Equal(before.StagingAllocationCount + 1, afterFirst.StagingAllocationCount);
+            Assert.Equal(before.DirtyBatchSubmitCount + 1, afterFirst.DirtyBatchSubmitCount);
+
+            var second = device.ApplyDirtyRecords(
+                buffer,
+                new[] { RenderRecordChange.Upsert(5, 7, (ulong)(payload + 32), 16) },
+                16,
+                256);
+
+            Assert.True(second.Succeeded, second.Error);
+            var afterReuse = device.UploadStatistics;
+            Assert.Equal(afterFirst.StagingAllocationCount, afterReuse.StagingAllocationCount);
+            Assert.Equal(afterFirst.DirtyBatchSubmitCount + 1, afterReuse.DirtyBatchSubmitCount);
+
+            var recordsForGrowth = checked((int)(afterReuse.StagingCapacity / 16) + 1);
+            var growthChanges = Enumerable.Range(0, recordsForGrowth)
+                .Select(index => RenderRecordChange.Upsert((uint)index, 7, (ulong)payload, 16))
+                .ToArray();
+            var grown = device.ApplyDirtyRecords(buffer, growthChanges, 16, 256);
+
+            Assert.True(grown.Succeeded, grown.Error);
+            Assert.Equal(1, grown.UploadRuns);
+            var afterGrow = device.UploadStatistics;
+            Assert.Equal(afterReuse.StagingAllocationCount + 1, afterGrow.StagingAllocationCount);
+            Assert.Equal(afterReuse.DirtyBatchSubmitCount + 1, afterGrow.DirtyBatchSubmitCount);
+            Assert.True(afterGrow.StagingCapacity > afterReuse.StagingCapacity);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(payload);
+        }
+    }
+
+    [Fact]
+    public async Task Empty_dirty_batch_is_no_op_without_staging_or_submit()
+    {
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var buffer = device.CreateStorageBuffer(64);
+
+        var result = device.ApplyDirtyRecords(buffer, ReadOnlySpan<RenderRecordChange>.Empty, 16, 4);
+
+        Assert.Equal(ComputeDirtyUpdateResult.Empty, result);
+        Assert.Equal(0, device.UploadStatistics.StagingAllocationCount);
+        Assert.Equal(0, device.UploadStatistics.DirtyBatchSubmitCount);
+    }
+
+    [Fact]
+    public async Task Invalid_dirty_ranges_are_rejected_without_allocating_staging()
+    {
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var buffer = device.CreateStorageBuffer(64);
+        var invalid = new[]
+        {
+            RenderRecordChange.Upsert(4, 7, 0, 16),
+            RenderRecordChange.Upsert(1, 7, 0, 17)
+        };
+
+        var result = device.ApplyDirtyRecords(buffer, invalid, 16, 4);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(0, result.AcceptedRecords);
+        Assert.Equal(2, result.RejectedRecords);
+        Assert.Equal(0, result.UploadRuns);
+        Assert.Equal(0, device.UploadStatistics.StagingAllocationCount);
+        Assert.Equal(0, device.UploadStatistics.DirtyBatchSubmitCount);
+    }
 }

@@ -33,7 +33,7 @@ public class VulkanHeadlessTests
     }
 
     [Fact]
-    public void GLSH_manifest_requires_explicit_std430_storage_buffer_abi()
+    public void Delta_Shader_manifest_requires_explicit_std430_storage_buffer_abi()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "clear-triangle.glsl.manifest.json");
         var json = File.ReadAllText(path);

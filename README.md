@@ -13,8 +13,8 @@ new architecture.
 - macOS: MoltenVK translates Vulkan/SPIR-V to Metal.
 - Windows and Linux: native Vulkan loader and drivers.
 - UI authoring: a Delta-owned XAML dialect and retained UI tree.
-- Shader source: GLSH-generated SPIR-V, with checked-in SPIR-V/GLSL fixtures
-  permitted until GLSH is ready.
+- Shader source: C# shader -> Delta.Shader-generated GLSL -> SPIR-V; checked-in
+  SPIR-V/GLSL fixtures remain available only for low-level fallback tests.
 - Math types: KibiHex.Maths where runtime/layout contracts allow it.
 
 SDL3-CS and Silk.NET have separate responsibilities. SDL owns windows, displays,
@@ -126,10 +126,10 @@ Do not implement the full WPF/Avalonia property system in the first milestone.
 Document every supported XAML construct and reject unknown constructs with a
 source location.
 
-## GLSH contract
+## Delta.Shader contract
 
-Delta.Render consumes SPIR-V plus a versioned GLSH reflection manifest. It does
-not parse C# shader source or reproduce GLSH layout rules. The canonical shared
+Delta.Render consumes SPIR-V plus a versioned Delta.Shader reflection manifest. It does
+not parse C# shader source or reproduce Delta.Shader layout rules. The canonical shared
 structure ABI is `std430` with explicit member `offset` and `stride` metadata;
 SSBO is the supported resource kind for this delivery. The manifest reader
 rejects missing or ambiguous ABI metadata, overlapping members, unsupported
@@ -140,9 +140,13 @@ current ABI. Pipeline creation validates descriptor sets, push constants,
 specialization constants, vertex inputs, and required capabilities against the
 manifest and selected physical device.
 
-Until GLSH produces graphics shaders, use minimal checked-in Vulkan GLSL/SPIR-V
-fixtures plus a checked-in manifest fixture. Keep resource layouts identical to
-the manifest contract and validate the manifest before any future GPU upload.
+The compute smoke uses the reproducible external chain in
+`tools/run-delta-shader-compute-smoke.sh`: Delta.Shader emits GLSL from the checked-in C# shader
+project, `glslangValidator` emits SPIR-V, `spirv-val` validates it, and the
+Delta.Render sample consumes that generated file. The checked-in compute SPIR-V
+fixture is not used by this proof. Delta.Shader currently emits GLSL rather than SPIR-V
+or a reflection manifest; the explicit Delta.Render metadata passed to pipeline
+creation therefore remains the bridge until Delta.Shader exposes those artifacts.
 
 ## Validation and performance
 
@@ -170,7 +174,7 @@ the manifest contract and validate the manifest before any future GPU upload.
 7. Render extraction and a small render graph.
 8. Retained UI tree, layout, input routing, and rectangle/image batches.
 9. XAML subset parser/compiler and one editor-style sample.
-10. Text shaping/rasterization, docking, multiple windows, and GLSH integration.
+10. Text shaping/rasterization, docking, multiple windows, and Delta.Shader integration.
 
 The first delivery ends at step 4. It must include a macOS arm64 run through
 MoltenVK and platform code structured so Windows/Linux do not inherit Apple-only
@@ -183,4 +187,34 @@ requirements.
 - complete WPF/Avalonia XAML compatibility;
 - a general web/HTML/CSS engine;
 - ray tracing, virtual texturing, or a production material system;
-- modifying DeltaECS or GLSH internals.
+- modifying DeltaECS or Delta.Shader internals.
+
+
+## CI, tests, and benchmarks
+
+The GitHub Actions workflow is [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Pull requests and pushes to `main` build in Release, run correctness tests, and
+perform BenchmarkDotNet discovery only; they do not record performance numbers.
+Measured benchmarks run only from **Actions → Build, tests and benchmarks → Run
+workflow** with `run_benchmarks=true`. Results are uploaded from
+`artifacts/benchmarks` for 30 days.
+
+Repository conventions:
+
+- correctness projects are named `*.Tests.csproj`; projects using
+  `Microsoft.NET.Test.Sdk` run through `dotnet test`, while custom executable
+  harnesses must be listed explicitly in the workflow and return a non-zero exit
+  code on failure;
+- BenchmarkDotNet projects are named `*.Benchmarks.csproj`; this filename is how
+  the workflow discovers them;
+- their entry point must forward CLI arguments with
+  `BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args)`;
+- mark the Delta implementation with `[Benchmark(Baseline = true)]` within every
+  comparable benchmark category; use exactly one baseline per category;
+- add sibling repositories to the checkout steps whenever a
+  `ProjectReference` escapes this repository.
+
+A benchmark added without the naming convention or without CLI argument
+forwarding is not registered and must not be treated as CI coverage. Shared
+GitHub runners are suitable for comparisons within one run, not for small
+cross-run regression claims.

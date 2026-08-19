@@ -20,7 +20,7 @@ Delivery 1 requires one Vulkan renderer stack on three desktop platforms. The re
 - `SDL3-CS.Windows` / `SDL3-CS.Linux` / `SDL3-CS.MacOS`: **3.4.12.6** — **Zlib**
 - `Silk.NET.Vulkan`: **2.23.0** — **Apache-2.0**
 - `Silk.NET.MoltenVK.Native`: **2.23.0** — **Apache-2.0 / upstream BSD-3-Clause for MoltenVK artifacts where applicable**
-- GLSH is not modified in this delivery; renderer uses minimal checked-in shader fixtures only as placeholders.
+- Delta.Shader is not modified in this delivery; renderer uses minimal checked-in shader fixtures only as placeholders.
 
 ## Portability policy
 - **Windows/Linux:** native `SDL3-CS.<Platform>` + native Vulkan loader
