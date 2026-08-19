@@ -22,6 +22,7 @@ internal static class Program
         }
 
         var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
+        var interactive = args.Any(a => string.Equals(a, "--interactive", StringComparison.OrdinalIgnoreCase));
 
         var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
         if (headless)
@@ -79,8 +80,10 @@ internal static class Program
                 var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
                     ? Math.Max(1, parsedFrames)
                     : 1;
-                for (var i = 0; i < frames; i++)
+                var renderedFrames = 0;
+                while (interactive || renderedFrames < frames)
                 {
+                    Sdl3WindowFactory.PumpEvents();
                     var frameState = session.BeginFrame();
                     if (!frameState.IsValid)
                     {
@@ -95,8 +98,10 @@ internal static class Program
                         Console.Error.WriteLine("Failed to render fullscreen graphics frame.");
                         return 1;
                     }
+
+                    renderedFrames++;
                 }
-                Console.WriteLine($"graphics=fullscreen-rounded-rectangle frames={frames} pass=present");
+                Console.WriteLine($"graphics=fullscreen-rounded-rectangle frames={renderedFrames} pass=present");
             }
         }
         catch (Exception ex)
