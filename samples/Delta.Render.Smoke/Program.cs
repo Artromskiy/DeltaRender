@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -19,6 +20,8 @@ internal static class Program
         {
             return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"), GetOption(args, "--compute-manifest"));
         }
+
+        var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
 
         var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
         if (headless)
@@ -46,17 +49,54 @@ internal static class Program
             await using var _ = renderer;
 
             await using IRenderWindowFrameSession session = renderer.CreateWindowSession(window);
-            var frameState = session.BeginFrame();
-            if (!frameState.IsValid)
+            if (clearOnly)
             {
-                Console.Error.WriteLine("Frame not ready.");
-                return 1;
+                var frameState = session.BeginFrame();
+                if (!frameState.IsValid || !session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
+                {
+                    Console.Error.WriteLine("Failed to render clear frame.");
+                    return 1;
+                }
             }
-
-            if (!session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
+            else
             {
-                Console.Error.WriteLine("Failed to render frame.");
-                return 1;
+                var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.spv");
+                var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.spv");
+                var vertexManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.shader.json");
+                var fragmentManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.shader.json");
+                if (!File.Exists(vertexPath) || !File.Exists(fragmentPath) ||
+                    !File.Exists(vertexManifestPath) || !File.Exists(fragmentManifestPath))
+                {
+                    Console.Error.WriteLine("Graphics fixtures were not found; use --clear for the swapchain-only path.");
+                    return 1;
+                }
+
+                var program = new GraphicsShaderProgram(
+                    LoadShaderArtifact(vertexPath, vertexManifestPath),
+                    LoadShaderArtifact(fragmentPath, fragmentManifestPath));
+                await using var pipeline = session.CreateGraphicsPipeline(in program);
+                var stopwatch = Stopwatch.StartNew();
+                var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
+                    ? Math.Max(1, parsedFrames)
+                    : 1;
+                for (var i = 0; i < frames; i++)
+                {
+                    var frameState = session.BeginFrame();
+                    if (!frameState.IsValid)
+                    {
+                        Console.Error.WriteLine("Graphics frame not ready.");
+                        return 1;
+                    }
+
+                    var parameters = new GraphicsFrameParameters(frameState.Metrics.Width, frameState.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                    if (!session.DrawFullscreenTriangle(pipeline, in parameters) ||
+                        !session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
+                    {
+                        Console.Error.WriteLine("Failed to render fullscreen graphics frame.");
+                        return 1;
+                    }
+                }
+                Console.WriteLine($"graphics=fullscreen-rounded-rectangle frames={frames} pass=present");
             }
         }
         catch (Exception ex)
@@ -66,7 +106,15 @@ internal static class Program
             return 1;
         }
 
+        Sdl3WindowFactory.PumpEvents();
         return 0;
+    }
+
+    private static DeltaShaderArtifact LoadShaderArtifact(string spirvPath, string manifestPath)
+    {
+        var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(File.ReadAllText(manifestPath))
+            ?? throw new InvalidDataException($"Shader manifest was empty: {manifestPath}");
+        return new DeltaShaderArtifact(File.ReadAllBytes(spirvPath), manifest);
     }
 
     private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath, string? externalManifestPath)

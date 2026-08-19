@@ -48,6 +48,10 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
 
     bool EndFrame(in RenderFrameState frameState, ReadOnlySpan<RenderRecordChange> dirtyRecords);
 
+    IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram);
+
+    bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters);
+
     bool Resize(WindowMetrics metrics);
 }
 

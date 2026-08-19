@@ -15,7 +15,7 @@ new architecture.
 - UI authoring: a Delta-owned XAML dialect and retained UI tree.
 - Shader source: C# shader -> Delta.Shader-generated GLSL -> SPIR-V; checked-in
   SPIR-V/GLSL fixtures remain available only for low-level fallback tests.
-- Math types: KibiHex.Maths where runtime/layout contracts allow it.
+- Math types: Delta.Maths where runtime/layout contracts allow it.
 
 SDL3-CS and Silk.NET have separate responsibilities. SDL owns windows, displays,
 input, DPI, clipboard, cursors, and creation of a Vulkan surface. The engine or
@@ -154,6 +154,35 @@ SPIR-V, and `.shader.json` from the checked-in C# shader project; the Delta.Rend
 sample loads the generated SPIR-V and manifest into `ShaderArtifact`, then runs
 the dispatch/readback oracle. The checked-in compute SPIR-V fixture remains only
 for the raw low-level fallback tests.
+
+## Graphics vertical slice
+
+`IRenderWindowFrameSession.CreateGraphicsPipeline` accepts a paired
+`GraphicsShaderProgram`, and `DrawFullscreenTriangle` records one vertexless
+fullscreen draw between `BeginFrame` and `EndFrame`. The Vulkan implementation
+uses the swapchain render pass, dynamic viewport/scissor, alpha blending, and a
+single push-constant block: `resolution.xy` at offset 0, `time` at offset 8,
+and four reserved bytes at offset 12. The fragment fixture renders an animated,
+analytically anti-aliased rounded rectangle with `fwidth`/`smoothstep`.
+
+`GraphicsShaderProgram` accepts the same versioned `ShaderArtifact` used by the
+compute path. Vertex/fragment stage identity, emitted entry-point names,
+interfaces, and push-constant layout come from `Delta.Shader.Abstractions`;
+Delta.Render does not define a second shader manifest. The checked-in graphics
+fixtures are reproducible outputs of the C# `FullscreenUi` shader and retain
+their `.shader.json` manifests next to the validated SPIR-V.
+
+The sample's default path opens the SDL3 window and presents the rounded
+rectangle; `--clear` retains the swapchain-only fallback and `--frames N`
+drives a bounded animation. SDL event/input pumping remains outside the
+renderer and the sample calls the explicit `Sdl3WindowFactory.PumpEvents()`
+host hook once before teardown; it does not add an input subsystem.
+
+The next bounded UI contract is: instanced quad batches with per-instance
+transform/color, explicit clip rectangles mapped to scissor regions, a
+texture/font atlas binding, SDF shape and glyph batches, and stable batch keys
+for material/clip/texture changes. It does not yet implement retained UI,
+text shaping, atlas uploads, or hierarchy.
 
 ## Validation and performance
 

@@ -676,6 +676,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     private readonly Fence _renderFence;
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
+    private readonly List<VulkanGraphicsPipeline> _graphicsPipelines = new();
 
     private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
 
@@ -683,6 +684,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     private readonly Format _imageFormat;
     private WindowMetrics _metrics;
     private uint _activeImageIndex;
+    private VulkanGraphicsPipeline? _pendingGraphicsPipeline;
+    private GraphicsFrameParameters _pendingFrameParameters;
 
     internal VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
@@ -747,6 +750,29 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     }
 
     public RenderWindowId WindowId => _windowId;
+
+    public IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var pipeline = CreateGraphicsPipelineCore(in shaderProgram);
+        _graphicsPipelines.Add(pipeline);
+        return pipeline;
+    }
+
+    public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inFrame || pipeline is not VulkanGraphicsPipeline graphicsPipeline ||
+            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive || !parameters.IsValid)
+        {
+            return false;
+        }
+
+        _pendingGraphicsPipeline = graphicsPipeline;
+        _pendingFrameParameters = parameters;
+        return true;
+    }
+
     public RenderFrameState BeginFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -902,6 +928,32 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
             }
 
             api.CmdBeginRenderPass(_commandBuffer, &renderPassInfo, SubpassContents.Inline);
+            if (_pendingGraphicsPipeline is { IsAlive: true })
+            {
+                var pipeline = _pendingGraphicsPipeline;
+                api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, pipeline.Pipeline);
+
+                var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
+                var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = _extent };
+                api.CmdSetViewport(_commandBuffer, 0, 1, new[] { viewport });
+                api.CmdSetScissor(_commandBuffer, 0, 1, new[] { scissor });
+
+                var pushConstants = new GraphicsPushConstants
+                {
+                    ResolutionX = _pendingFrameParameters.ResolutionX,
+                    ResolutionY = _pendingFrameParameters.ResolutionY,
+                    TimeSeconds = _pendingFrameParameters.TimeSeconds,
+                    Reserved = 0
+                };
+                api.CmdPushConstants(
+                    _commandBuffer,
+                    pipeline.PipelineLayout,
+                    ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                    0,
+                    (uint)sizeof(GraphicsPushConstants),
+                    &pushConstants);
+                api.CmdDraw(_commandBuffer, 3, 1, 0, 0);
+            }
             api.CmdEndRenderPass(_commandBuffer);
             if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
             {
@@ -953,9 +1005,224 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         finally
         {
             _inFrame = false;
+            _pendingGraphicsPipeline = null;
         }
 
         return success;
+    }
+
+    private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in GraphicsShaderProgram shaderProgram)
+    {
+        if (shaderProgram.Vertex.Stage != Delta.Shader.Abstractions.ShaderStage.Vertex ||
+            shaderProgram.Fragment.Stage != Delta.Shader.Abstractions.ShaderStage.Fragment)
+        {
+            throw new ArgumentException("Graphics shader programs must contain vertex and fragment stages.", nameof(shaderProgram));
+        }
+
+        ValidateGraphicsArtifact(shaderProgram.Vertex, nameof(shaderProgram));
+        ValidateGraphicsArtifact(shaderProgram.Fragment, nameof(shaderProgram));
+
+        var vertexEntryPoint = SpirvEntryPointReader.ReadGraphicsEntryPoint(shaderProgram.Vertex.Spirv, vertex: true);
+        var fragmentEntryPoint = SpirvEntryPointReader.ReadGraphicsEntryPoint(shaderProgram.Fragment.Spirv, vertex: false);
+        if (!string.Equals(vertexEntryPoint, shaderProgram.Vertex.EntryPoint, StringComparison.Ordinal) ||
+            !string.Equals(fragmentEntryPoint, shaderProgram.Fragment.EntryPoint, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Graphics shader entry points must match their SPIR-V OpEntryPoint names.", nameof(shaderProgram));
+        }
+
+        var api = _renderer.Api;
+        var vertexWords = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(shaderProgram.Vertex.Spirv);
+        var fragmentWords = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(shaderProgram.Fragment.Spirv);
+        ShaderModule vertexModule = default;
+        ShaderModule fragmentModule = default;
+        PipelineLayout pipelineLayout = default;
+        Pipeline pipeline = default;
+        try
+        {
+            fixed (uint* vertexCode = vertexWords)
+            {
+                var shaderInfo = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)(vertexWords.Length * sizeof(uint)),
+                    PCode = vertexCode
+                };
+                EnsureSuccess(api.CreateShaderModule(_device, shaderInfo, null, out vertexModule), "CreateShaderModule(vertex)");
+            }
+
+            fixed (uint* fragmentCode = fragmentWords)
+            {
+                var shaderInfo = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)(fragmentWords.Length * sizeof(uint)),
+                    PCode = fragmentCode
+                };
+                EnsureSuccess(api.CreateShaderModule(_device, shaderInfo, null, out fragmentModule), "CreateShaderModule(fragment)");
+            }
+
+            var pushConstantRange = new PushConstantRange
+            {
+                StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                Offset = 0,
+                Size = (uint)sizeof(GraphicsPushConstants)
+            };
+            var pipelineLayoutInfo = new PipelineLayoutCreateInfo
+            {
+                SType = StructureType.PipelineLayoutCreateInfo,
+                PushConstantRangeCount = 1,
+                PPushConstantRanges = &pushConstantRange
+            };
+            EnsureSuccess(api.CreatePipelineLayout(_device, pipelineLayoutInfo, null, out pipelineLayout), "CreatePipelineLayout(graphics)");
+
+            var vertexEntryPointBytes = System.Text.Encoding.UTF8.GetBytes(shaderProgram.Vertex.EntryPoint + "\0");
+            var fragmentEntryPointBytes = System.Text.Encoding.UTF8.GetBytes(shaderProgram.Fragment.EntryPoint + "\0");
+            fixed (byte* vertexEntryPointPtr = vertexEntryPointBytes)
+            fixed (byte* fragmentEntryPointPtr = fragmentEntryPointBytes)
+            {
+                var stages = stackalloc PipelineShaderStageCreateInfo[2];
+                stages[0] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.VertexBit,
+                    Module = vertexModule,
+                    PName = vertexEntryPointPtr
+                };
+                stages[1] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.FragmentBit,
+                    Module = fragmentModule,
+                    PName = fragmentEntryPointPtr
+                };
+
+                var vertexInput = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
+                var inputAssembly = new PipelineInputAssemblyStateCreateInfo
+                {
+                    SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                    Topology = PrimitiveTopology.TriangleList
+                };
+                var viewportState = new PipelineViewportStateCreateInfo
+                {
+                    SType = StructureType.PipelineViewportStateCreateInfo,
+                    ViewportCount = 1,
+                    ScissorCount = 1
+                };
+                var rasterization = new PipelineRasterizationStateCreateInfo
+                {
+                    SType = StructureType.PipelineRasterizationStateCreateInfo,
+                    PolygonMode = PolygonMode.Fill,
+                    CullMode = CullModeFlags.None,
+                    FrontFace = FrontFace.CounterClockwise,
+                    LineWidth = 1f
+                };
+                var multisample = new PipelineMultisampleStateCreateInfo
+                {
+                    SType = StructureType.PipelineMultisampleStateCreateInfo,
+                    RasterizationSamples = SampleCountFlags.Count1Bit
+                };
+                var blendAttachment = new PipelineColorBlendAttachmentState
+                {
+                    BlendEnable = true,
+                    SrcColorBlendFactor = BlendFactor.SrcAlpha,
+                    DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                    ColorBlendOp = BlendOp.Add,
+                    SrcAlphaBlendFactor = BlendFactor.One,
+                    DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                    AlphaBlendOp = BlendOp.Add,
+                    ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
+                };
+                var colorBlend = new PipelineColorBlendStateCreateInfo
+                {
+                    SType = StructureType.PipelineColorBlendStateCreateInfo,
+                    AttachmentCount = 1,
+                    PAttachments = &blendAttachment
+                };
+                var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+                var dynamicState = new PipelineDynamicStateCreateInfo
+                {
+                    SType = StructureType.PipelineDynamicStateCreateInfo,
+                    DynamicStateCount = 2,
+                    PDynamicStates = dynamicStates
+                };
+                var pipelineInfo = new GraphicsPipelineCreateInfo
+                {
+                    SType = StructureType.GraphicsPipelineCreateInfo,
+                    StageCount = 2,
+                    PStages = stages,
+                    PVertexInputState = &vertexInput,
+                    PInputAssemblyState = &inputAssembly,
+                    PViewportState = &viewportState,
+                    PRasterizationState = &rasterization,
+                    PMultisampleState = &multisample,
+                    PColorBlendState = &colorBlend,
+                    PDynamicState = &dynamicState,
+                    Layout = pipelineLayout,
+                    RenderPass = _renderPass,
+                    Subpass = 0
+                };
+                var pipelineOutputs = stackalloc Pipeline[1];
+                EnsureSuccess(api.CreateGraphicsPipelines(_device, default, 1, &pipelineInfo, null, pipelineOutputs), "CreateGraphicsPipelines");
+                pipeline = pipelineOutputs[0];
+            }
+
+            api.DestroyShaderModule(_device, vertexModule, null);
+            api.DestroyShaderModule(_device, fragmentModule, null);
+            vertexModule = default;
+            fragmentModule = default;
+            return new VulkanGraphicsPipeline(this, pipelineLayout, pipeline);
+        }
+        catch
+        {
+            if (vertexModule.Handle != default) api.DestroyShaderModule(_device, vertexModule, null);
+            if (fragmentModule.Handle != default) api.DestroyShaderModule(_device, fragmentModule, null);
+            if (pipeline.Handle != default) api.DestroyPipeline(_device, pipeline, null);
+            if (pipelineLayout.Handle != default) api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            throw;
+        }
+    }
+
+    private static void ValidateGraphicsArtifact(Delta.Shader.Abstractions.ShaderArtifact artifact, string parameterName)
+    {
+        if (artifact.FormatVersion != Delta.Shader.Abstractions.ShaderArtifact.CurrentFormatVersion)
+        {
+            throw new ArgumentException("Unsupported Delta.Shader artifact format.", parameterName);
+        }
+
+        var manifest = artifact.Manifest;
+        if (manifest.Version != Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion ||
+            string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        {
+            throw new ArgumentException("Unsupported or incomplete Delta.Shader graphics ABI manifest.", parameterName);
+        }
+
+        if (artifact.Spirv.Length == 0 || (artifact.Spirv.Length & 3) != 0)
+        {
+            throw new ArgumentException("Graphics SPIR-V must be non-empty and word aligned.", parameterName);
+        }
+
+        if (manifest.Resources.Count != 0)
+        {
+            throw new ArgumentException("The initial fullscreen graphics path does not support descriptor resources.", parameterName);
+        }
+    }
+
+    internal void DestroyGraphicsPipeline(VulkanGraphicsPipeline pipeline)
+    {
+        if (!_graphicsPipelines.Remove(pipeline))
+        {
+            return;
+        }
+
+        if (pipeline.Pipeline.Handle != default)
+        {
+            _renderer.Api.DestroyPipeline(_device, pipeline.Pipeline, null);
+        }
+        if (pipeline.PipelineLayout.Handle != default)
+        {
+            _renderer.Api.DestroyPipelineLayout(_device, pipeline.PipelineLayout, null);
+        }
+        pipeline.MarkDestroyed();
     }
 
     private static void EnsureSuccess(Result result, string operation)
@@ -1196,6 +1463,11 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         {
             api.DeviceWaitIdle(_device);
 
+            foreach (var pipeline in _graphicsPipelines.ToArray())
+            {
+                DestroyGraphicsPipeline(pipeline);
+            }
+
             for (var i = 0; i < _frameBuffers.Length; i++)
             {
                 api.DestroyFramebuffer(_device, _frameBuffers[i], null);
@@ -1216,5 +1488,41 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         }
 
         return ValueTask.CompletedTask;
+    }
+}
+
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+internal struct GraphicsPushConstants
+{
+    public float ResolutionX;
+    public float ResolutionY;
+    public float TimeSeconds;
+    public float Reserved;
+}
+
+public sealed unsafe class VulkanGraphicsPipeline : IGraphicsPipeline
+{
+    internal VulkanGraphicsPipeline(VulkanWindowSession owner, PipelineLayout pipelineLayout, Pipeline pipeline)
+    {
+        Owner = owner;
+        PipelineLayout = pipelineLayout;
+        Pipeline = pipeline;
+    }
+
+    internal VulkanWindowSession Owner { get; }
+    internal PipelineLayout PipelineLayout { get; private set; }
+    internal Pipeline Pipeline { get; private set; }
+    internal bool IsAlive => Pipeline.Handle != default && PipelineLayout.Handle != default;
+
+    public ValueTask DisposeAsync()
+    {
+        Owner.DestroyGraphicsPipeline(this);
+        return ValueTask.CompletedTask;
+    }
+
+    internal void MarkDestroyed()
+    {
+        PipelineLayout = default;
+        Pipeline = default;
     }
 }

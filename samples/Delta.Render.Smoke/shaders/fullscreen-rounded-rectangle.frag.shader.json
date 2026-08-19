@@ -1,0 +1,35 @@
+{
+  "Version": 2,
+  "Stage": 2,
+  "SourceEntryPointName": "Fragment",
+  "EntryPointName": "main",
+  "TargetProfile": "vulkan1.2",
+  "GlslVersion": "460",
+  "SpirvVersion": "1.5",
+  "StorageLayout": "std430",
+  "LocalSizeX": 0,
+  "LocalSizeY": 0,
+  "LocalSizeZ": 0,
+  "Resources": [],
+  "Inputs": [
+    { "Name": "fragmentCoord", "ParameterName": "fragmentCoord", "GlslName": "gl_FragCoord", "GlslType": "vec2", "Location": 0, "Builtin": "FragmentCoord" },
+    { "Name": "uv", "ParameterName": "uv", "GlslName": "varying_0", "GlslType": "vec2", "Location": 0, "Builtin": null }
+  ],
+  "Outputs": [
+    { "Name": "color", "ParameterName": "color", "GlslName": "fragColor", "GlslType": "vec4", "Location": 0, "Builtin": "FragmentColor" }
+  ],
+  "PushConstants": [
+    {
+      "Name": "DeltaPushConstants",
+      "ParameterName": "constants",
+      "GlslType": "DeltaStruct_Delta_Shader_TestShaders_FullscreenUi_UiPushConstants",
+      "Alignment": 8,
+      "Size": 16,
+      "ArrayStride": 16,
+      "Members": [
+        { "Name": "Resolution", "GlslName": "member_Resolution", "GlslType": "vec2", "Offset": 0, "Alignment": 8, "Size": 8, "ArrayStride": 8, "MatrixStride": null, "HostRepresentation": "std430", "Members": [] },
+        { "Name": "Time", "GlslName": "member_Time", "GlslType": "float", "Offset": 8, "Alignment": 4, "Size": 4, "ArrayStride": 4, "MatrixStride": null, "HostRepresentation": "std430", "Members": [] }
+      ]
+    }
+  ]
+}

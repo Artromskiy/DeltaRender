@@ -1,0 +1,21 @@
+#version 460
+layout(push_constant) uniform DeltaPushConstants
+{
+    vec2 member_Resolution;
+    float member_Time;
+} pushConstants;
+
+layout(location = 0) in vec2 varying_0;
+layout(location = 0) out vec4 fragColor;
+
+void main()
+{
+    vec2 p = (gl_FragCoord.xy / pushConstants.member_Resolution) * 2 - vec2(1, 1);
+    vec2 halfSize = vec2(0.55, 0.32);
+    vec2 q = abs(p) - halfSize + 0.12;
+    float distance = length(max(q, vec2(0, 0))) + min(max(q.x, q.y), 0) - 0.12;
+    float edge = fwidth(distance);
+    float mask = 1 - smoothstep(-edge, edge, distance);
+    float tint = 0.5 + 0.5 * sin(pushConstants.member_Time);
+    fragColor = vec4(0.08 + 0.2 * mask, 0.12 + 0.4 * mask, 0.2 + 0.5 * tint * mask, 1);
+}

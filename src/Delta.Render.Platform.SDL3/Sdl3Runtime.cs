@@ -7,8 +7,17 @@ internal static class Sdl3Runtime
 {
     private static bool _initialized;
     private static bool _vulkanLibraryLoaded;
+    private static int _windowCount;
 
     public static bool IsAvailable => true;
+
+    public static void PumpEvents()
+    {
+        if (_initialized)
+        {
+            SDL.PumpEvents();
+        }
+    }
 
     public static bool TryGetError(out string? error)
     {
@@ -76,6 +85,7 @@ internal static class Sdl3Runtime
             }
 
             windowHandle = unchecked((ulong)handle.ToInt64());
+            _windowCount++;
             return true;
         }
         catch (Exception ex)
@@ -95,6 +105,16 @@ internal static class Sdl3Runtime
         try
         {
             SDL.DestroyWindow(new IntPtr(unchecked((long)windowHandle)));
+            if (_windowCount > 0 && --_windowCount == 0)
+            {
+                if (_vulkanLibraryLoaded)
+                {
+                    SDL.VulkanUnloadLibrary();
+                    _vulkanLibraryLoaded = false;
+                }
+                SDL.Quit();
+                _initialized = false;
+            }
             return true;
         }
         catch
