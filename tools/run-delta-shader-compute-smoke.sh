@@ -32,7 +32,7 @@ SPIRV="$OUT/Compute.spv"
 MANIFEST="$OUT/Compute.shader.json"
 SMOKE="$ROOT/samples/Delta.Render.Smoke/bin/Release/net10.0/osx-arm64/Delta.Render.Smoke"
 
-run_bounded 90 dotnet run --no-restore --project "$DELTA_SHADER_TOOL" -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
+run_bounded 90 dotnet run --project "$DELTA_SHADER_TOOL" -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
 test -s "$GLSL"
 test -s "$SPIRV"
 test -s "$MANIFEST"

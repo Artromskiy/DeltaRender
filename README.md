@@ -140,7 +140,10 @@ is not supported or requested. If a future UBO path is added,
 `uniformBufferStandardLayout` must be requested explicitly at that time; it is
 not an implicit dependency of the current ABI.
 
-The compute smoke uses the reproducible external chain in
+The manifest keeps the source entry point (`SourceEntryPointName`) separate from
+the emitted Vulkan entry point (`EntryPointName`, currently `main`). Delta.Render
+checks the emitted name against the SPIR-V `OpEntryPoint` before creating the
+Vulkan pipeline. The compute smoke uses the reproducible external chain in
 `tools/run-delta-shader-compute-smoke.sh`: `delta-shader build` emits GLSL,
 SPIR-V, and `.shader.json` from the checked-in C# shader project; the Delta.Render
 sample loads the generated SPIR-V and manifest into `ShaderArtifact`, then runs

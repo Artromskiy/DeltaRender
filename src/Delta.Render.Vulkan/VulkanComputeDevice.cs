@@ -229,6 +229,14 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(artifact);
+        var actualEntryPoint = SpirvEntryPointReader.ReadComputeEntryPoint(artifact.Spirv);
+        if (!string.Equals(actualEntryPoint, artifact.EntryPoint, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Shader artifact entry point '{artifact.EntryPoint}' does not match SPIR-V entry point '{actualEntryPoint}'.",
+                nameof(artifact));
+        }
+
         var metadata = CreateComputeMetadata(artifact);
         return CreateComputePipeline(artifact.Spirv, in metadata);
     }

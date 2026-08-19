@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
 using Delta.Render.Vulkan;
@@ -58,7 +59,8 @@ public sealed class VulkanComputeTests
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
         var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
         {
-            EntryPointName = "Compute",
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
             LocalSizeX = 64,
             LocalSizeY = 1,
             LocalSizeZ = 1,
@@ -108,7 +110,8 @@ public sealed class VulkanComputeTests
         };
         var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
         {
-            EntryPointName = "Compute",
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
             LocalSizeX = 64,
             LocalSizeY = 1,
             LocalSizeZ = 1,
@@ -120,7 +123,8 @@ public sealed class VulkanComputeTests
 
         var invalidStrideArtifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
         {
-            EntryPointName = "Compute",
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
             LocalSizeX = 64,
             LocalSizeY = 1,
             LocalSizeZ = 1,
@@ -142,6 +146,43 @@ public sealed class VulkanComputeTests
         });
 
         Assert.Throws<ArgumentException>(() => device.CreateComputePipeline(invalidStrideArtifact));
+    }
+
+    [Fact]
+    public async Task Shader_artifact_rejects_manifest_entry_point_mismatch()
+    {
+        var words = new uint[]
+        {
+            0x07230203, 0x00010500, 0, 2, 0,
+            (5u << 16) | 15u, 5, 1, 0x706d6f43, 0x00657475
+        };
+        var artifact = new DeltaShaderArtifact(MemoryMarshal.AsBytes(words.AsSpan()).ToArray(), new DeltaShaderManifest
+        {
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[]
+            {
+                new DeltaShaderResource
+                {
+                    Name = "values",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadWrite,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                }
+            }
+        });
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        var error = Assert.Throws<ArgumentException>(() => device.CreateComputePipeline(artifact));
+        Assert.Contains("main", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
