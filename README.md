@@ -128,25 +128,24 @@ source location.
 
 ## Delta.Shader contract
 
-Delta.Render consumes SPIR-V plus a versioned Delta.Shader reflection manifest. It does
-not parse C# shader source or reproduce Delta.Shader layout rules. The canonical shared
-structure ABI is `std430` with explicit member `offset` and `stride` metadata;
-SSBO is the supported resource kind for this delivery. The manifest reader
-rejects missing or ambiguous ABI metadata, overlapping members, unsupported
-layout features, and UBO resources. `scalarBlockLayout` is not supported or
-requested. If a future UBO path is added, `uniformBufferStandardLayout` must be
-requested explicitly at that time; it is not an implicit dependency of the
-current ABI. Pipeline creation validates descriptor sets, push constants,
-specialization constants, vertex inputs, and required capabilities against the
-manifest and selected physical device.
+Delta.Render consumes `ShaderArtifact` from `Delta.Shader.Abstractions`. The
+artifact contains SPIR-V bytes and a versioned reflection manifest; Delta.Render
+does not parse C# shader source or reference Roslyn/Compiler projects. The
+canonical shared structure ABI is `std430` with explicit offset, size, alignment,
+array-stride, and optional matrix-stride metadata; SSBO is the supported resource
+kind for this delivery. The Vulkan consumer validates artifact format/version,
+compute stage/local sizes, descriptor set/binding/access, storage-buffer kind,
+and the available std430 ABI fields before creating a pipeline. `scalarBlockLayout`
+is not supported or requested. If a future UBO path is added,
+`uniformBufferStandardLayout` must be requested explicitly at that time; it is
+not an implicit dependency of the current ABI.
 
 The compute smoke uses the reproducible external chain in
-`tools/run-delta-shader-compute-smoke.sh`: Delta.Shader emits GLSL from the checked-in C# shader
-project, `glslangValidator` emits SPIR-V, `spirv-val` validates it, and the
-Delta.Render sample consumes that generated file. The checked-in compute SPIR-V
-fixture is not used by this proof. Delta.Shader currently emits GLSL rather than SPIR-V
-or a reflection manifest; the explicit Delta.Render metadata passed to pipeline
-creation therefore remains the bridge until Delta.Shader exposes those artifacts.
+`tools/run-delta-shader-compute-smoke.sh`: `delta-shader build` emits GLSL,
+SPIR-V, and `.shader.json` from the checked-in C# shader project; the Delta.Render
+sample loads the generated SPIR-V and manifest into `ShaderArtifact`, then runs
+the dispatch/readback oracle. The checked-in compute SPIR-V fixture remains only
+for the raw low-level fallback tests.
 
 ## Validation and performance
 

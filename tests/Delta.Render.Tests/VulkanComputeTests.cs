@@ -1,6 +1,10 @@
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
 using Delta.Render.Vulkan;
+using DeltaShaderAccess = Delta.Shader.Abstractions.ShaderResourceAccess;
+using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
+using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
+using DeltaShaderResource = Delta.Shader.Abstractions.ShaderAbiResource;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -46,6 +50,98 @@ public sealed class VulkanComputeTests
                 Assert.Equal((uint)(i * 2 + 1), actual[i]);
             }
         }
+    }
+
+    [Fact]
+    public async Task Shader_artifact_manifest_creates_compute_pipeline_without_raw_metadata()
+    {
+        var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
+        var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
+        {
+            EntryPointName = "Compute",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[]
+            {
+                new DeltaShaderResource
+                {
+                    Name = "values",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadWrite,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                }
+            }
+        });
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var pipeline = device.CreateComputePipeline(artifact);
+
+        Assert.Equal(ComputeAbiLayout.Std430, pipeline.Metadata.AbiLayout);
+        Assert.Equal(64u, pipeline.Metadata.LocalSizeX);
+        var binding = Assert.Single(pipeline.Metadata.Bindings.Span.ToArray());
+        Assert.Equal(ComputeBufferAccess.ReadWrite, binding.Access);
+        Assert.Equal(0u, binding.Set);
+        Assert.Equal(0u, binding.Binding);
+    }
+
+    [Fact]
+    public async Task Shader_artifact_manifest_rejects_duplicate_bindings_and_invalid_stride()
+    {
+        var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
+        var resource = new DeltaShaderResource
+        {
+            Name = "values",
+            Category = "storage-buffer",
+            Set = 0,
+            Binding = 0,
+            Access = DeltaShaderAccess.ReadWrite,
+            Layout = "std430",
+            Alignment = 4,
+            Size = 4,
+            ArrayStride = 4
+        };
+        var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
+        {
+            EntryPointName = "Compute",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[] { resource, resource }
+        });
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        Assert.Throws<ArgumentException>(() => device.CreateComputePipeline(artifact));
+
+        var invalidStrideArtifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
+        {
+            EntryPointName = "Compute",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[]
+            {
+                new DeltaShaderResource
+                {
+                    Name = "values",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadWrite,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 2
+                }
+            }
+        });
+
+        Assert.Throws<ArgumentException>(() => device.CreateComputePipeline(invalidStrideArtifact));
     }
 
     [Fact]

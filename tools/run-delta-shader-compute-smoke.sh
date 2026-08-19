@@ -29,12 +29,13 @@ DELTA_SHADER_TOOL="$DELTA_SHADER_ROOT/src/Delta.Shader.Tool/Delta.Shader.Tool.cs
 SHADER_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.csproj"
 GLSL="$OUT/Compute.glsl"
 SPIRV="$OUT/Compute.spv"
+MANIFEST="$OUT/Compute.shader.json"
 SMOKE="$ROOT/samples/Delta.Render.Smoke/bin/Release/net10.0/osx-arm64/Delta.Render.Smoke"
 
-run_bounded 90 dotnet run --no-restore --project "$DELTA_SHADER_TOOL" -- emit "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
+run_bounded 90 dotnet run --no-restore --project "$DELTA_SHADER_TOOL" -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
 test -s "$GLSL"
-glslangValidator -V --target-env vulkan1.2 -S comp "$GLSL" -o "$SPIRV"
-spirv-val --target-env vulkan1.2 "$SPIRV"
+test -s "$SPIRV"
+test -s "$MANIFEST"
 
 run_bounded 120 dotnet build "$ROOT/samples/Delta.Render.Smoke/Delta.Render.Smoke.csproj" -c Release -r osx-arm64 --no-restore --nologo -m:1
-run_bounded 60 "$SMOKE" --compute --compute-shader "$SPIRV"
+run_bounded 60 "$SMOKE" --compute --compute-shader "$SPIRV" --compute-manifest "$MANIFEST"

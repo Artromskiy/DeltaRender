@@ -1,3 +1,5 @@
+using Delta.Shader.Abstractions;
+
 namespace Delta.Render.Core;
 
 public enum ComputeAbiLayout : byte
@@ -99,6 +101,8 @@ public interface IComputeDevice : IAsyncDisposable
     IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata);
 
     IComputePipeline CreateComputePipeline(ReadOnlySpan<byte> spirvBytes, in ComputeShaderMetadata metadata);
+
+    IComputePipeline CreateComputePipeline(ShaderArtifact artifact);
 
     ComputeDispatchResult Dispatch(
         IComputePipeline pipeline,

@@ -1,10 +1,13 @@
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Delta.Render.Core;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.Vulkan;
+using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
+using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
 
 namespace Delta.Render.Smoke;
 
@@ -14,7 +17,7 @@ internal static class Program
     {
         if (args.Any(a => string.Equals(a, "--compute", StringComparison.OrdinalIgnoreCase)))
         {
-            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"));
+            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"), GetOption(args, "--compute-manifest"));
         }
 
         var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
@@ -66,7 +69,7 @@ internal static class Program
         return 0;
     }
 
-    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath)
+    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath, string? externalManifestPath)
     {
         var shaderPath = externalShaderPath ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
         if (!File.Exists(shaderPath))
@@ -85,7 +88,38 @@ internal static class Program
             new[] { new ComputeDescriptorBinding(0, 0, ComputeDescriptorKind.StorageBuffer, ComputeBufferAccess.ReadWrite) });
 
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
-        await using var pipeline = device.CreateComputePipeline(shader, in metadata);
+        IComputePipeline pipeline;
+        if (externalShaderPath is not null)
+        {
+            if (string.IsNullOrWhiteSpace(externalManifestPath) || !File.Exists(externalManifestPath))
+            {
+                Console.Error.WriteLine("Generated compute smoke requires --compute-manifest alongside --compute-shader.");
+                return 1;
+            }
+
+            var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(await File.ReadAllTextAsync(externalManifestPath));
+            if (manifest is null)
+            {
+                Console.Error.WriteLine($"Delta.Shader manifest was empty: {externalManifestPath}");
+                return 1;
+            }
+
+            pipeline = device.CreateComputePipeline(new DeltaShaderArtifact(shader, manifest));
+        }
+        else
+        {
+            pipeline = device.CreateComputePipeline(shader, in metadata);
+        }
+
+        await using (pipeline)
+        {
+            return await RunComputeSizesAsync(device, pipeline);
+        }
+    }
+
+    private static async Task<int> RunComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
+    {
+        var localSizeX = pipeline.Metadata.LocalSizeX;
 
         foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
         {
@@ -107,7 +141,7 @@ internal static class Program
             var bytes = MemoryMarshal.AsBytes(values.AsSpan());
             if (!device.Upload(buffer, bytes)) return FailCompute(size, "upload");
 
-            var groups = (uint)((size + 63) / 64);
+            var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
             var dispatch = device.Dispatch(pipeline, new[] { new ComputeBufferBinding(0, 0, buffer) }, groups);
             if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed) return FailCompute(size, dispatch.Error ?? "dispatch");
 

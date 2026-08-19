@@ -2,6 +2,10 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
+using DeltaShaderAccess = Delta.Shader.Abstractions.ShaderResourceAccess;
+using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
+using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
+using DeltaShaderStage = Delta.Shader.Abstractions.ShaderStage;
 using Silk.NET.Core;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
@@ -219,6 +223,14 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         }
 
         return CreateComputePipeline(MemoryMarshal.Cast<byte, uint>(spirvBytes), in metadata);
+    }
+
+    public IComputePipeline CreateComputePipeline(DeltaShaderArtifact artifact)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(artifact);
+        var metadata = CreateComputeMetadata(artifact);
+        return CreateComputePipeline(artifact.Spirv, in metadata);
     }
 
     public IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata)
@@ -590,6 +602,64 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                 throw new ArgumentException("Only set 0, single storage-buffer bindings are supported.", nameof(metadata));
             for (var j = 0; j < i; j++) if (bindings[j].Binding == binding.Binding) throw new ArgumentException("Descriptor bindings must be unique.", nameof(metadata));
         }
+    }
+
+    private static ComputeShaderMetadata CreateComputeMetadata(DeltaShaderArtifact artifact)
+    {
+        var manifest = artifact.Manifest;
+        if (artifact.FormatVersion != DeltaShaderArtifact.CurrentFormatVersion)
+            throw new ArgumentException($"Unsupported Delta.Shader artifact format {artifact.FormatVersion}; expected {DeltaShaderArtifact.CurrentFormatVersion}.", nameof(artifact));
+        if (manifest.Version != DeltaShaderManifest.CurrentVersion)
+            throw new ArgumentException($"Unsupported Delta.Shader ABI manifest version {manifest.Version}; expected {DeltaShaderManifest.CurrentVersion}.", nameof(artifact));
+        if (manifest.Stage != DeltaShaderStage.Compute)
+            throw new ArgumentException("Only compute ShaderArtifact instances are supported.", nameof(artifact));
+        if (string.IsNullOrWhiteSpace(manifest.EntryPointName))
+            throw new ArgumentException("Delta.Shader ABI manifest must declare an entry point.", nameof(artifact));
+        if (!string.Equals(manifest.StorageLayout, "std430", StringComparison.Ordinal))
+            throw new ArgumentException("Only std430 Delta.Shader storage layout is supported.", nameof(artifact));
+        if (manifest.LocalSizeX == 0 || manifest.LocalSizeY == 0 || manifest.LocalSizeZ == 0)
+            throw new ArgumentException("Delta.Shader ABI manifest must declare non-zero local sizes.", nameof(artifact));
+
+        var resources = manifest.Resources ?? Array.Empty<Delta.Shader.Abstractions.ShaderAbiResource>();
+        if (resources.Count == 0)
+            throw new ArgumentException("Delta.Shader ABI manifest must declare at least one resource.", nameof(artifact));
+
+        var bindings = new ComputeDescriptorBinding[resources.Count];
+        var seenBindings = new HashSet<(uint Set, uint Binding)>();
+        for (var i = 0; i < resources.Count; i++)
+        {
+            var resource = resources[i];
+            if (resource.Set != 0)
+                throw new ArgumentException($"Resource '{resource.Name}' uses descriptor set {resource.Set}; only set 0 is supported.", nameof(artifact));
+            if (!seenBindings.Add((resource.Set, resource.Binding)))
+                throw new ArgumentException($"Delta.Shader ABI manifest contains duplicate descriptor set/binding {resource.Set}/{resource.Binding}.", nameof(artifact));
+            if (string.IsNullOrWhiteSpace(resource.Name) || !string.Equals(resource.Category, "storage-buffer", StringComparison.Ordinal))
+                throw new ArgumentException($"Resource '{resource.Name}' is not a storage-buffer resource.", nameof(artifact));
+            if (!string.Equals(resource.Layout, "std430", StringComparison.Ordinal))
+                throw new ArgumentException($"Resource '{resource.Name}' does not declare std430 layout.", nameof(artifact));
+            if (resource.Alignment == 0 || resource.Alignment % 4 != 0 || resource.Offset % 4 != 0 || resource.Size == 0 || resource.ArrayStride == 0 || resource.ArrayStride % 4 != 0 || resource.ArrayStride < resource.Size)
+                throw new ArgumentException($"Resource '{resource.Name}' has invalid std430 offset/size/stride metadata.", nameof(artifact));
+            if (checked(resource.Offset + resource.Size) > resource.ArrayStride)
+                throw new ArgumentException($"Resource '{resource.Name}' member range exceeds its array stride.", nameof(artifact));
+            if (resource.MatrixStride is uint matrixStride && (matrixStride == 0 || matrixStride % 4 != 0))
+                throw new ArgumentException($"Resource '{resource.Name}' has invalid matrix stride metadata.", nameof(artifact));
+
+            var access = resource.Access switch
+            {
+                DeltaShaderAccess.ReadOnly => ComputeBufferAccess.ReadOnly,
+                DeltaShaderAccess.WriteOnly => ComputeBufferAccess.WriteOnly,
+                DeltaShaderAccess.ReadWrite => ComputeBufferAccess.ReadWrite,
+                _ => throw new ArgumentException($"Resource '{resource.Name}' has unsupported access metadata.", nameof(artifact))
+            };
+            bindings[i] = new ComputeDescriptorBinding(0, resource.Binding, ComputeDescriptorKind.StorageBuffer, access);
+        }
+
+        return new ComputeShaderMetadata(
+            ComputeAbiLayout.Std430,
+            manifest.LocalSizeX,
+            manifest.LocalSizeY,
+            manifest.LocalSizeZ,
+            bindings);
     }
 
     private bool TryGetBuffer(IComputeStorageBuffer buffer, out VulkanStorageBuffer result)

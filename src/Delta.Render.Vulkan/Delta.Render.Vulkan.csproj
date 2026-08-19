@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../Delta.Shader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
     <ProjectReference Include="..\\Delta.Render.Core\\Delta.Render.Core.csproj" />
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
