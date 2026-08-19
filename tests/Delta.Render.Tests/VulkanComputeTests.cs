@@ -186,6 +186,221 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
+    public async Task Multi_ssbo_artifact_dispatch_matches_oracle_and_repeated_dispatch()
+    {
+        var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi.spv"));
+        var artifact = CreateMultiBufferArtifact(shader);
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var pipeline = device.CreateComputePipeline(artifact);
+        Assert.Equal(2, pipeline.Metadata.Bindings.Length);
+
+        await using var input = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadOnly);
+        await using var output = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadWrite);
+        var values = Enumerable.Range(0, 64).Select(static value => (uint)value).ToArray();
+        var inputBytes = MemoryMarshal.AsBytes(values.AsSpan()).ToArray();
+        Assert.True(device.Upload(input, inputBytes));
+
+        var bindings = new[]
+        {
+            new ComputeBufferBinding(0, 0, input),
+            new ComputeBufferBinding(0, 1, output)
+        };
+        var first = device.Dispatch(pipeline, bindings, 1);
+        Assert.True(first.Succeeded, first.Error);
+        Assert.Equal(ComputeDispatchStatus.Executed, first.Status);
+
+        var outputBytes = new byte[inputBytes.Length];
+        Assert.True(device.Readback(output, outputBytes));
+        Assert.Equal(Enumerable.Range(0, 64).Select(static value => (uint)(value * 2 + 1)), MemoryMarshal.Cast<byte, uint>(outputBytes).ToArray());
+
+        var replacement = new uint[] { 100, 101, 102, 103 };
+        var replacementBytes = MemoryMarshal.AsBytes(replacement.AsSpan()).ToArray();
+        Assert.True(device.UploadRanges(input, new[] { new ComputeUploadRange(0, replacementBytes) }));
+        var repeated = device.Dispatch(pipeline, bindings, 1);
+        Assert.True(repeated.Succeeded, repeated.Error);
+        Assert.True(device.Readback(output, outputBytes));
+        var repeatedValues = MemoryMarshal.Cast<byte, uint>(outputBytes);
+        Assert.Equal(201u, repeatedValues[0]);
+        Assert.Equal(207u, repeatedValues[3]);
+        Assert.Equal(9u, repeatedValues[4]);
+        var repeatedReadback = new byte[outputBytes.Length];
+        Assert.True(device.Readback(output, repeatedReadback));
+        Assert.Equal(outputBytes, repeatedReadback);
+    }
+
+    [Fact]
+    public async Task Multi_set_zero_binding_and_set_one_binding_dispatch_matches_oracle()
+    {
+        var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi_sets.spv"));
+        var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
+        {
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[]
+            {
+                new DeltaShaderResource
+                {
+                    Name = "inputBuffer",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadOnly,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                },
+                new DeltaShaderResource
+                {
+                    Name = "outputBuffer",
+                    Category = "storage-buffer",
+                    Set = 1,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadWrite,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                }
+            }
+        });
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var pipeline = device.CreateComputePipeline(artifact);
+        await using var input = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadOnly);
+        await using var output = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadWrite);
+        var values = Enumerable.Range(0, 64).Select(static value => (uint)value).ToArray();
+        Assert.True(device.Upload(input, MemoryMarshal.AsBytes(values.AsSpan())));
+
+        var dispatch = device.Dispatch(pipeline, new[]
+        {
+            new ComputeBufferBinding(0, 0, input),
+            new ComputeBufferBinding(1, 0, output)
+        }, 1);
+        Assert.True(dispatch.Succeeded, dispatch.Error);
+
+        var outputBytes = new byte[values.Length * sizeof(uint)];
+        Assert.True(device.Readback(output, outputBytes));
+        var actual = MemoryMarshal.Cast<byte, uint>(outputBytes);
+        for (var i = 0; i < actual.Length; i++)
+        {
+            Assert.Equal((uint)(i * 2 + 1), actual[i]);
+        }
+    }
+
+    [Fact]
+    public async Task Multi_ssbo_dispatch_rejects_missing_extra_duplicate_and_read_only_bindings()
+    {
+        var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi.spv"));
+        var metadata = new ComputeShaderMetadata(
+            ComputeAbiLayout.Std430,
+            64,
+            1,
+            1,
+            new[]
+            {
+                new ComputeDescriptorBinding(0, 0, ComputeDescriptorKind.StorageBuffer, ComputeBufferAccess.ReadOnly),
+                new ComputeDescriptorBinding(0, 1, ComputeDescriptorKind.StorageBuffer, ComputeBufferAccess.ReadWrite)
+            });
+
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var pipeline = device.CreateComputePipeline(shader, in metadata);
+        await using var input = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadOnly);
+        await using var output = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadWrite);
+        await using var readOnlyOutput = device.CreateStorageBuffer(64 * sizeof(uint), ComputeBufferAccess.ReadOnly);
+
+        Assert.Equal(ComputeDispatchStatus.Invalid, device.Dispatch(pipeline, new[] { new ComputeBufferBinding(0, 0, input) }, 1).Status);
+        Assert.Equal(ComputeDispatchStatus.Invalid, device.Dispatch(pipeline, new[]
+        {
+            new ComputeBufferBinding(0, 0, input),
+            new ComputeBufferBinding(0, 1, output),
+            new ComputeBufferBinding(0, 2, output)
+        }, 1).Status);
+        Assert.Equal(ComputeDispatchStatus.Invalid, device.Dispatch(pipeline, new[]
+        {
+            new ComputeBufferBinding(0, 0, input),
+            new ComputeBufferBinding(0, 0, output)
+        }, 1).Status);
+        Assert.Equal(ComputeDispatchStatus.Invalid, device.Dispatch(pipeline, new[]
+        {
+            new ComputeBufferBinding(0, 0, input),
+            new ComputeBufferBinding(0, 1, readOnlyOutput)
+        }, 1).Status);
+    }
+
+    [Fact]
+    public async Task Upload_ranges_coalesce_adjacent_and_overlapping_ranges_and_reuse_staging()
+    {
+        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
+        await using var buffer = device.CreateStorageBuffer(32);
+        var first = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        var second = new byte[] { 9, 10, 11, 12, 13, 14, 15, 16 };
+        var overlap = new byte[] { 100, 101, 102, 103 };
+
+        var before = device.UploadStatistics;
+        Assert.True(device.UploadRanges(buffer, new[]
+        {
+            new ComputeUploadRange(0, first),
+            new ComputeUploadRange(8, second),
+            new ComputeUploadRange(4, overlap)
+        }));
+        var afterFirst = device.UploadStatistics;
+        Assert.Equal(before.StagingAllocationCount + 1, afterFirst.StagingAllocationCount);
+
+        var output = new byte[32];
+        Assert.True(device.Readback(buffer, output));
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 100, 101, 102, 103, 9, 10, 11, 12, 13, 14, 15, 16 }, output.AsSpan(0, 16).ToArray());
+
+        Assert.True(device.UploadRanges(buffer, new[] { new ComputeUploadRange(16, new byte[] { 21, 22, 23, 24 }) }));
+        var afterReuse = device.UploadStatistics;
+        Assert.Equal(afterFirst.StagingAllocationCount, afterReuse.StagingAllocationCount);
+
+        Assert.False(device.UploadRanges(buffer, new[] { new ComputeUploadRange(2, new byte[] { 1, 2, 3, 4 }) }));
+        Assert.True(device.UploadRanges(buffer, ReadOnlySpan<ComputeUploadRange>.Empty));
+    }
+
+    private static DeltaShaderArtifact CreateMultiBufferArtifact(byte[] shader)
+        => new(shader, new DeltaShaderManifest
+        {
+            SourceEntryPointName = "Compute",
+            EntryPointName = "main",
+            LocalSizeX = 64,
+            LocalSizeY = 1,
+            LocalSizeZ = 1,
+            Resources = new[]
+            {
+                new DeltaShaderResource
+                {
+                    Name = "inputBuffer",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 0,
+                    Access = DeltaShaderAccess.ReadOnly,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                },
+                new DeltaShaderResource
+                {
+                    Name = "outputBuffer",
+                    Category = "storage-buffer",
+                    Set = 0,
+                    Binding = 1,
+                    Access = DeltaShaderAccess.ReadWrite,
+                    Layout = "std430",
+                    Alignment = 4,
+                    Size = 4,
+                    ArrayStride = 4
+                }
+            }
+        });
+
+    [Fact]
     public async Task Dirty_records_validate_ranges_and_coalesce_adjacent_updates()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());

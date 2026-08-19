@@ -119,6 +119,11 @@ internal static class Program
 
     private static async Task<int> RunComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
     {
+        if (pipeline.Metadata.Bindings.Length == 2)
+        {
+            return await RunMultiBufferComputeSizesAsync(device, pipeline);
+        }
+
         var localSizeX = pipeline.Metadata.LocalSizeX;
 
         foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
@@ -179,6 +184,55 @@ internal static class Program
         finally
         {
             Marshal.FreeHGlobal(payload);
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> RunMultiBufferComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
+    {
+        var localSizeX = pipeline.Metadata.LocalSizeX;
+        foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
+        {
+            await using var input = device.CreateStorageBuffer((ulong)size * sizeof(uint), ComputeBufferAccess.ReadOnly);
+            await using var output = device.CreateStorageBuffer((ulong)size * sizeof(uint), ComputeBufferAccess.ReadWrite);
+            if (size == 0)
+            {
+                var noOp = device.Dispatch(pipeline, ReadOnlySpan<ComputeBufferBinding>.Empty, 0);
+                if (noOp.Status != ComputeDispatchStatus.NoOp)
+                {
+                    Console.Error.WriteLine("zero-sized multi-buffer dispatch was not a no-op");
+                    return 1;
+                }
+                Console.WriteLine("multi-compute-size=0 pass=no-op");
+                continue;
+            }
+
+            var values = new uint[size];
+            for (var i = 0; i < values.Length; i++) values[i] = (uint)i;
+            var inputBytes = MemoryMarshal.AsBytes(values.AsSpan());
+            if (!device.Upload(input, inputBytes)) return FailCompute(size, "multi-buffer input upload");
+
+            var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
+            var dispatch = device.Dispatch(
+                pipeline,
+                new[]
+                {
+                    new ComputeBufferBinding(0, 0, input),
+                    new ComputeBufferBinding(0, 1, output)
+                },
+                groups);
+            if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed)
+                return FailCompute(size, dispatch.Error ?? "multi-buffer dispatch");
+
+            var outputBytes = new byte[inputBytes.Length];
+            if (!device.Readback(output, outputBytes)) return FailCompute(size, "multi-buffer readback");
+            var actual = MemoryMarshal.Cast<byte, uint>(outputBytes);
+            for (var i = 0; i < actual.Length; i++)
+            {
+                if (actual[i] != (uint)(i * 2 + 1)) return FailCompute(size, $"multi-buffer oracle mismatch at {i}: {actual[i]}");
+            }
+            Console.WriteLine($"multi-compute-size={size} groups={groups} pass=oracle");
         }
 
         return 0;

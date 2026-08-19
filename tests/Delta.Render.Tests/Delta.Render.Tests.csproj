@@ -22,5 +22,7 @@
   <ItemGroup>
     <None Include="fixtures\clear-triangle.glsl.manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute_double.spv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\compute_multi.spv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\compute_multi_sets.spv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

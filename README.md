@@ -135,7 +135,12 @@ canonical shared structure ABI is `std430` with explicit offset, size, alignment
 array-stride, and optional matrix-stride metadata; SSBO is the supported resource
 kind for this delivery. The Vulkan consumer validates artifact format/version,
 compute stage/local sizes, descriptor set/binding/access, storage-buffer kind,
-and the available std430 ABI fields before creating a pipeline. `scalarBlockLayout`
+and the available std430 ABI fields before creating a pipeline. Multiple SSBO
+resources are bound by exact manifest set/binding keys; declared buffer access
+and minimum size/array stride are checked before dispatch. `UploadRanges` uses a
+reusable host-visible staging buffer and coalesces adjacent or overlapping
+ranges, while `Upload` remains the simple full-upload fallback. `Readback`
+reuses a host-visible download staging buffer. `scalarBlockLayout`
 is not supported or requested. If a future UBO path is added,
 `uniformBufferStandardLayout` must be requested explicitly at that time; it is
 not an implicit dependency of the current ABI.

@@ -38,12 +38,17 @@ public readonly record struct ComputeBufferBinding(
     uint Binding,
     IComputeStorageBuffer Buffer);
 
+public readonly record struct ComputeUploadRange(
+    ulong DestinationOffset,
+    ReadOnlyMemory<byte> Source);
+
 public readonly record struct ComputeDeviceLimits(
     ulong MaxStorageBufferRange,
     ulong MinStorageBufferOffsetAlignment,
     ulong NonCoherentAtomSize,
     uint MaxComputeWorkGroupSizeX,
-    uint MaxComputeWorkGroupCountX);
+    uint MaxComputeWorkGroupCountX,
+    uint MaxBoundDescriptorSets = 1);
 
 public enum ComputeDispatchStatus : byte
 {
@@ -81,6 +86,8 @@ public interface IComputeStorageBuffer : IAsyncDisposable
     ulong ByteLength { get; }
 
     bool IsDeviceLocal { get; }
+
+    ComputeBufferAccess DeclaredAccess { get; }
 }
 
 public interface IComputePipeline : IAsyncDisposable
@@ -92,9 +99,11 @@ public interface IComputeDevice : IAsyncDisposable
 {
     ComputeDeviceLimits Limits { get; }
 
-    IComputeStorageBuffer CreateStorageBuffer(ulong byteLength);
+    IComputeStorageBuffer CreateStorageBuffer(ulong byteLength, ComputeBufferAccess declaredAccess = ComputeBufferAccess.ReadWrite);
 
     bool Upload(IComputeStorageBuffer destination, ReadOnlySpan<byte> source, ulong destinationOffset = 0);
+
+    bool UploadRanges(IComputeStorageBuffer destination, ReadOnlySpan<ComputeUploadRange> ranges);
 
     bool Readback(IComputeStorageBuffer source, Span<byte> destination, ulong sourceOffset = 0);
 

@@ -24,6 +24,7 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
     private readonly List<VulkanStorageBuffer> _buffers = new();
     private readonly List<VulkanComputePipeline> _pipelines = new();
     private BufferAllocation _uploadStaging;
+    private BufferAllocation _readbackStaging;
     private int _uploadStagingAllocationCount;
     private int _dirtyBatchSubmitCount;
     private PhysicalDevice _physicalDevice;
@@ -64,9 +65,10 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             Limits = new ComputeDeviceLimits(
                 properties.Limits.MaxStorageBufferRange,
                 properties.Limits.MinStorageBufferOffsetAlignment,
-                properties.Limits.NonCoherentAtomSize,
-                properties.Limits.MaxComputeWorkGroupSize[0],
-                properties.Limits.MaxComputeWorkGroupCount[0]);
+            properties.Limits.NonCoherentAtomSize,
+            properties.Limits.MaxComputeWorkGroupSize[0],
+            properties.Limits.MaxComputeWorkGroupCount[0],
+            properties.Limits.MaxBoundDescriptorSets);
 
             var poolInfo = new CommandPoolCreateInfo
             {
@@ -109,9 +111,14 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
 
     public ComputeDeviceLimits Limits { get; }
 
-    public IComputeStorageBuffer CreateStorageBuffer(ulong byteLength)
+    public IComputeStorageBuffer CreateStorageBuffer(ulong byteLength, ComputeBufferAccess declaredAccess = ComputeBufferAccess.ReadWrite)
     {
         ThrowIfDisposed();
+        if (declaredAccess is not (ComputeBufferAccess.ReadOnly or ComputeBufferAccess.WriteOnly or ComputeBufferAccess.ReadWrite))
+        {
+            throw new ArgumentOutOfRangeException(nameof(declaredAccess));
+        }
+
         if (byteLength > Limits.MaxStorageBufferRange)
         {
             throw new ArgumentOutOfRangeException(nameof(byteLength), byteLength, $"The device limit is {Limits.MaxStorageBufferRange} bytes.");
@@ -122,7 +129,7 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit,
             MemoryPropertyFlags.DeviceLocalBit,
             MemoryPropertyFlags.DeviceLocalBit);
-        var result = new VulkanStorageBuffer(this, allocation.Buffer, allocation.Memory, byteLength, allocation.AllocationSize, allocation.MemoryProperties);
+        var result = new VulkanStorageBuffer(this, allocation.Buffer, allocation.Memory, byteLength, allocation.AllocationSize, allocation.MemoryProperties, declaredAccess);
         _buffers.Add(result);
         return result;
     }
@@ -148,6 +155,90 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         return SubmitUploadBatch(target, copy);
     }
 
+    public bool UploadRanges(IComputeStorageBuffer destination, ReadOnlySpan<ComputeUploadRange> ranges)
+    {
+        ThrowIfDisposed();
+        if (ranges.IsEmpty) return true;
+        if (!TryGetBuffer(destination, out var target)) return false;
+
+        var sorted = ArrayPool<ManagedUploadRange>.Shared.Rent(ranges.Length);
+        var validCount = 0;
+        try
+        {
+            for (var i = 0; i < ranges.Length; i++)
+            {
+                var range = ranges[i];
+                if (range.Source.IsEmpty) continue;
+                var byteLength = (ulong)range.Source.Length;
+                if ((range.DestinationOffset & 3) != 0 || (byteLength & 3) != 0 || !Fits(target.ByteLength, range.DestinationOffset, byteLength))
+                {
+                    return false;
+                }
+
+                sorted[validCount++] = new ManagedUploadRange(range.DestinationOffset, range.Source, byteLength, i);
+            }
+
+            if (validCount == 0) return true;
+            Array.Sort(sorted, 0, validCount, ManagedUploadDestinationComparer.Instance);
+
+            var runs = ArrayPool<ManagedUploadRun>.Shared.Rent(validCount);
+            try
+            {
+                var runCount = 0;
+                var start = 0;
+                while (start < validCount)
+                {
+                    var end = start + 1;
+                    var destinationEnd = checked(sorted[start].DestinationOffset + sorted[start].ByteLength);
+                    while (end < validCount && sorted[end].DestinationOffset <= destinationEnd)
+                    {
+                        destinationEnd = Math.Max(destinationEnd, checked(sorted[end].DestinationOffset + sorted[end].ByteLength));
+                        end++;
+                    }
+
+                    var destinationOffset = sorted[start].DestinationOffset;
+                    var byteLength = checked((int)(destinationEnd - destinationOffset));
+                    var stagingOffset = AlignFourBytes(runCount == 0 ? 0 : checked(runs[runCount - 1].StagingOffset + (ulong)runs[runCount - 1].ByteLength));
+                    runs[runCount++] = new ManagedUploadRun(start, end, stagingOffset, destinationOffset, byteLength);
+                    start = end;
+                }
+
+                var stagingBytes = runs[runCount - 1].StagingOffset + (ulong)runs[runCount - 1].ByteLength;
+                if (stagingBytes > int.MaxValue) return false;
+                EnsureUploadStagingCapacity(stagingBytes);
+                FillManagedUploadStaging(sorted, validCount, runs, runCount, stagingBytes);
+
+                var copies = ArrayPool<BufferCopy>.Shared.Rent(runCount);
+                try
+                {
+                    for (var i = 0; i < runCount; i++)
+                    {
+                        var run = runs[i];
+                        copies[i] = new BufferCopy { SrcOffset = run.StagingOffset, DstOffset = run.DestinationOffset, Size = (ulong)run.ByteLength };
+                    }
+
+                    return SubmitUploadBatch(target, copies.AsSpan(0, runCount));
+                }
+                finally
+                {
+                    ArrayPool<BufferCopy>.Shared.Return(copies);
+                }
+            }
+            finally
+            {
+                ArrayPool<ManagedUploadRun>.Shared.Return(runs);
+            }
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+        finally
+        {
+            ArrayPool<ManagedUploadRange>.Shared.Return(sorted, clearArray: true);
+        }
+    }
+
     public bool Readback(IComputeStorageBuffer source, Span<byte> destination, ulong sourceOffset = 0)
     {
         ThrowIfDisposed();
@@ -161,46 +252,51 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             return true;
         }
 
-        var staging = CreateBuffer((ulong)destination.Length, BufferUsageFlags.TransferDstBit, MemoryPropertyFlags.HostVisibleBit, MemoryPropertyFlags.HostCoherentBit);
-        try
+        EnsureReadbackStagingCapacity((ulong)destination.Length);
+        var staging = _readbackStaging;
         {
             BeginCommandBuffer();
-            var barriers = new[]
+            var sourceBarrier = new BufferMemoryBarrier
             {
-                new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit | AccessFlags.ShaderWriteBit,
-                    DstAccessMask = AccessFlags.TransferReadBit,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Buffer = target.Buffer,
-                    Offset = sourceOffset,
-                    Size = (ulong)destination.Length
-                },
-                new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = AccessFlags.TransferWriteBit,
-                    DstAccessMask = AccessFlags.HostReadBit,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Buffer = staging.Buffer,
-                    Offset = 0,
-                    Size = staging.AllocationSize
-                }
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferWriteBit | AccessFlags.ShaderWriteBit,
+                DstAccessMask = AccessFlags.TransferReadBit,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Buffer = target.Buffer,
+                Offset = sourceOffset,
+                Size = (ulong)destination.Length
             };
             _api.CmdPipelineBarrier(
                 _commandBuffer,
-            PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.TransferBit,
-                PipelineStageFlags.TransferBit | PipelineStageFlags.HostBit,
+                PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.TransferBit,
+                PipelineStageFlags.TransferBit,
                 DependencyFlags.None,
                 ReadOnlySpan<MemoryBarrier>.Empty,
-                barriers,
+                new[] { sourceBarrier },
                 ReadOnlySpan<ImageMemoryBarrier>.Empty);
 
             var copy = new BufferCopy { SrcOffset = sourceOffset, DstOffset = 0, Size = (ulong)destination.Length };
             _api.CmdCopyBuffer(_commandBuffer, target.Buffer, staging.Buffer, new[] { copy });
+            var stagingBarrier = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferWriteBit,
+                DstAccessMask = AccessFlags.HostReadBit,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Buffer = staging.Buffer,
+                Offset = 0,
+                Size = staging.AllocationSize
+            };
+            _api.CmdPipelineBarrier(
+                _commandBuffer,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.HostBit,
+                DependencyFlags.None,
+                ReadOnlySpan<MemoryBarrier>.Empty,
+                new[] { stagingBarrier },
+                ReadOnlySpan<ImageMemoryBarrier>.Empty);
             if (!EndAndWait())
             {
                 return false;
@@ -208,10 +304,6 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
 
             ReadMapped(staging.Memory, staging.AllocationSize, destination, staging.MemoryProperties);
             return true;
-        }
-        finally
-        {
-            DestroyAllocation(staging);
         }
     }
 
@@ -237,45 +329,64 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                 nameof(artifact));
         }
 
-        var metadata = CreateComputeMetadata(artifact);
-        return CreateComputePipeline(artifact.Spirv, in metadata);
+        var metadata = CreateComputeMetadata(artifact, out var requirements);
+        return CreateComputePipelineCore(MemoryMarshal.Cast<byte, uint>(artifact.Spirv), in metadata, requirements, actualEntryPoint);
     }
 
     public IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata)
     {
         ThrowIfDisposed();
-        ValidateShaderMetadata(spirvWords, in metadata);
+        return CreateComputePipelineCore(spirvWords, in metadata, Array.Empty<VulkanDescriptorRequirement>(), "main");
+    }
 
+    private IComputePipeline CreateComputePipelineCore(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements, string entryPointName)
+    {
+        ValidateShaderMetadata(spirvWords, in metadata);
         var bindings = metadata.Bindings.ToArray();
         var stableMetadata = new ComputeShaderMetadata(metadata.AbiLayout, metadata.LocalSizeX, metadata.LocalSizeY, metadata.LocalSizeZ, bindings);
-        var layoutBindings = new DescriptorSetLayoutBinding[bindings.Length];
-        for (var i = 0; i < bindings.Length; i++)
+        var maxSet = 0u;
+        for (var i = 0; i < bindings.Length; i++) maxSet = Math.Max(maxSet, bindings[i].Set);
+        var setCount = checked((int)maxSet + 1);
+        var bindingsBySet = new List<ComputeDescriptorBinding>[setCount];
+        var layoutBindings = new DescriptorSetLayoutBinding[setCount][];
+        for (var set = 0; set < setCount; set++) bindingsBySet[set] = new List<ComputeDescriptorBinding>();
+        for (var i = 0; i < bindings.Length; i++) bindingsBySet[(int)bindings[i].Set].Add(bindings[i]);
+        for (var set = 0; set < setCount; set++)
         {
-            layoutBindings[i] = new DescriptorSetLayoutBinding
+            var setBindings = bindingsBySet[set];
+            layoutBindings[set] = new DescriptorSetLayoutBinding[setBindings.Count];
+            for (var i = 0; i < setBindings.Count; i++)
             {
-                Binding = bindings[i].Binding,
-                DescriptorType = DescriptorType.StorageBuffer,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.ComputeBit
-            };
+                layoutBindings[set][i] = new DescriptorSetLayoutBinding
+                {
+                    Binding = setBindings[i].Binding,
+                    DescriptorType = DescriptorType.StorageBuffer,
+                    DescriptorCount = 1,
+                    StageFlags = ShaderStageFlags.ComputeBit
+                };
+            }
         }
 
-        DescriptorSetLayout descriptorSetLayout = default;
+        var descriptorSetLayouts = new DescriptorSetLayout[setCount];
+        var descriptorSets = new DescriptorSet[setCount];
         DescriptorPool descriptorPool = default;
         PipelineLayout pipelineLayout = default;
         Pipeline pipeline = default;
         ShaderModule shaderModule = default;
         try
         {
-            fixed (DescriptorSetLayoutBinding* bindingPtr = layoutBindings)
+            for (var set = 0; set < setCount; set++)
             {
-                var layoutInfo = new DescriptorSetLayoutCreateInfo
+                fixed (DescriptorSetLayoutBinding* bindingPtr = layoutBindings[set])
                 {
-                    SType = StructureType.DescriptorSetLayoutCreateInfo,
-                    BindingCount = (uint)layoutBindings.Length,
-                    PBindings = bindingPtr
-                };
-                Ensure(_api.CreateDescriptorSetLayout(_device, layoutInfo, null, out descriptorSetLayout), "CreateDescriptorSetLayout");
+                    var layoutInfo = new DescriptorSetLayoutCreateInfo
+                    {
+                        SType = StructureType.DescriptorSetLayoutCreateInfo,
+                        BindingCount = (uint)layoutBindings[set].Length,
+                        PBindings = bindingPtr
+                    };
+                    Ensure(_api.CreateDescriptorSetLayout(_device, layoutInfo, null, out descriptorSetLayouts[set]), "CreateDescriptorSetLayout");
+                }
             }
 
             var poolSize = new DescriptorPoolSize { Type = DescriptorType.StorageBuffer, DescriptorCount = (uint)bindings.Length };
@@ -286,25 +397,32 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                 PoolSizeCount = 1,
                 PPoolSizes = &poolSize
             };
+            poolInfo.MaxSets = (uint)setCount;
             Ensure(_api.CreateDescriptorPool(_device, poolInfo, null, out descriptorPool), "CreateDescriptorPool");
 
-            var setLayout = descriptorSetLayout;
-            var setInfo = new DescriptorSetAllocateInfo
+            for (var set = 0; set < setCount; set++)
             {
-                SType = StructureType.DescriptorSetAllocateInfo,
-                DescriptorPool = descriptorPool,
-                DescriptorSetCount = 1,
-                PSetLayouts = &setLayout
-            };
-            Ensure(_api.AllocateDescriptorSets(_device, setInfo, out var descriptorSet), "AllocateDescriptorSets");
+                var setLayout = descriptorSetLayouts[set];
+                var setInfo = new DescriptorSetAllocateInfo
+                {
+                    SType = StructureType.DescriptorSetAllocateInfo,
+                    DescriptorPool = descriptorPool,
+                    DescriptorSetCount = 1,
+                    PSetLayouts = &setLayout
+                };
+                Ensure(_api.AllocateDescriptorSets(_device, setInfo, out descriptorSets[set]), "AllocateDescriptorSets");
+            }
 
-            var pipelineLayoutInfo = new PipelineLayoutCreateInfo
+            fixed (DescriptorSetLayout* setLayouts = descriptorSetLayouts)
             {
-                SType = StructureType.PipelineLayoutCreateInfo,
-                SetLayoutCount = 1,
-                PSetLayouts = &setLayout
-            };
-            Ensure(_api.CreatePipelineLayout(_device, pipelineLayoutInfo, null, out pipelineLayout), "CreatePipelineLayout");
+                var pipelineLayoutInfo = new PipelineLayoutCreateInfo
+                {
+                    SType = StructureType.PipelineLayoutCreateInfo,
+                    SetLayoutCount = (uint)setCount,
+                    PSetLayouts = setLayouts
+                };
+                Ensure(_api.CreatePipelineLayout(_device, pipelineLayoutInfo, null, out pipelineLayout), "CreatePipelineLayout");
+            }
 
             fixed (uint* code = spirvWords)
             {
@@ -317,8 +435,8 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                 Ensure(_api.CreateShaderModule(_device, shaderInfo, null, out shaderModule), "CreateShaderModule");
             }
 
-            var entryPoint = Encoding.UTF8.GetBytes("main\0");
-            fixed (byte* entryPointPtr = entryPoint)
+            var entryPointBytes = Encoding.UTF8.GetBytes(entryPointName + "\0");
+            fixed (byte* entryPointPtr = entryPointBytes)
             {
                 var stage = new PipelineShaderStageCreateInfo
                 {
@@ -340,7 +458,7 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
 
             _api.DestroyShaderModule(_device, shaderModule, null);
             shaderModule = default;
-            var result = new VulkanComputePipeline(this, descriptorSetLayout, descriptorPool, descriptorSet, pipelineLayout, pipeline, stableMetadata);
+            var result = new VulkanComputePipeline(this, descriptorSetLayouts, descriptorPool, descriptorSets, pipelineLayout, pipeline, stableMetadata, requirements);
             _pipelines.Add(result);
             return result;
         }
@@ -350,7 +468,10 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             if (pipeline.Handle != default) _api.DestroyPipeline(_device, pipeline, null);
             if (pipelineLayout.Handle != default) _api.DestroyPipelineLayout(_device, pipelineLayout, null);
             if (descriptorPool.Handle != default) _api.DestroyDescriptorPool(_device, descriptorPool, null);
-            if (descriptorSetLayout.Handle != default) _api.DestroyDescriptorSetLayout(_device, descriptorSetLayout, null);
+            foreach (var layout in descriptorSetLayouts)
+            {
+                if (layout.Handle != default) _api.DestroyDescriptorSetLayout(_device, layout, null);
+            }
             throw;
         }
     }
@@ -379,15 +500,49 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         }
 
         BeginCommandBuffer();
-        var barriers = new BufferMemoryBarrier[bindings.Length];
+        var preBarriers = new BufferMemoryBarrier[bindings.Length];
+        var postBarriers = new BufferMemoryBarrier[bindings.Length];
         for (var i = 0; i < bindings.Length; i++)
         {
             var buffer = (VulkanStorageBuffer)bindings[i].Buffer;
-            barriers[i] = new BufferMemoryBarrier
+            var access = computePipeline.GetExpectedAccess(bindings[i].Set, bindings[i].Binding);
+            var sourceAccess = AccessFlags.TransferWriteBit;
+            if (access is ComputeBufferAccess.WriteOnly or ComputeBufferAccess.ReadWrite)
+            {
+                sourceAccess |= AccessFlags.ShaderWriteBit;
+            }
+
+            var destinationAccess = (AccessFlags)0;
+            if (access is ComputeBufferAccess.ReadOnly or ComputeBufferAccess.ReadWrite)
+            {
+                destinationAccess |= AccessFlags.ShaderReadBit;
+            }
+            if (access is ComputeBufferAccess.WriteOnly or ComputeBufferAccess.ReadWrite)
+            {
+                destinationAccess |= AccessFlags.ShaderWriteBit;
+            }
+
+            preBarriers[i] = new BufferMemoryBarrier
             {
                 SType = StructureType.BufferMemoryBarrier,
-                SrcAccessMask = AccessFlags.TransferWriteBit | AccessFlags.ShaderWriteBit,
-                DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+                SrcAccessMask = sourceAccess,
+                DstAccessMask = destinationAccess,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Buffer = buffer.Buffer,
+                Offset = 0,
+                Size = Math.Max(buffer.AllocationSize, MinimumVulkanBufferSize)
+            };
+            var postSourceAccess = (AccessFlags)0;
+            if (access is ComputeBufferAccess.WriteOnly or ComputeBufferAccess.ReadWrite)
+            {
+                postSourceAccess = AccessFlags.ShaderWriteBit;
+            }
+            postBarriers[i] = new BufferMemoryBarrier
+            {
+                SType = StructureType.BufferMemoryBarrier,
+                SrcAccessMask = postSourceAccess,
+                DstAccessMask = AccessFlags.TransferReadBit,
                 SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 Buffer = buffer.Buffer,
@@ -398,13 +553,13 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         _api.CmdPipelineBarrier(
             _commandBuffer,
             PipelineStageFlags.TransferBit | PipelineStageFlags.ComputeShaderBit,
-            PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.TransferBit,
+            PipelineStageFlags.ComputeShaderBit,
             DependencyFlags.None,
             ReadOnlySpan<MemoryBarrier>.Empty,
-            barriers,
+            preBarriers,
             ReadOnlySpan<ImageMemoryBarrier>.Empty);
         _api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Compute, computePipeline.Pipeline);
-        _api.CmdBindDescriptorSets(_commandBuffer, PipelineBindPoint.Compute, computePipeline.PipelineLayout, 0, new[] { computePipeline.DescriptorSet }, ReadOnlySpan<uint>.Empty);
+        _api.CmdBindDescriptorSets(_commandBuffer, PipelineBindPoint.Compute, computePipeline.PipelineLayout, 0, computePipeline.DescriptorSets, ReadOnlySpan<uint>.Empty);
         _api.CmdDispatch(_commandBuffer, groupCountX, groupCountY, groupCountZ);
 
         _api.CmdPipelineBarrier(
@@ -413,7 +568,7 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             PipelineStageFlags.TransferBit,
             DependencyFlags.None,
             ReadOnlySpan<MemoryBarrier>.Empty,
-            barriers,
+            postBarriers,
             ReadOnlySpan<ImageMemoryBarrier>.Empty);
         return EndAndWait() ? ComputeDispatchResult.Executed() : ComputeDispatchResult.Invalid("Queue submit or fence wait failed.");
     }
@@ -567,7 +722,10 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         if (pipeline.Pipeline.Handle != default) _api.DestroyPipeline(_device, pipeline.Pipeline, null);
         if (pipeline.PipelineLayout.Handle != default) _api.DestroyPipelineLayout(_device, pipeline.PipelineLayout, null);
         if (pipeline.DescriptorPool.Handle != default) _api.DestroyDescriptorPool(_device, pipeline.DescriptorPool, null);
-        if (pipeline.DescriptorSetLayout.Handle != default) _api.DestroyDescriptorSetLayout(_device, pipeline.DescriptorSetLayout, null);
+        foreach (var layout in pipeline.DescriptorSetLayouts)
+        {
+            if (layout.Handle != default) _api.DestroyDescriptorSetLayout(_device, layout, null);
+        }
         _pipelines.Remove(pipeline);
         pipeline.MarkDestroyed();
     }
@@ -583,6 +741,8 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             foreach (var buffer in _buffers.ToArray()) DestroyBuffer(buffer);
             DestroyAllocation(_uploadStaging);
             _uploadStaging = default;
+            DestroyAllocation(_readbackStaging);
+            _readbackStaging = default;
             if (_fence.Handle != default) _api.DestroyFence(_device, _fence, null);
             if (_commandPool.Handle != default) _api.DestroyCommandPool(_device, _commandPool, null);
             if (_device.Handle != default) _api.DestroyDevice(_device, null);
@@ -606,13 +766,17 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         for (var i = 0; i < bindings.Length; i++)
         {
             var binding = bindings[i];
-            if (binding.Set != 0 || binding.Kind != ComputeDescriptorKind.StorageBuffer || binding.ArrayCount != 1)
-                throw new ArgumentException("Only set 0, single storage-buffer bindings are supported.", nameof(metadata));
-            for (var j = 0; j < i; j++) if (bindings[j].Binding == binding.Binding) throw new ArgumentException("Descriptor bindings must be unique.", nameof(metadata));
+            if (binding.Set >= Limits.MaxBoundDescriptorSets || binding.Kind != ComputeDescriptorKind.StorageBuffer || binding.ArrayCount != 1)
+                throw new ArgumentException($"Storage-buffer set {binding.Set} is outside the device MaxBoundDescriptorSets={Limits.MaxBoundDescriptorSets} or has unsupported kind/array count.", nameof(metadata));
+            for (var j = 0; j < i; j++)
+            {
+                if (bindings[j].Set == binding.Set && bindings[j].Binding == binding.Binding)
+                    throw new ArgumentException($"Descriptor bindings must be unique per set: ({binding.Set},{binding.Binding}).", nameof(metadata));
+            }
         }
     }
 
-    private static ComputeShaderMetadata CreateComputeMetadata(DeltaShaderArtifact artifact)
+    private static ComputeShaderMetadata CreateComputeMetadata(DeltaShaderArtifact artifact, out VulkanDescriptorRequirement[] requirements)
     {
         var manifest = artifact.Manifest;
         if (artifact.FormatVersion != DeltaShaderArtifact.CurrentFormatVersion)
@@ -633,19 +797,18 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
             throw new ArgumentException("Delta.Shader ABI manifest must declare at least one resource.", nameof(artifact));
 
         var bindings = new ComputeDescriptorBinding[resources.Count];
+        requirements = new VulkanDescriptorRequirement[resources.Count];
         var seenBindings = new HashSet<(uint Set, uint Binding)>();
         for (var i = 0; i < resources.Count; i++)
         {
             var resource = resources[i];
-            if (resource.Set != 0)
-                throw new ArgumentException($"Resource '{resource.Name}' uses descriptor set {resource.Set}; only set 0 is supported.", nameof(artifact));
             if (!seenBindings.Add((resource.Set, resource.Binding)))
                 throw new ArgumentException($"Delta.Shader ABI manifest contains duplicate descriptor set/binding {resource.Set}/{resource.Binding}.", nameof(artifact));
             if (string.IsNullOrWhiteSpace(resource.Name) || !string.Equals(resource.Category, "storage-buffer", StringComparison.Ordinal))
                 throw new ArgumentException($"Resource '{resource.Name}' is not a storage-buffer resource.", nameof(artifact));
             if (!string.Equals(resource.Layout, "std430", StringComparison.Ordinal))
                 throw new ArgumentException($"Resource '{resource.Name}' does not declare std430 layout.", nameof(artifact));
-            if (resource.Alignment == 0 || resource.Alignment % 4 != 0 || resource.Offset % 4 != 0 || resource.Size == 0 || resource.ArrayStride == 0 || resource.ArrayStride % 4 != 0 || resource.ArrayStride < resource.Size)
+            if (resource.Alignment == 0 || resource.Alignment % 4 != 0 || resource.Offset % resource.Alignment != 0 || resource.ArrayStride == 0 || resource.ArrayStride % resource.Alignment != 0 || resource.Size == 0 || resource.ArrayStride < resource.Size)
                 throw new ArgumentException($"Resource '{resource.Name}' has invalid std430 offset/size/stride metadata.", nameof(artifact));
             if (checked(resource.Offset + resource.Size) > resource.ArrayStride)
                 throw new ArgumentException($"Resource '{resource.Name}' member range exceeds its array stride.", nameof(artifact));
@@ -659,7 +822,14 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                 DeltaShaderAccess.ReadWrite => ComputeBufferAccess.ReadWrite,
                 _ => throw new ArgumentException($"Resource '{resource.Name}' has unsupported access metadata.", nameof(artifact))
             };
-            bindings[i] = new ComputeDescriptorBinding(0, resource.Binding, ComputeDescriptorKind.StorageBuffer, access);
+            bindings[i] = new ComputeDescriptorBinding(resource.Set, resource.Binding, ComputeDescriptorKind.StorageBuffer, access);
+            requirements[i] = new VulkanDescriptorRequirement(
+                resource.Set,
+                resource.Binding,
+                access,
+                Math.Max(checked((ulong)resource.Offset + resource.Size), resource.ArrayStride),
+                resource.ArrayStride,
+                resource.Offset);
         }
 
         return new ComputeShaderMetadata(
@@ -797,6 +967,33 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         DestroyAllocation(previous);
     }
 
+    private void EnsureReadbackStagingCapacity(ulong requiredBytes)
+    {
+        if (_readbackStaging.Buffer.Handle != default && _readbackStaging.AllocationSize >= requiredBytes) return;
+
+        var requestedSize = Math.Max(requiredBytes, MinimumVulkanBufferSize);
+        var currentSize = _readbackStaging.AllocationSize;
+        while (currentSize != 0 && currentSize < requestedSize)
+        {
+            if (currentSize > ulong.MaxValue / 2)
+            {
+                currentSize = requestedSize;
+                break;
+            }
+
+            currentSize *= 2;
+        }
+
+        var replacement = CreateBuffer(
+            Math.Max(requestedSize, currentSize),
+            BufferUsageFlags.TransferDstBit,
+            MemoryPropertyFlags.HostVisibleBit,
+            MemoryPropertyFlags.HostCoherentBit);
+        var previous = _readbackStaging;
+        _readbackStaging = replacement;
+        DestroyAllocation(previous);
+    }
+
     private void FillUploadStaging(ReadOnlySpan<DirtyRange> ranges, ReadOnlySpan<DirtyUploadRun> runs, ulong stagingBytes)
     {
         void* mapped = null;
@@ -816,6 +1013,35 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
                     var destinationOffset = checked((int)((ulong)(rangeIndex - run.Start) * range.RecordStride));
                     var payload = new ReadOnlySpan<byte>((void*)(nuint)range.PayloadAddress, checked((int)range.PayloadSize));
                     payload.CopyTo(destination.Slice(destinationOffset, checked((int)range.PayloadSize)));
+                }
+            }
+
+            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+        }
+        finally
+        {
+            _api.UnmapMemory(_device, _uploadStaging.Memory);
+        }
+    }
+
+    private void FillManagedUploadStaging(ManagedUploadRange[] ranges, int rangeCount, ManagedUploadRun[] runs, int runCount, ulong stagingBytes)
+    {
+        void* mapped = null;
+        Ensure(_api.MapMemory(_device, _uploadStaging.Memory, 0, _uploadStaging.AllocationSize, 0, &mapped), "MapMemory");
+        try
+        {
+            var mappedBytes = new Span<byte>(mapped, checked((int)stagingBytes));
+            for (var runIndex = 0; runIndex < runCount; runIndex++)
+            {
+                var run = runs[runIndex];
+                Array.Sort(ranges, run.Start, run.End - run.Start, ManagedUploadSequenceComparer.Instance);
+                var destination = mappedBytes.Slice(checked((int)run.StagingOffset), run.ByteLength);
+                destination.Clear();
+                for (var rangeIndex = run.Start; rangeIndex < run.End; rangeIndex++)
+                {
+                    var range = ranges[rangeIndex];
+                    var destinationOffset = checked((int)(range.DestinationOffset - run.DestinationOffset));
+                    range.Source.Span.CopyTo(destination.Slice(destinationOffset, checked((int)range.ByteLength)));
                 }
             }
 
@@ -993,8 +1219,28 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
     }
 
     private readonly record struct BufferAllocation(VulkanBuffer Buffer, DeviceMemory Memory, ulong AllocationSize, MemoryPropertyFlags MemoryProperties);
+    private readonly record struct ManagedUploadRange(ulong DestinationOffset, ReadOnlyMemory<byte> Source, ulong ByteLength, int Sequence);
+    private readonly record struct ManagedUploadRun(int Start, int End, ulong StagingOffset, ulong DestinationOffset, int ByteLength);
     private readonly record struct DirtyRange(ulong Offset, ulong PayloadAddress, uint PayloadSize, uint RecordStride, int Sequence);
     private readonly record struct DirtyUploadRun(int Start, int End, ulong StagingOffset, ulong DestinationOffset, int ByteLength);
+
+    private sealed class ManagedUploadDestinationComparer : IComparer<ManagedUploadRange>
+    {
+        public static ManagedUploadDestinationComparer Instance { get; } = new();
+
+        public int Compare(ManagedUploadRange x, ManagedUploadRange y)
+        {
+            var offset = x.DestinationOffset.CompareTo(y.DestinationOffset);
+            return offset != 0 ? offset : x.Sequence.CompareTo(y.Sequence);
+        }
+    }
+
+    private sealed class ManagedUploadSequenceComparer : IComparer<ManagedUploadRange>
+    {
+        public static ManagedUploadSequenceComparer Instance { get; } = new();
+
+        public int Compare(ManagedUploadRange x, ManagedUploadRange y) => x.Sequence.CompareTo(y.Sequence);
+    }
 
     private sealed class DirtyRangeComparer : IComparer<DirtyRange>
     {
@@ -1012,9 +1258,17 @@ internal readonly record struct VulkanUploadStatistics(
     int DirtyBatchSubmitCount,
     ulong StagingCapacity);
 
+internal readonly record struct VulkanDescriptorRequirement(
+    uint Set,
+    uint Binding,
+    ComputeBufferAccess Access,
+    ulong MinimumByteLength,
+    uint ArrayStride,
+    uint Offset);
+
 public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
 {
-    internal VulkanStorageBuffer(VulkanComputeDevice owner, VulkanBuffer buffer, DeviceMemory memory, ulong byteLength, ulong allocationSize, MemoryPropertyFlags properties)
+    internal VulkanStorageBuffer(VulkanComputeDevice owner, VulkanBuffer buffer, DeviceMemory memory, ulong byteLength, ulong allocationSize, MemoryPropertyFlags properties, ComputeBufferAccess declaredAccess)
     {
         Owner = owner;
         Buffer = buffer;
@@ -1022,6 +1276,7 @@ public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
         ByteLength = byteLength;
         AllocationSize = allocationSize;
         MemoryProperties = properties;
+        DeclaredAccess = declaredAccess;
     }
 
     internal VulkanComputeDevice Owner { get; }
@@ -1031,6 +1286,7 @@ public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
     internal MemoryPropertyFlags MemoryProperties { get; }
     public ulong ByteLength { get; }
     public bool IsDeviceLocal => MemoryProperties.HasFlag(MemoryPropertyFlags.DeviceLocalBit);
+    public ComputeBufferAccess DeclaredAccess { get; }
 
     public ValueTask DisposeAsync()
     {
@@ -1047,24 +1303,40 @@ public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
 
 public sealed unsafe class VulkanComputePipeline : IComputePipeline
 {
-    internal VulkanComputePipeline(VulkanComputeDevice owner, DescriptorSetLayout descriptorSetLayout, DescriptorPool descriptorPool, DescriptorSet descriptorSet, PipelineLayout pipelineLayout, Pipeline pipeline, ComputeShaderMetadata metadata)
+    internal VulkanComputePipeline(VulkanComputeDevice owner, DescriptorSetLayout[] descriptorSetLayouts, DescriptorPool descriptorPool, DescriptorSet[] descriptorSets, PipelineLayout pipelineLayout, Pipeline pipeline, ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements)
     {
         Owner = owner;
-        DescriptorSetLayout = descriptorSetLayout;
+        DescriptorSetLayouts = descriptorSetLayouts;
         DescriptorPool = descriptorPool;
-        DescriptorSet = descriptorSet;
+        DescriptorSets = descriptorSets;
         PipelineLayout = pipelineLayout;
         Pipeline = pipeline;
         Metadata = metadata;
+        Requirements = requirements;
     }
 
     internal VulkanComputeDevice Owner { get; }
-    internal DescriptorSetLayout DescriptorSetLayout { get; private set; }
+    internal DescriptorSetLayout[] DescriptorSetLayouts { get; private set; }
     internal DescriptorPool DescriptorPool { get; private set; }
-    internal DescriptorSet DescriptorSet { get; }
+    internal DescriptorSet[] DescriptorSets { get; private set; }
     internal PipelineLayout PipelineLayout { get; private set; }
     internal Pipeline Pipeline { get; private set; }
+    internal VulkanDescriptorRequirement[] Requirements { get; }
     public ComputeShaderMetadata Metadata { get; }
+
+    internal ComputeBufferAccess GetExpectedAccess(uint set, uint binding)
+    {
+        var expected = Metadata.Bindings.Span;
+        for (var i = 0; i < expected.Length; i++)
+        {
+            if (expected[i].Set == set && expected[i].Binding == binding)
+            {
+                return expected[i].Access;
+            }
+        }
+
+        throw new InvalidOperationException($"Pipeline has no descriptor binding ({set},{binding}).");
+    }
 
     internal bool TryUpdateDescriptors(ReadOnlySpan<ComputeBufferBinding> bindings, out string? error)
     {
@@ -1075,23 +1347,87 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
             return false;
         }
 
+        Span<bool> matched = stackalloc bool[expected.Length];
         var infos = stackalloc DescriptorBufferInfo[bindings.Length];
         var writes = stackalloc WriteDescriptorSet[bindings.Length];
         for (var i = 0; i < bindings.Length; i++)
         {
             var binding = bindings[i];
-            if (binding.Set != 0 || binding.Binding != expected[i].Binding || binding.Buffer is not VulkanStorageBuffer buffer || !ReferenceEquals(buffer.Owner, Owner) || buffer.Buffer.Handle == default || buffer.ByteLength == 0)
+            var expectedIndex = -1;
+            for (var j = 0; j < expected.Length; j++)
             {
-                error = "Descriptor bindings must match metadata and contain non-empty buffers owned by this device.";
+                if (expected[j].Set == binding.Set && expected[j].Binding == binding.Binding)
+                {
+                    expectedIndex = j;
+                    break;
+                }
+            }
+
+            if (expectedIndex < 0 || matched[expectedIndex])
+            {
+                error = "Descriptor bindings must exactly match the manifest set/binding list without duplicates.";
                 return false;
             }
+
+            matched[expectedIndex] = true;
+            if (binding.Buffer is not VulkanStorageBuffer buffer || !ReferenceEquals(buffer.Owner, Owner) || buffer.Buffer.Handle == default || buffer.ByteLength == 0)
+            {
+                error = "Descriptor bindings must contain non-empty buffers owned by this device.";
+                return false;
+            }
+
+            var expectedBinding = expected[expectedIndex];
+            if (!AccessCompatible(buffer.DeclaredAccess, expectedBinding.Access))
+            {
+                error = $"Buffer {binding.Set}/{binding.Binding} declared access {buffer.DeclaredAccess} cannot satisfy {expectedBinding.Access}.";
+                return false;
+            }
+
+            if (Requirements.Length == expected.Length)
+            {
+                var requirement = Requirements[expectedIndex];
+                if (buffer.ByteLength < requirement.MinimumByteLength || (requirement.ArrayStride != 0 && buffer.ByteLength >= requirement.Offset && (buffer.ByteLength - requirement.Offset) % requirement.ArrayStride != 0))
+                {
+                    error = $"Buffer {binding.Set}/{binding.Binding} does not satisfy the manifest size/stride contract.";
+                    return false;
+                }
+            }
+
             infos[i] = new DescriptorBufferInfo { Buffer = buffer.Buffer, Offset = 0, Range = buffer.ByteLength };
-            writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = DescriptorSet, DstBinding = binding.Binding, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &infos[i] };
+            writes[i] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = OwnerSet(binding.Set),
+                DstBinding = binding.Binding,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.StorageBuffer,
+                PBufferInfo = &infos[i]
+            };
+        }
+
+        for (var i = 0; i < matched.Length; i++)
+        {
+            if (!matched[i])
+            {
+                error = "Descriptor bindings are missing a manifest set/binding.";
+                return false;
+            }
         }
         Owner.Api.UpdateDescriptorSets(Owner.Device, (uint)bindings.Length, writes, 0, null);
         error = null;
         return true;
     }
+
+    private DescriptorSet OwnerSet(uint set) => DescriptorSets[(int)set];
+
+    private static bool AccessCompatible(ComputeBufferAccess declared, ComputeBufferAccess required)
+        => required switch
+        {
+            ComputeBufferAccess.ReadOnly => declared is ComputeBufferAccess.ReadOnly or ComputeBufferAccess.ReadWrite,
+            ComputeBufferAccess.WriteOnly => declared is ComputeBufferAccess.WriteOnly or ComputeBufferAccess.ReadWrite,
+            ComputeBufferAccess.ReadWrite => declared == ComputeBufferAccess.ReadWrite,
+            _ => false
+        };
 
     public ValueTask DisposeAsync()
     {
@@ -1104,6 +1440,7 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
         Pipeline = default;
         PipelineLayout = default;
         DescriptorPool = default;
-        DescriptorSetLayout = default;
+        DescriptorSetLayouts = Array.Empty<DescriptorSetLayout>();
+        DescriptorSets = Array.Empty<DescriptorSet>();
     }
 }
