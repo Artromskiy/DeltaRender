@@ -51,12 +51,12 @@ jobs:
       - name: Checkout Delta.Shader sibling
         uses: actions/checkout@v7
         with:
-          repository: Artromskiy/GLSH
+          repository: Artromskiy/DeltaShader
           path: Delta.Shader
       - name: Checkout Delta.Maths shader contract
         uses: actions/checkout@v7
         with:
-          repository: Artromskiy/Delta.Maths
+          repository: Artromskiy/DeltaMaths
           path: Maths
       - name: Install .NET 10
         uses: actions/setup-dotnet@v6
