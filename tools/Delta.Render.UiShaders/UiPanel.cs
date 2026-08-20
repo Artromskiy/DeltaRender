@@ -20,19 +20,14 @@ public static class UiPanel
     {
         position = default;
         var local = new float2(0f, 0f);
-        if (vertexIndex == 1u || vertexIndex == 4u)
+        if (vertexIndex == 1u || vertexIndex == 2u || vertexIndex == 4u)
         {
-            local = new float2(1f, 0f);
+            local.x = 1f;
         }
-        if (vertexIndex == 2u || vertexIndex == 4u)
+        if (vertexIndex == 2u || vertexIndex == 4u || vertexIndex == 5u)
         {
-            local = new float2(1f, 1f);
+            local.y = 1f;
         }
-        if (vertexIndex == 3u || vertexIndex == 5u)
-        {
-            local = new float2(0f, 1f);
-        }
-
         var pixel = new float2(
             parameters.Rect.x + local.x * parameters.Rect.z,
             parameters.Rect.y + local.y * parameters.Rect.w);

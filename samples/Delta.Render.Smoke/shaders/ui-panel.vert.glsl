@@ -14,19 +14,14 @@ void main()
 
     vec2 local = vec2(0, 0);
 
-            if (uint(gl_VertexIndex)== 1u || uint(gl_VertexIndex)== 4u)
+            if (uint(gl_VertexIndex)== 1u || uint(gl_VertexIndex)== 2u || uint(gl_VertexIndex)== 4u)
             {
-                local = vec2(1, 0);
+                local.x = 1;
 
             }
-            if (uint(gl_VertexIndex)== 2u || uint(gl_VertexIndex)== 4u)
+            if (uint(gl_VertexIndex)== 2u || uint(gl_VertexIndex)== 4u || uint(gl_VertexIndex)== 5u)
             {
-                local = vec2(1, 1);
-
-            }
-            if (uint(gl_VertexIndex)== 3u || uint(gl_VertexIndex)== 5u)
-            {
-                local = vec2(0, 1);
+                local.y = 1;
 
             }
     vec2 pixel = vec2(
