@@ -83,3 +83,8 @@ The compute script is bounded and performs shader-only compilation, GLSL/SPIR-V
 validation, RID-specific runtime restore/build, MoltenVK dispatch and readback.
 Troubleshooting and shared build rules are in `../README.md`. Benchmarks are
 manual; do not publish timings from smoke or shared-runner cold starts.
+
+The old `tools/Delta.Shader.Compute` directory is temporary/obsolete and is
+kept only for migration compatibility. Do not extend it; the standalone
+authoring playground will live at
+`/Users/rum/GitProjects/TheFurnace/DeltaShaderPlayground`.

@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
-    <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Runtime/Delta.Shader.Runtime.csproj" />
     <ProjectReference Include="../../src/Delta.Render.Core/Delta.Render.Core.csproj" />
     <ProjectReference Include="../../src/Delta.Render.Vulkan/Delta.Render.Vulkan.csproj" />
   </ItemGroup>
