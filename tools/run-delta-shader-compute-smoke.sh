@@ -26,16 +26,18 @@ run_bounded() {
 }
 
 DELTA_SHADER_TOOL="$DELTA_SHADER_ROOT/src/Delta.Shader.Tool/Delta.Shader.Tool.csproj"
-SHADER_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.csproj"
+SHADER_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.Authoring.csproj"
+RUNTIME_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.csproj"
 GLSL="$OUT/Compute.glsl"
 SPIRV="$OUT/Compute.spv"
 MANIFEST="$OUT/Compute.shader.json"
-SMOKE="$ROOT/samples/Delta.Render.Smoke/bin/Release/net10.0/osx-arm64/Delta.Render.Smoke"
+SMOKE="$ROOT/tools/Delta.Shader.Compute/bin/Release/net10.0/osx-arm64/Delta.Render.Shader.Compute"
 
-run_bounded 90 dotnet run --project "$DELTA_SHADER_TOOL" -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
+run_bounded 90 dotnet run --project "$DELTA_SHADER_TOOL" -c Release --no-build -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
 test -s "$GLSL"
 test -s "$SPIRV"
 test -s "$MANIFEST"
 
-run_bounded 120 dotnet build "$ROOT/samples/Delta.Render.Smoke/Delta.Render.Smoke.csproj" -c Release -r osx-arm64 --no-restore --nologo -m:1
-run_bounded 60 "$SMOKE" --compute --compute-shader "$SPIRV" --compute-manifest "$MANIFEST"
+run_bounded 120 dotnet restore "$RUNTIME_PROJECT" -r osx-arm64 --disable-build-servers -m:1
+run_bounded 120 dotnet build "$RUNTIME_PROJECT" -c Release -r osx-arm64 --no-restore --disable-build-servers /p:UseSharedCompilation=false --nologo -m:1
+run_bounded 60 "$SMOKE" "$OUT"

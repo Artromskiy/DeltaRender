@@ -35,26 +35,6 @@
       "delta.shader.abstractions": {
         "type": "Project"
       }
-    },
-    "net10.0/osx-arm64": {
-      "SDL3-CS.Linux": {
-        "type": "Direct",
-        "requested": "[3.4.12.6, )",
-        "resolved": "3.4.12.6",
-        "contentHash": "7KaBK61zrKlfccWKfY59eAaWP7Kr6FvuBdRyNzl7y2dseC2FDc6yCXubQoubMxmjZbtA87oelWwt0VyceazAEQ=="
-      },
-      "SDL3-CS.MacOS": {
-        "type": "Direct",
-        "requested": "[3.4.12.6, )",
-        "resolved": "3.4.12.6",
-        "contentHash": "ZQnln/FrTOHmw4loan68sKCDmdrQBWyvutGW0hnFkQpkhlfEIJvqh4Ov/lHTNDiiziIVLeGsEpD9CSwv41+MMA=="
-      },
-      "SDL3-CS.Windows": {
-        "type": "Direct",
-        "requested": "[3.4.12.6, )",
-        "resolved": "3.4.12.6",
-        "contentHash": "ZILtbNxwhV8/dcmPukYD/ZWwYT3q7cNU1H+XeG6WBC3yxXotBX3cvX4WdmRZV8B4FiOjH8pahoQjlF/0hNnp6g=="
-      }
     }
   }
 }
