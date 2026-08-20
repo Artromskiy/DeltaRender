@@ -35,6 +35,28 @@ current swapchain extent. DeltaXAML will lower its renderer-neutral draw list
 into this boundary. Instancing, clip batches, texture/font atlases and text are
 the next bounded renderer steps.
 
+The compatible resource slice is exposed by `Delta.Render.Core` through
+`ITextAtlasDevice`, `ITextAtlasPage`, `TextGlyphInstance`, `TextRun`,
+`TextDrawList`, and `TextBatching`. Glyphs carry the atlas page, UV rectangle,
+pixel bounds, color, clip, SDF/MSDF mode, and distance-field parameters. The
+caller owns reusable ordered-glyph and batch storage; batching groups by
+pipeline, atlas page, mode, and clip without a per-glyph allocation or draw.
+
+`Delta.Render.Vulkan` owns each page's device-local image, image view, linear
+clamp sampler, descriptor set/layout/pool, and reusable host-visible staging
+buffer. Uploads use one transfer submission per batch with explicit image
+layout transitions. Foreign and disposed pages are rejected, page disposal is
+idempotent, and device disposal tears down pages before Vulkan device
+resources.
+
+The generated SDF/MSDF shader remains blocked by the current
+`Delta.Shader.Abstractions` contract: its manifest does not yet expose sampled
+image and sampler resource categories. Render validates the existing
+`ShaderArtifact` envelope and reports that precise blocker rather than adding
+a competing ABI manifest or replacement production shader. The existing
+`GraphicsShaderProgram` artifact seam is the integration point when Shad adds
+those resource categories.
+
 The sample's `PanelUiAdapter` is intentionally renderer-only smoke data. It
 proves the generated UI ShaderArtifacts, clip/scissor recording and MoltenVK
 present path, but is not cross-project editor evidence. The P1 acceptance proof

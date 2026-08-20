@@ -14,7 +14,7 @@ using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Delta.Render.Vulkan;
 
-public sealed unsafe class VulkanComputeDevice : IComputeDevice
+public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
 {
     private const uint SpirvMagic = 0x07230203;
     private const ulong MinimumVulkanBufferSize = 4;
@@ -737,12 +737,15 @@ public sealed unsafe class VulkanComputeDevice : IComputeDevice
         try
         {
             _api.DeviceWaitIdle(_device);
+            foreach (var page in _atlasPages.ToArray()) DestroyAtlasPage(page);
             foreach (var pipeline in _pipelines.ToArray()) DestroyPipeline(pipeline);
             foreach (var buffer in _buffers.ToArray()) DestroyBuffer(buffer);
             DestroyAllocation(_uploadStaging);
             _uploadStaging = default;
             DestroyAllocation(_readbackStaging);
             _readbackStaging = default;
+            DestroyAllocation(_atlasStaging);
+            _atlasStaging = default;
             if (_fence.Handle != default) _api.DestroyFence(_device, _fence, null);
             if (_commandPool.Handle != default) _api.DestroyCommandPool(_device, _commandPool, null);
             if (_device.Handle != default) _api.DestroyDevice(_device, null);
