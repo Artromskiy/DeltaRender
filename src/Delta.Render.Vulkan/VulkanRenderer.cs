@@ -864,6 +864,16 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         ReadOnlySpan<RenderRecordChange> dirtyRecords)
         => EndFrame(in frameState, pipeline, in parameters, drawList.Quads, dirtyRecords);
 
+    public bool SubmitFrame(
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters,
+        in UiDrawList drawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        var frameState = BeginFrame();
+        return frameState.IsValid && EndFrame(in frameState, pipeline, in parameters, in drawList, dirtyRecords);
+    }
+
     public bool RenderClearFrame(float r, float g, float b, float a)
     {
         _clearColor = new ClearColorValue(r, g, b, a);
@@ -977,8 +987,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
 
                 var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
                 var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = _extent };
-                api.CmdSetViewport(_commandBuffer, 0, 1, new[] { viewport });
-                api.CmdSetScissor(_commandBuffer, 0, 1, new[] { scissor });
+                api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
+                api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
 
                 var pushConstants = new GraphicsPushConstants
                 {
@@ -1000,12 +1010,21 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
             {
                 api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, uiPipeline.Pipeline);
                 var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
-                var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = _extent };
-                api.CmdSetViewport(_commandBuffer, 0, 1, new[] { viewport });
-                api.CmdSetScissor(_commandBuffer, 0, 1, new[] { scissor });
+                api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
                 for (var i = 0; i < uiQuads.Length; i++)
                 {
                     var quad = uiQuads[i];
+                    if (!quad.Clip.TryGetScissor(new WindowMetrics(_extent.Width, _extent.Height, 1), out var uiScissor))
+                    {
+                        continue;
+                    }
+
+                    var scissor = new Rect2D
+                    {
+                        Offset = new Offset2D(uiScissor.X, uiScissor.Y),
+                        Extent = new Extent2D(uiScissor.Width, uiScissor.Height)
+                    };
+                    api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
                     var pushConstants = new UiQuadPushConstants
                     {
                         ResolutionX = uiParameters.ResolutionX,

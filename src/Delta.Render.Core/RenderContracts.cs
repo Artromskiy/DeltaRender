@@ -62,6 +62,12 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
         in UiDrawList drawList,
         ReadOnlySpan<RenderRecordChange> dirtyRecords);
 
+    bool SubmitFrame(
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters,
+        in UiDrawList drawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+
     IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram);
 
     bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters);

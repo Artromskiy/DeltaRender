@@ -35,6 +35,12 @@ current swapchain extent. DeltaXAML will lower its renderer-neutral draw list
 into this boundary. Instancing, clip batches, texture/font atlases and text are
 the next bounded renderer steps.
 
+The sample's `PanelUiAdapter` is intentionally renderer-only smoke data. It
+proves the generated UI ShaderArtifacts, clip/scissor recording and MoltenVK
+present path, but is not cross-project editor evidence. The P1 acceptance proof
+remains the bounded `Delta.Editor.App` path: `EditorShell.xaml` -> DeltaXAML
+adapter -> neutral engine draw list -> Delta.Render -> Vulkan present.
+
 Raw checked-in GLSL/SPIR-V is retained only for low-level fallback tests. Normal
 authoring is C# → DeltaShader → ShaderArtifact.
 

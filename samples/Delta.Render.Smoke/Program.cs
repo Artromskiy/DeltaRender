@@ -89,27 +89,15 @@ internal static class Program
                     ? Math.Max(1, parsedFrames)
                     : 1;
                 var renderedFrames = 0;
-                var quads = new[]
-                {
-                    new UiQuad(180, 120, 600, 300, 0.08f, 0.65f, 0.95f, 0.92f),
-                    new UiQuad(240, 180, 480, 180, 0.95f, 0.34f, 0.12f, 0.72f)
-                };
-                var drawList = new UiDrawList(quads);
+                IUiDrawListProvider panelAdapter = new PanelUiAdapter();
                 while (interactive || renderedFrames < frames)
                 {
                     Sdl3WindowFactory.PumpEvents();
-                    var frameState = session.BeginFrame();
-                    if (!frameState.IsValid)
-                    {
-                        Console.Error.WriteLine("Graphics frame not ready.");
-                        return 1;
-                    }
-
-                    var parameters = new GraphicsFrameParameters(frameState.Metrics.Width, frameState.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                    var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                    var drawList = new UiDrawList(panelAdapter.CurrentDrawList);
                     var rendered = panel
-                        ? session.EndFrame(in frameState, pipeline, in parameters, in drawList, ReadOnlySpan<RenderRecordChange>.Empty)
-                        : session.DrawFullscreenTriangle(pipeline, in parameters) &&
-                          session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+                        ? session.SubmitFrame(pipeline, in parameters, in drawList, ReadOnlySpan<RenderRecordChange>.Empty)
+                        : SubmitFullscreenFrame(session, pipeline, in parameters);
                     if (!rendered)
                     {
                         Console.Error.WriteLine("Failed to render fullscreen graphics frame.");
@@ -137,6 +125,30 @@ internal static class Program
         var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(File.ReadAllText(manifestPath))
             ?? throw new InvalidDataException($"Shader manifest was empty: {manifestPath}");
         return new DeltaShaderArtifact(File.ReadAllBytes(spirvPath), manifest);
+    }
+
+    private static bool SubmitFullscreenFrame(
+        IRenderWindowFrameSession session,
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters)
+    {
+        var frameState = session.BeginFrame();
+        return frameState.IsValid && session.DrawFullscreenTriangle(pipeline, in parameters) &&
+               session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+    }
+
+    private sealed class PanelUiAdapter : IUiDrawListProvider
+    {
+        private readonly UiQuad[] _drawList =
+        [
+            new UiQuad(180, 120, 600, 300, 0.08f, 0.65f, 0.95f, 0.92f),
+            new UiQuad(240, 180, 480, 180, 0.95f, 0.34f, 0.12f, 0.72f)
+            {
+                Clip = new UiClipRect(260, 200, 420, 120)
+            }
+        ];
+
+        public ReadOnlyMemory<UiQuad> CurrentDrawList => _drawList;
     }
 
     private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath, string? externalManifestPath)
