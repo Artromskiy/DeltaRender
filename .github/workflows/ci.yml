@@ -72,8 +72,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
       - name: Restore and build
         run: |
-          dotnet restore Delta.Render.sln
-          dotnet build Delta.Render.sln -c Release --no-restore
+          dotnet restore Delta.Render.slnx
+          dotnet build Delta.Render.slnx -c Release --no-restore
       - name: Run tests
         run: dotnet test tests/Delta.Render.Tests/Delta.Render.Tests.csproj -c Release --no-build --no-restore
       - name: Benchmark discovery smoke
