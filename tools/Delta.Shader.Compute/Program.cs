@@ -1,39 +1,37 @@
-using System.Linq.Expressions;
+using System.Text.Json;
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
 using Delta.Render.Vulkan;
 using Delta.Shader.Abstractions;
-using Delta.Shader.Runtime;
-
-Expression<Action<ReadOnlyStorageBuffer<uint>, ReadWriteStorageBuffer<uint>, uint>> kernel =
-    (input, output, invocation) => output.Store(
-        invocation,
-        invocation < input.Length
-            ? input.Load(invocation) * 2u + 1u
-            : 0u);
-
-var compilation = await ExpressionComputeShaderCompiler.CompileAsync(
-    kernel,
-    new ComputeExpressionOptions
-    {
-        InvocationParameterIndex = 2,
-        Bindings =
-        [
-            new ComputeExpressionBinding(0, 0, 0, ShaderResourceAccess.ReadOnly),
-            new ComputeExpressionBinding(1, 0, 1, ShaderResourceAccess.ReadWrite)
-        ]
-    });
-if (!compilation.Success || compilation.Artifact is null)
+if (args.Length == 0)
 {
-    foreach (var diagnostic in compilation.Diagnostics)
-    {
-        Console.Error.WriteLine($"{diagnostic.Id}: {diagnostic.Message}");
-    }
-
+    Console.Error.WriteLine("Expected the compile-time artifact directory as the first argument.");
     return 1;
 }
 
-var artifact = compilation.Artifact;
+var artifactDirectory = args[0];
+var spirvPath = Path.Combine(artifactDirectory, "Compute.spv");
+var manifestPath = Path.Combine(artifactDirectory, "Compute.shader.json");
+if (!File.Exists(spirvPath))
+{
+    Console.Error.WriteLine($"Missing compile-time SPIR-V artifact: {spirvPath}");
+    return 1;
+}
+
+if (!File.Exists(manifestPath))
+{
+    Console.Error.WriteLine($"Missing compile-time shader manifest: {manifestPath}");
+    return 1;
+}
+
+var manifest = JsonSerializer.Deserialize<ShaderAbiManifest>(await File.ReadAllTextAsync(manifestPath));
+if (manifest is null)
+{
+    Console.Error.WriteLine($"Could not deserialize compile-time shader manifest: {manifestPath}");
+    return 1;
+}
+
+var artifact = new ShaderArtifact(await File.ReadAllBytesAsync(spirvPath), manifest);
 await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
 await using var dispatcher = new ComputeDispatcher<IComputeStorageBuffer>(device, artifact, static buffer => buffer);
 
@@ -76,5 +74,5 @@ for (var index = 0; index < outputValues.Length; index++)
     }
 }
 
-Console.WriteLine($"Runtime expression shader dispatch passed for {elementCount} elements (cache key {compilation.CacheKey}).");
+Console.WriteLine($"Compile-time DeltaCompute shader dispatch passed for {elementCount} elements.");
 return 0;
