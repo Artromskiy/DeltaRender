@@ -30,6 +30,31 @@ public readonly record struct GraphicsFrameParameters(
                            float.IsFinite(TimeSeconds);
 }
 
+public readonly record struct UiQuad(
+    float X,
+    float Y,
+    float Width,
+    float Height,
+    float Red,
+    float Green,
+    float Blue,
+    float Alpha)
+{
+    public bool IsValid => Width > 0 && Height > 0 &&
+                           float.IsFinite(X) && float.IsFinite(Y) &&
+                           float.IsFinite(Width) && float.IsFinite(Height) &&
+                           float.IsFinite(Red) && float.IsFinite(Green) &&
+                           float.IsFinite(Blue) && float.IsFinite(Alpha);
+}
+
+public readonly ref struct UiDrawList
+{
+    public UiDrawList(ReadOnlySpan<UiQuad> quads) => Quads = quads;
+    public ReadOnlySpan<UiQuad> Quads { get; }
+    public int Count => Quads.Length;
+    public bool IsEmpty => Quads.IsEmpty;
+}
+
 public interface IGraphicsPipeline : IAsyncDisposable
 {
 }

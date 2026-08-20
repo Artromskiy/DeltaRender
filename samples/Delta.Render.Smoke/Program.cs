@@ -22,6 +22,7 @@ internal static class Program
         }
 
         var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
+        var panel = args.Any(a => string.Equals(a, "--panel", StringComparison.OrdinalIgnoreCase));
         var interactive = args.Any(a => string.Equals(a, "--interactive", StringComparison.OrdinalIgnoreCase));
 
         var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
@@ -65,6 +66,13 @@ internal static class Program
                 var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.spv");
                 var vertexManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.shader.json");
                 var fragmentManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.shader.json");
+                if (panel)
+                {
+                    vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.vert.spv");
+                    fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.frag.spv");
+                    vertexManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.vert.shader.json");
+                    fragmentManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.frag.shader.json");
+                }
                 if (!File.Exists(vertexPath) || !File.Exists(fragmentPath) ||
                     !File.Exists(vertexManifestPath) || !File.Exists(fragmentManifestPath))
                 {
@@ -81,6 +89,12 @@ internal static class Program
                     ? Math.Max(1, parsedFrames)
                     : 1;
                 var renderedFrames = 0;
+                var quads = new[]
+                {
+                    new UiQuad(180, 120, 600, 300, 0.08f, 0.65f, 0.95f, 0.92f),
+                    new UiQuad(240, 180, 480, 180, 0.95f, 0.34f, 0.12f, 0.72f)
+                };
+                var drawList = new UiDrawList(quads);
                 while (interactive || renderedFrames < frames)
                 {
                     Sdl3WindowFactory.PumpEvents();
@@ -92,8 +106,11 @@ internal static class Program
                     }
 
                     var parameters = new GraphicsFrameParameters(frameState.Metrics.Width, frameState.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
-                    if (!session.DrawFullscreenTriangle(pipeline, in parameters) ||
-                        !session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
+                    var rendered = panel
+                        ? session.EndFrame(in frameState, pipeline, in parameters, in drawList, ReadOnlySpan<RenderRecordChange>.Empty)
+                        : session.DrawFullscreenTriangle(pipeline, in parameters) &&
+                          session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+                    if (!rendered)
                     {
                         Console.Error.WriteLine("Failed to render fullscreen graphics frame.");
                         return 1;
@@ -101,7 +118,7 @@ internal static class Program
 
                     renderedFrames++;
                 }
-                Console.WriteLine($"graphics=fullscreen-rounded-rectangle frames={renderedFrames} pass=present");
+                Console.WriteLine($"graphics={(panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
             }
         }
         catch (Exception ex)

@@ -1,0 +1,82 @@
+{
+  "Version": 2,
+  "Stage": 1,
+  "SourceEntryPointName": "Vertex",
+  "EntryPointName": "main",
+  "TargetProfile": "vulkan1.2",
+  "GlslVersion": "460",
+  "SpirvVersion": "1.5",
+  "StorageLayout": "std430",
+  "LocalSizeX": 0,
+  "LocalSizeY": 0,
+  "LocalSizeZ": 0,
+  "Resources": [],
+  "Inputs": [
+    {
+      "Name": "vertexIndex",
+      "ParameterName": "vertexIndex",
+      "GlslName": "gl_VertexIndex",
+      "GlslType": "uint",
+      "Location": 0,
+      "Builtin": "VertexIndex"
+    }
+  ],
+  "Outputs": [
+    {
+      "Name": "position",
+      "ParameterName": "position",
+      "GlslName": "gl_Position",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "Position"
+    }
+  ],
+  "PushConstants": [
+    {
+      "Name": "DeltaPushConstants",
+      "ParameterName": "parameters",
+      "GlslType": "DeltaStruct_Delta_Render_UiShaders_UiPanel_Parameters",
+      "Alignment": 16,
+      "Size": 48,
+      "ArrayStride": 48,
+      "Members": [
+        {
+          "Name": "Resolution",
+          "GlslName": "member_Resolution",
+          "GlslType": "vec2",
+          "Offset": 0,
+          "Alignment": 8,
+          "Size": 8,
+          "ArrayStride": 8,
+          "MatrixStride": null,
+          "HostRepresentation": "std430",
+          "Members": []
+        },
+        {
+          "Name": "Rect",
+          "GlslName": "member_Rect",
+          "GlslType": "vec4",
+          "Offset": 16,
+          "Alignment": 16,
+          "Size": 16,
+          "ArrayStride": 16,
+          "MatrixStride": null,
+          "HostRepresentation": "std430",
+          "Members": []
+        },
+        {
+          "Name": "Color",
+          "GlslName": "member_Color",
+          "GlslType": "vec4",
+          "Offset": 32,
+          "Alignment": 16,
+          "Size": 16,
+          "ArrayStride": 16,
+          "MatrixStride": null,
+          "HostRepresentation": "std430",
+          "Members": []
+        }
+      ]
+    }
+  ]
+}

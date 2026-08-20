@@ -32,6 +32,26 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
+    public void Ui_quad_is_a_value_only_consumer_owned_draw_record()
+    {
+        Assert.True(new UiQuad(1, 2, 3, 4, 1, 0.5f, 0.25f, 1).IsValid);
+        Assert.False(new UiQuad(1, 2, 0, 4, 1, 0.5f, 0.25f, 1).IsValid);
+    }
+
+    [Fact]
+    public void Ui_draw_list_preserves_consumer_span_without_copying()
+    {
+        Span<UiQuad> quads = stackalloc UiQuad[2];
+        quads[0] = new UiQuad(0, 0, 10, 10, 1, 0, 0, 1);
+        quads[1] = new UiQuad(10, 10, 20, 20, 0, 1, 0, 1);
+        var drawList = new UiDrawList(quads);
+
+        Assert.Equal(2, drawList.Count);
+        Assert.False(drawList.IsEmpty);
+        Assert.Equal(quads[1], drawList.Quads[1]);
+    }
+
+    [Fact]
     public void Frame_session_exposes_graphics_without_event_pump_ownership()
     {
         var members = typeof(IRenderWindowFrameSession).GetMethods()
@@ -40,6 +60,7 @@ public sealed class GraphicsContractTests
 
         Assert.Contains(nameof(IRenderWindowFrameSession.CreateGraphicsPipeline), members);
         Assert.Contains(nameof(IRenderWindowFrameSession.DrawFullscreenTriangle), members);
+        Assert.Contains(nameof(IRenderWindowFrameSession.EndFrame), members);
         Assert.DoesNotContain("PollEvents", members);
     }
 

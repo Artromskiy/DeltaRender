@@ -828,6 +828,42 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         return EndFrame(in frameState, in _clearColor, dirtyRecords);
     }
 
+    public bool EndFrame(
+        in RenderFrameState frameState,
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters,
+        ReadOnlySpan<UiQuad> uiQuads,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex ||
+            pipeline is not VulkanGraphicsPipeline graphicsPipeline ||
+            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive ||
+            graphicsPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants) ||
+            !parameters.IsValid)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < uiQuads.Length; i++)
+        {
+            if (!uiQuads[i].IsValid)
+            {
+                return false;
+            }
+        }
+
+        return EndFrame(in frameState, in _clearColor, dirtyRecords, graphicsPipeline, in parameters, uiQuads);
+    }
+
+    public bool EndFrame(
+        in RenderFrameState frameState,
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters,
+        in UiDrawList drawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        => EndFrame(in frameState, pipeline, in parameters, drawList.Quads, dirtyRecords);
+
     public bool RenderClearFrame(float r, float g, float b, float a)
     {
         _clearColor = new ClearColorValue(r, g, b, a);
@@ -893,7 +929,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         return _frameBuffers.Length > 0;
     }
 
-    private bool EndFrame(in RenderFrameState frameState, in ClearColorValue clearColor, ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    private bool EndFrame(
+        in RenderFrameState frameState,
+        in ClearColorValue clearColor,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        VulkanGraphicsPipeline? uiPipeline = null,
+        in GraphicsFrameParameters uiParameters = default,
+        ReadOnlySpan<UiQuad> uiQuads = default)
     {
         _ = frameState;
         _ = dirtyRecords;
@@ -953,6 +995,39 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
                     (uint)sizeof(GraphicsPushConstants),
                     &pushConstants);
                 api.CmdDraw(_commandBuffer, 3, 1, 0, 0);
+            }
+            if (uiPipeline is { IsAlive: true } && !uiQuads.IsEmpty)
+            {
+                api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, uiPipeline.Pipeline);
+                var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
+                var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = _extent };
+                api.CmdSetViewport(_commandBuffer, 0, 1, new[] { viewport });
+                api.CmdSetScissor(_commandBuffer, 0, 1, new[] { scissor });
+                for (var i = 0; i < uiQuads.Length; i++)
+                {
+                    var quad = uiQuads[i];
+                    var pushConstants = new UiQuadPushConstants
+                    {
+                        ResolutionX = uiParameters.ResolutionX,
+                        ResolutionY = uiParameters.ResolutionY,
+                        X = quad.X,
+                        Y = quad.Y,
+                        Width = quad.Width,
+                        Height = quad.Height,
+                        Red = quad.Red,
+                        Green = quad.Green,
+                        Blue = quad.Blue,
+                        Alpha = quad.Alpha
+                    };
+                    api.CmdPushConstants(
+                        _commandBuffer,
+                        uiPipeline.PipelineLayout,
+                        ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                        0,
+                        (uint)sizeof(UiQuadPushConstants),
+                        &pushConstants);
+                    api.CmdDraw(_commandBuffer, 6, 1, 0, 0);
+                }
             }
             api.CmdEndRenderPass(_commandBuffer);
             if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
@@ -1065,7 +1140,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
             {
                 StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
                 Offset = 0,
-                Size = (uint)sizeof(GraphicsPushConstants)
+                Size = GetPushConstantSize(shaderProgram)
             };
             var pipelineLayoutInfo = new PipelineLayoutCreateInfo
             {
@@ -1170,7 +1245,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
             api.DestroyShaderModule(_device, fragmentModule, null);
             vertexModule = default;
             fragmentModule = default;
-            return new VulkanGraphicsPipeline(this, pipelineLayout, pipeline);
+            return new VulkanGraphicsPipeline(this, pipelineLayout, pipeline, GetPushConstantSize(shaderProgram));
         }
         catch
         {
@@ -1205,6 +1280,24 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         {
             throw new ArgumentException("The initial fullscreen graphics path does not support descriptor resources.", parameterName);
         }
+    }
+
+    private static uint GetPushConstantSize(in GraphicsShaderProgram shaderProgram)
+    {
+        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        if (vertexSize != 0 && fragmentSize != 0 && vertexSize != fragmentSize)
+        {
+            throw new ArgumentException("Graphics shader stages must use the same push-constant size.", nameof(shaderProgram));
+        }
+
+        var size = Math.Max(vertexSize, fragmentSize);
+        if (size == 0 || size > 128 || (size & 3) != 0)
+        {
+            throw new ArgumentException("Graphics shader push-constant metadata must declare a four-byte aligned size up to 128 bytes.", nameof(shaderProgram));
+        }
+
+        return size;
     }
 
     internal void DestroyGraphicsPipeline(VulkanGraphicsPipeline pipeline)
@@ -1500,18 +1593,37 @@ internal struct GraphicsPushConstants
     public float Reserved;
 }
 
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+internal struct UiQuadPushConstants
+{
+    public float ResolutionX;
+    public float ResolutionY;
+    public float ReservedX;
+    public float ReservedY;
+    public float X;
+    public float Y;
+    public float Width;
+    public float Height;
+    public float Red;
+    public float Green;
+    public float Blue;
+    public float Alpha;
+}
+
 public sealed unsafe class VulkanGraphicsPipeline : IGraphicsPipeline
 {
-    internal VulkanGraphicsPipeline(VulkanWindowSession owner, PipelineLayout pipelineLayout, Pipeline pipeline)
+    internal VulkanGraphicsPipeline(VulkanWindowSession owner, PipelineLayout pipelineLayout, Pipeline pipeline, uint pushConstantSize)
     {
         Owner = owner;
         PipelineLayout = pipelineLayout;
         Pipeline = pipeline;
+        PushConstantSize = pushConstantSize;
     }
 
     internal VulkanWindowSession Owner { get; }
     internal PipelineLayout PipelineLayout { get; private set; }
     internal Pipeline Pipeline { get; private set; }
+    internal uint PushConstantSize { get; }
     internal bool IsAlive => Pipeline.Handle != default && PipelineLayout.Handle != default;
 
     public ValueTask DisposeAsync()
