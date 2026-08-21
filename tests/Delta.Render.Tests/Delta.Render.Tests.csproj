@@ -23,6 +23,7 @@
     <None Include="fixtures\compute_double.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute_multi.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute_multi_sets.spv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\delta-text-atlas\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\Delta.Render.Smoke\shaders\fullscreen-rounded-rectangle.vert.spv" Link="fixtures\fullscreen-rounded-rectangle.vert.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\Delta.Render.Smoke\shaders\fullscreen-rounded-rectangle.frag.spv" Link="fixtures\fullscreen-rounded-rectangle.frag.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\Delta.Render.Smoke\shaders\ui-panel.vert.glsl" Link="fixtures\ui-panel.vert.glsl" CopyToOutputDirectory="PreserveNewest" />

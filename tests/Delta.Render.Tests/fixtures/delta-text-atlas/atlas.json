@@ -1,0 +1,11 @@
+{
+  "font": "fixture:noto-sans",
+  "mode": "Grayscale",
+  "pixelSize": 40,
+  "pages": 1,
+  "glyphs": [
+    {"glyphId": 36, "pageIndex": 0, "u0": 0, "v0": 0, "u1": 0,15625, "v1": 0,16796875, "width": 40, "height": 43, "stride": 40},
+    {"glyphId": 57, "pageIndex": 0, "u0": 0,203125, "v0": 0, "u1": 0,3515625, "v1": 0,16796875, "width": 38, "height": 43, "stride": 38},
+    {"glyphId": 74, "pageIndex": 0, "u0": 0,3984375, "v0": 0, "u1": 0,52734375, "v1": 0,1796875, "width": 33, "height": 46, "stride": 33}
+  ]
+}

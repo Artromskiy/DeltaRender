@@ -78,4 +78,46 @@ public sealed class TextContractTests
         var diagnostic = TextShaderArtifactContract.Validate(new GraphicsShaderProgram(vertex, fragment));
         Assert.Equal(TextShaderArtifactStatus.SampledImageAbiUnavailable, diagnostic.Status);
     }
+
+    [Fact]
+    public void Gray8_atlas_fixture_exposes_page_and_glyph_contracts()
+    {
+        var fixture = AtlasFixture.Load();
+
+        Assert.Equal(new TextAtlasPageDescription(new TextAtlasPageId(1), 256, 256, TextAtlasFormat.R8Unorm), fixture.Description);
+        Assert.Equal(3, fixture.Summary.Glyphs.Length);
+        Assert.All(fixture.Summary.Glyphs, glyph =>
+        {
+            Assert.Equal(0, glyph.PageIndex);
+            Assert.True(glyph.U1 > glyph.U0);
+            Assert.True(glyph.V1 > glyph.V0);
+            Assert.True(glyph.Width > 0);
+            Assert.True(glyph.Height > 0);
+        });
+        Assert.Contains(fixture.Pixels, pixel => pixel != 0);
+    }
+
+    [Fact]
+    public void Text_batching_preserves_grouped_instance_order_and_batch_counts()
+    {
+        var clipA = new UiClipRect(0, 0, 32, 32);
+        var clipB = new UiClipRect(8, 8, 16, 16);
+        var source = new[]
+        {
+            new TextGlyphInstance(new TextAtlasPageId(1), new TextUvRect(0, 0, 0.2f, 0.2f), new TextPixelBounds(0, 0, 10, 10), new TextColor(1, 1, 1, 1), clipA, TextRenderMode.Sdf, 4, 0.01f, 7),
+            new TextGlyphInstance(new TextAtlasPageId(1), new TextUvRect(0.2f, 0, 0.2f, 0.2f), new TextPixelBounds(10, 0, 10, 10), new TextColor(1, 1, 1, 1), clipA, TextRenderMode.Sdf, 4, 0.01f, 7),
+            new TextGlyphInstance(new TextAtlasPageId(2), new TextUvRect(0, 0, 0.2f, 0.2f), new TextPixelBounds(0, 12, 10, 10), new TextColor(1, 1, 1, 1), clipB, TextRenderMode.Sdf, 4, 0.01f, 7)
+        };
+
+        Span<TextGlyphInstance> ordered = stackalloc TextGlyphInstance[source.Length];
+        Span<TextBatchRange> batches = stackalloc TextBatchRange[source.Length];
+
+        Assert.True(TextBatching.TryBuild(source, ordered, batches, out var orderedCount, out var batchCount));
+        Assert.Equal(3, orderedCount);
+        Assert.Equal(2, batchCount);
+        Assert.Equal(2, batches[0].Count);
+        Assert.Equal(1, batches[1].Count);
+        Assert.Equal(source[0].BatchKey, batches[0].Key);
+        Assert.Equal(source[2].BatchKey, batches[1].Key);
+    }
 }
