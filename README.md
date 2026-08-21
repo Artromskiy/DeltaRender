@@ -29,11 +29,17 @@ dynamic viewport/scissor, alpha blending, fullscreen triangles and push
 constants. Vulkan verifies stage and SPIR-V entry-point metadata before pipeline
 creation.
 
-UI currently exposes a consumer-owned `UiDrawList` over `ReadOnlySpan<UiQuad>`.
-Multiple quads are submitted in one frame and viewport/scissor derive from the
-current swapchain extent. DeltaXAML will lower its renderer-neutral draw list
-into this boundary. Instancing, clip batches, texture/font atlases and text are
-the next bounded renderer steps.
+UI exposes a consumer-owned `UiDrawList` over `ReadOnlySpan<UiQuad>`. Multiple
+quads and per-quad clips are submitted in one frame; viewport/scissor derive
+from the current swapchain extent. The real DeltaXAML editor adapter has been
+presented through this path on MoltenVK.
+
+The active renderer milestone is batched SDF/MSDF text for the live component
+inspector. Add explicit Vulkan image/view/sampler/descriptor ownership,
+staging uploads, atlas pages and glyph-instance batches grouped by pipeline,
+atlas and clip. Strings, shaping and control semantics do not belong here.
+There must not be one draw call or managed allocation per glyph. See
+[`../EDITOR_UI_TODO.md`](../EDITOR_UI_TODO.md), P6-P8.
 
 The compatible resource slice is exposed by `Delta.Render.Core` through
 `ITextAtlasDevice`, `ITextAtlasPage`, `TextGlyphInstance`, `TextRun`,
