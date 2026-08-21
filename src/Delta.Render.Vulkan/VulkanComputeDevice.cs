@@ -14,7 +14,7 @@ using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Delta.Render.Vulkan;
 
-public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
+public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkanTextAtlasCommandContext
 {
     private const uint SpirvMagic = 0x07230203;
     private const ulong MinimumVulkanBufferSize = 4;
@@ -35,6 +35,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
     private CommandBuffer _commandBuffer;
     private Fence _fence;
     private PhysicalDeviceMemoryProperties _memoryProperties;
+    private VulkanTextAtlasService? _textAtlas;
     private bool _disposed;
 
     public VulkanComputeDevice(VulkanRendererOptions options)
@@ -89,6 +90,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
 
             var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
             Ensure(_api.CreateFence(_device, fenceInfo, null, out _fence), "CreateFence");
+            _textAtlas = new VulkanTextAtlasService(this);
 
         }
         catch
@@ -104,10 +106,27 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
 
     internal Device Device => _device;
 
+    internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
+
+    internal CommandBuffer CommandBuffer => _commandBuffer;
+
+    Vk IVulkanTextAtlasCommandContext.Api => _api;
+    Device IVulkanTextAtlasCommandContext.Device => _device;
+    PhysicalDeviceMemoryProperties IVulkanTextAtlasCommandContext.MemoryProperties => _memoryProperties;
+    CommandBuffer IVulkanTextAtlasCommandContext.CommandBuffer => _commandBuffer;
+
     internal VulkanUploadStatistics UploadStatistics => new(
         _uploadStagingAllocationCount,
         _dirtyBatchSubmitCount,
         _uploadStaging.AllocationSize);
+
+    public TextAtlasUploadStatistics AtlasUploadStatistics => _textAtlas!.AtlasUploadStatistics;
+
+    public ITextAtlasPage CreateAtlasPage(in TextAtlasPageDescription description) => _textAtlas!.CreateAtlasPage(description);
+
+    public bool UploadAtlasPage(ITextAtlasPage page, ReadOnlySpan<byte> pixels, uint sourceRowPitch) => _textAtlas!.UploadAtlasPage(page, pixels, sourceRowPitch);
+
+    public bool UploadAtlasDirtyRanges(ITextAtlasPage page, ReadOnlySpan<TextAtlasDirtyRange> ranges) => _textAtlas!.UploadAtlasDirtyRanges(page, ranges);
 
     public ComputeDeviceLimits Limits { get; }
 
@@ -737,15 +756,16 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
         try
         {
             _api.DeviceWaitIdle(_device);
-            foreach (var page in _atlasPages.ToArray()) DestroyAtlasPage(page);
             foreach (var pipeline in _pipelines.ToArray()) DestroyPipeline(pipeline);
             foreach (var buffer in _buffers.ToArray()) DestroyBuffer(buffer);
+            if (_textAtlas is not null)
+            {
+                _textAtlas.DisposeAsync().GetAwaiter().GetResult();
+            }
             DestroyAllocation(_uploadStaging);
             _uploadStaging = default;
             DestroyAllocation(_readbackStaging);
             _readbackStaging = default;
-            DestroyAllocation(_atlasStaging);
-            _atlasStaging = default;
             if (_fence.Handle != default) _api.DestroyFence(_device, _fence, null);
             if (_commandPool.Handle != default) _api.DestroyCommandPool(_device, _commandPool, null);
             if (_device.Handle != default) _api.DestroyDevice(_device, null);
@@ -867,6 +887,29 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice
         if (_api.QueueSubmit(_queue, 1, &submit, _fence) != Result.Success) return false;
         return _api.WaitForFences(_device, 1, _fence, true, ulong.MaxValue) == Result.Success;
     }
+
+    bool IVulkanTextAtlasCommandContext.BeginUploadCommands()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        if (_api.ResetFences(_device, 1, _fence) != Result.Success ||
+            _api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
+        {
+            return false;
+        }
+
+        var begin = new CommandBufferBeginInfo
+        {
+            SType = StructureType.CommandBufferBeginInfo,
+            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+        };
+        return _api.BeginCommandBuffer(_commandBuffer, begin) == Result.Success;
+    }
+
+    bool IVulkanTextAtlasCommandContext.EndUploadCommands() => EndAndWait();
 
     private bool SubmitUploadBatch(VulkanStorageBuffer target, ReadOnlySpan<BufferCopy> copies)
     {

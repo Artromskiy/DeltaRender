@@ -57,6 +57,27 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
 
     bool EndFrame(
         in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        ReadOnlySpan<UiQuad> uiQuads,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+
+    bool EndFrame(
+        in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        ReadOnlySpan<UiQuad> uiQuads,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<TextGlyphInstance> textGlyphs,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+
+    bool EndFrame(
+        in RenderFrameState frameState,
         IGraphicsPipeline pipeline,
         in GraphicsFrameParameters parameters,
         in UiDrawList drawList,
@@ -68,7 +89,30 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
         in UiDrawList drawList,
         ReadOnlySpan<RenderRecordChange> dirtyRecords);
 
+    bool SubmitFrame(
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        in UiDrawList uiDrawList,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+
+    bool SubmitFrame(
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        in UiDrawList uiDrawList,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+
+    IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram);
+
     IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram);
+
+    ITextAtlasDevice CreateTextAtlasDevice();
 
     bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters);
 

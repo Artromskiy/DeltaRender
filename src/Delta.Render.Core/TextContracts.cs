@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Delta.Shader.Abstractions;
 
 namespace Delta.Render.Core;
@@ -74,6 +76,22 @@ public readonly record struct TextGlyphInstance(
         return right > scissor.X && bottom > scissor.Y && (long)PixelBounds.X < scissor.X + (long)scissor.Width &&
                (long)PixelBounds.Y < scissor.Y + (long)scissor.Height;
     }
+}
+
+public readonly record struct TextFrameParameters(
+    float ResolutionX,
+    float ResolutionY,
+    float TimeSeconds,
+    TextColor TextColor,
+    TextColor OutlineColor,
+    float OutlineWidth)
+{
+    public bool IsValid => ResolutionX > 0 && ResolutionY > 0 &&
+                           float.IsFinite(ResolutionX) && float.IsFinite(ResolutionY) &&
+                           float.IsFinite(TimeSeconds) &&
+                           TextColor.IsValid &&
+                           OutlineColor.IsValid &&
+                           float.IsFinite(OutlineWidth) && OutlineWidth >= 0;
 }
 
 public readonly struct TextRun
@@ -154,6 +172,15 @@ public enum TextShaderArtifactStatus : byte
 
 public readonly record struct TextShaderArtifactDiagnostic(TextShaderArtifactStatus Status, string Message);
 
+public readonly record struct TextGraphicsShaderLayout(
+    uint VertexStorageSet,
+    uint VertexStorageBinding,
+    ShaderResourceAccess VertexStorageAccess,
+    uint TextureSet,
+    uint TextureBinding,
+    ShaderResourceAccess TextureAccess,
+    uint PushConstantSize);
+
 public static class TextShaderArtifactContract
 {
     // Resource semantics remain owned by Delta.Shader; Render introduces no second manifest.
@@ -162,7 +189,145 @@ public static class TextShaderArtifactContract
         if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
             program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
             return new(TextShaderArtifactStatus.Invalid, "Unsupported ShaderArtifact format version.");
-        return new(TextShaderArtifactStatus.SampledImageAbiUnavailable,
-            "Delta.Shader artifact metadata does not yet expose sampled image and sampler resources.");
+        if (!TryDescribe(program, out _, out var diagnostic))
+        {
+            return diagnostic;
+        }
+
+        return new(TextShaderArtifactStatus.Ready, "Text shader artifact manifest is ready.");
+    }
+
+    public static bool TryDescribe(GraphicsShaderProgram program, out TextGraphicsShaderLayout layout, out TextShaderArtifactDiagnostic diagnostic)
+    {
+        layout = default;
+        if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
+            program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+        {
+            diagnostic = new(TextShaderArtifactStatus.Invalid, "Unsupported ShaderArtifact format version.");
+            return false;
+        }
+
+        if (!ValidateVertex(program.Vertex.Manifest, out var vertexMessage, out var vertexLayout))
+        {
+            diagnostic = new(TextShaderArtifactStatus.Invalid, vertexMessage);
+            return false;
+        }
+
+        if (!ValidateFragment(program.Fragment.Manifest, out var fragmentMessage, out var fragmentLayout))
+        {
+            diagnostic = new(TextShaderArtifactStatus.Invalid, fragmentMessage);
+            return false;
+        }
+
+        if (vertexLayout.PushConstantSize == 0 || fragmentLayout.PushConstantSize == 0 ||
+            vertexLayout.PushConstantSize != fragmentLayout.PushConstantSize)
+        {
+            diagnostic = new(TextShaderArtifactStatus.Invalid, "Text shader stages must declare the same non-zero push-constant size.");
+            return false;
+        }
+
+        layout = new TextGraphicsShaderLayout(
+            vertexLayout.VertexStorageSet,
+            vertexLayout.VertexStorageBinding,
+            vertexLayout.VertexStorageAccess,
+            fragmentLayout.TextureSet,
+            fragmentLayout.TextureBinding,
+            fragmentLayout.TextureAccess,
+            vertexLayout.PushConstantSize);
+        diagnostic = new(TextShaderArtifactStatus.Ready, "Text shader artifact manifest is ready.");
+        return true;
+    }
+
+    private static bool ValidateVertex(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
+    {
+        layout = default;
+        if (manifest.Version != ShaderAbiManifest.CurrentVersion || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        {
+            message = "Vertex text artifact manifest is incomplete.";
+            return false;
+        }
+
+        if (!TryGetStorageBuffer(manifest.Resources, out var storage))
+        {
+            message = "Missing vertex text storage buffer resource at set/binding declared by the shader manifest.";
+            return false;
+        }
+
+        layout = new TextGraphicsShaderLayout(
+            storage.Set,
+            storage.Binding,
+            storage.Access,
+            0,
+            0,
+            ShaderResourceAccess.ReadOnly,
+            manifest.PushConstants.FirstOrDefault()?.Size ?? 0);
+        message = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateFragment(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
+    {
+        layout = default;
+        if (manifest.Version != ShaderAbiManifest.CurrentVersion || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        {
+            message = "Fragment text artifact manifest is incomplete.";
+            return false;
+        }
+
+        if (!TryGetSampledTexture(manifest.Resources, out var texture))
+        {
+            message = "Missing sampled texture resource in fragment text manifest.";
+            return false;
+        }
+
+        layout = new TextGraphicsShaderLayout(
+            0,
+            0,
+            ShaderResourceAccess.ReadOnly,
+            texture.Set,
+            texture.Binding,
+            texture.Access,
+            manifest.PushConstants.FirstOrDefault()?.Size ?? 0);
+        message = string.Empty;
+        return true;
+    }
+
+    private static bool TryGetStorageBuffer(IReadOnlyList<ShaderAbiResource> resources, out ShaderAbiResource resource)
+    {
+        resource = default!;
+        var seen = new HashSet<(uint Set, uint Binding)>();
+        foreach (var candidate in resources)
+        {
+            if (!seen.Add((candidate.Set, candidate.Binding)))
+            {
+                return false;
+            }
+
+            if (candidate.Category == "storage-buffer")
+            {
+                if (candidate.Access == ShaderResourceAccess.ReadOnly && candidate.Layout == "std430")
+                {
+                    resource = candidate;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetSampledTexture(IReadOnlyList<ShaderAbiResource> resources, out ShaderAbiResource resource)
+    {
+        resource = default!;
+        foreach (var candidate in resources)
+        {
+            if (candidate.Category == "sampled-texture" && candidate.Access == ShaderResourceAccess.ReadOnly)
+            {
+                resource = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 }

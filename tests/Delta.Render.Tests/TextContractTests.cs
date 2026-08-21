@@ -64,7 +64,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Shader_artifact_contract_reports_sampled_resource_blocker_without_new_manifest()
+    public void Shader_artifact_contract_reports_invalid_when_manifest_is_incomplete()
     {
         var bytes = new byte[20];
         var vertex = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
@@ -76,7 +76,74 @@ public sealed class TextContractTests
             Stage = Delta.Shader.Abstractions.ShaderStage.Fragment
         });
         var diagnostic = TextShaderArtifactContract.Validate(new GraphicsShaderProgram(vertex, fragment));
-        Assert.Equal(TextShaderArtifactStatus.SampledImageAbiUnavailable, diagnostic.Status);
+        Assert.Equal(TextShaderArtifactStatus.Invalid, diagnostic.Status);
+    }
+
+    [Fact]
+    public void Shader_artifact_contract_accepts_same_binding_number_in_different_sets()
+    {
+        var bytes = new byte[20];
+        var vertex = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
+        {
+            Version = Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion,
+            Stage = Delta.Shader.Abstractions.ShaderStage.Vertex,
+            EntryPointName = "main",
+            PushConstants = new[]
+            {
+                new Delta.Shader.Abstractions.ShaderAbiPushConstant
+                {
+                    Size = 16
+                }
+            },
+            Resources = new[]
+            {
+                new Delta.Shader.Abstractions.ShaderAbiResource
+                {
+                    Name = "glyphs",
+                    Category = "storage-buffer",
+                    Stage = Delta.Shader.Abstractions.ShaderStage.Vertex,
+                    Set = 0,
+                    Binding = 0,
+                    Access = Delta.Shader.Abstractions.ShaderResourceAccess.ReadOnly,
+                    Layout = "std430",
+                    ReadOnly = true
+                }
+            }
+        });
+        var fragment = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
+        {
+            Version = Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion,
+            Stage = Delta.Shader.Abstractions.ShaderStage.Fragment,
+            EntryPointName = "main",
+            PushConstants = new[]
+            {
+                new Delta.Shader.Abstractions.ShaderAbiPushConstant
+                {
+                    Size = 16
+                }
+            },
+            Resources = new[]
+            {
+                new Delta.Shader.Abstractions.ShaderAbiResource
+                {
+                    Name = "atlas",
+                    Category = "sampled-texture",
+                    Stage = Delta.Shader.Abstractions.ShaderStage.Fragment,
+                    Set = 1,
+                    Binding = 0,
+                    Access = Delta.Shader.Abstractions.ShaderResourceAccess.ReadOnly
+                }
+            }
+        });
+
+        var valid = TextShaderArtifactContract.TryDescribe(new GraphicsShaderProgram(vertex, fragment), out var layout, out var diagnostic);
+        Assert.True(valid);
+        Assert.Equal(TextShaderArtifactStatus.Ready, diagnostic.Status);
+        Assert.Equal(0u, layout.VertexStorageSet);
+        Assert.Equal(0u, layout.VertexStorageBinding);
+        Assert.Equal(1u, layout.TextureSet);
+        Assert.Equal(0u, layout.TextureBinding);
+        Assert.Equal(16u, layout.PushConstantSize);
     }
 
     [Fact]

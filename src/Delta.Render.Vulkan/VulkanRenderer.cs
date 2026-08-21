@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Buffers;
 using Delta.Render.Core;
 using Silk.NET.Core;
 using Silk.NET.Core.Contexts;
@@ -650,7 +652,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     }
 }
 
-public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
+public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVulkanTextAtlasCommandContext
 {
     private bool _disposed;
     private bool _inFrame;
@@ -676,7 +678,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     private readonly Fence _renderFence;
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
-    private readonly List<VulkanGraphicsPipeline> _graphicsPipelines = new();
+    private readonly List<IGraphicsPipeline> _graphicsPipelines = new();
+    private readonly VulkanTextAtlasService _textAtlas;
 
     private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
 
@@ -686,6 +689,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     private uint _activeImageIndex;
     private VulkanGraphicsPipeline? _pendingGraphicsPipeline;
     private GraphicsFrameParameters _pendingFrameParameters;
+    private PhysicalDeviceMemoryProperties _memoryProperties;
 
     internal VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
@@ -747,9 +751,104 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         };
         EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, commandBufferAllocateInfo, out var commandBuffer), "AllocateCommandBuffers");
         _commandBuffer = commandBuffer;
+        _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+        _textAtlas = new VulkanTextAtlasService(this);
+    }
+
+    internal Vk Api => _renderer.Api;
+    internal Device Device => _device;
+    internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
+    internal CommandBuffer CommandBuffer => _commandBuffer;
+
+    internal BufferAllocation CreateBuffer(ulong requestedSize, BufferUsageFlags usage, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
+    {
+        var actualSize = Math.Max(requestedSize, 4);
+        var createInfo = new BufferCreateInfo
+        {
+            SType = StructureType.BufferCreateInfo,
+            Size = actualSize,
+            Usage = usage,
+            SharingMode = SharingMode.Exclusive
+        };
+        EnsureSuccess(Api.CreateBuffer(_device, createInfo, null, out var buffer), "CreateBuffer");
+        var requirements = Api.GetBufferMemoryRequirements(_device, buffer);
+        try
+        {
+            var memoryTypeIndex = FindMemoryType(requirements.MemoryTypeBits, required, preferred);
+            var properties = _memoryProperties.MemoryTypes[(int)memoryTypeIndex].PropertyFlags;
+            var allocateInfo = new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                AllocationSize = requirements.Size,
+                MemoryTypeIndex = memoryTypeIndex
+            };
+            EnsureSuccess(Api.AllocateMemory(_device, allocateInfo, null, out var memory), "AllocateMemory");
+            try
+            {
+                EnsureSuccess(Api.BindBufferMemory(_device, buffer, memory, 0), "BindBufferMemory");
+                return new BufferAllocation(buffer, memory, requirements.Size, properties);
+            }
+            catch
+            {
+                Api.FreeMemory(_device, memory, null);
+                throw;
+            }
+        }
+        catch
+        {
+            Api.DestroyBuffer(_device, buffer, null);
+            throw;
+        }
+    }
+
+    internal void DestroyAllocation(BufferAllocation allocation)
+    {
+        if (allocation.Buffer.Handle != default)
+        {
+            Api.DestroyBuffer(_device, allocation.Buffer, null);
+        }
+
+        if (allocation.Memory.Handle != default)
+        {
+            Api.FreeMemory(_device, allocation.Memory, null);
+        }
+    }
+
+    internal uint FindMemoryType(uint typeBits, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
+    {
+        uint fallback = uint.MaxValue;
+        for (uint i = 0; i < _memoryProperties.MemoryTypeCount; i++)
+        {
+            if ((typeBits & (1u << (int)i)) == 0)
+            {
+                continue;
+            }
+
+            var flags = _memoryProperties.MemoryTypes[(int)i].PropertyFlags;
+            if (!flags.HasFlag(required))
+            {
+                continue;
+            }
+
+            if (flags.HasFlag(preferred))
+            {
+                return i;
+            }
+
+            fallback = i;
+        }
+
+        if (fallback != uint.MaxValue)
+        {
+            return fallback;
+        }
+
+        throw new InvalidOperationException($"No Vulkan memory type satisfies {required}.");
     }
 
     public RenderWindowId WindowId => _windowId;
+
+    public ITextAtlasDevice CreateTextAtlasDevice() => _textAtlas;
 
     public IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram)
     {
@@ -757,6 +856,68 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         var pipeline = CreateGraphicsPipelineCore(in shaderProgram);
         _graphicsPipelines.Add(pipeline);
         return pipeline;
+    }
+
+    public IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var pipeline = CreateTextPipelineCore(in shaderProgram);
+        _graphicsPipelines.Add(pipeline);
+        return pipeline;
+    }
+
+    Vk IVulkanTextAtlasCommandContext.Api => _renderer.Api;
+    Device IVulkanTextAtlasCommandContext.Device => _device;
+    PhysicalDeviceMemoryProperties IVulkanTextAtlasCommandContext.MemoryProperties => _memoryProperties;
+    CommandBuffer IVulkanTextAtlasCommandContext.CommandBuffer => _commandBuffer;
+
+    bool IVulkanTextAtlasCommandContext.BeginUploadCommands()
+    {
+        if (_disposed || _inFrame)
+        {
+            return false;
+        }
+
+        var api = _renderer.Api;
+        if (api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
+        {
+            return false;
+        }
+
+        var begin = new CommandBufferBeginInfo
+        {
+            SType = StructureType.CommandBufferBeginInfo,
+            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+        };
+        return api.BeginCommandBuffer(_commandBuffer, begin) == Result.Success;
+    }
+
+    bool IVulkanTextAtlasCommandContext.EndUploadCommands()
+    {
+        var api = _renderer.Api;
+        if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
+        {
+            return false;
+        }
+
+        var commandBuffer = _commandBuffer;
+        var submit = new SubmitInfo
+        {
+            SType = StructureType.SubmitInfo,
+            CommandBufferCount = 1,
+            PCommandBuffers = &commandBuffer
+        };
+        if (api.QueueSubmit(_graphicsQueue, 1, &submit, _renderFence) != Result.Success)
+        {
+            return false;
+        }
+
+        if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success)
+        {
+            return false;
+        }
+
+        return api.ResetFences(_device, 1, _renderFence) == Result.Success;
     }
 
     public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters)
@@ -858,6 +1019,59 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
 
     public bool EndFrame(
         in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        ReadOnlySpan<UiQuad> uiQuads,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<TextGlyphInstance> textGlyphs,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        => EndFrame(in frameState, uiPipeline, in uiParameters, uiQuads, textPipeline, in textParameters, ReadOnlySpan<ITextAtlasPage>.Empty, new TextDrawList(textGlyphs), dirtyRecords);
+
+    public bool EndFrame(
+        in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        ReadOnlySpan<UiQuad> uiQuads,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex ||
+            uiPipeline is not VulkanGraphicsPipeline graphicsPipeline ||
+            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive ||
+            graphicsPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants) ||
+            textPipeline is not VulkanTextGraphicsPipeline textGraphicsPipeline ||
+            !ReferenceEquals(textGraphicsPipeline.Owner, this) || !textGraphicsPipeline.IsAlive ||
+            !uiParameters.IsValid || !textParameters.IsValid)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < uiQuads.Length; i++)
+        {
+            if (!uiQuads[i].IsValid)
+            {
+                return false;
+            }
+        }
+
+        for (var i = 0; i < textDrawList.Glyphs.Length; i++)
+        {
+            if (!textDrawList.Glyphs[i].IsValid)
+            {
+                return false;
+            }
+        }
+
+        return EndFrame(in frameState, in _clearColor, dirtyRecords, graphicsPipeline, in uiParameters, uiQuads, textGraphicsPipeline, in textParameters, atlasPages, textDrawList.Glyphs);
+    }
+
+    public bool EndFrame(
+        in RenderFrameState frameState,
         IGraphicsPipeline pipeline,
         in GraphicsFrameParameters parameters,
         in UiDrawList drawList,
@@ -872,6 +1086,31 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
     {
         var frameState = BeginFrame();
         return frameState.IsValid && EndFrame(in frameState, pipeline, in parameters, in drawList, dirtyRecords);
+    }
+
+    public bool SubmitFrame(
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        in UiDrawList uiDrawList,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        => SubmitFrame(uiPipeline, in uiParameters, in uiDrawList, textPipeline, in textParameters, ReadOnlySpan<ITextAtlasPage>.Empty, in textDrawList, dirtyRecords);
+
+    public bool SubmitFrame(
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        in UiDrawList uiDrawList,
+        IGraphicsPipeline textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        in TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        var frameState = BeginFrame();
+        var uiQuads = uiDrawList.Quads;
+        return frameState.IsValid && EndFrame(in frameState, uiPipeline, in uiParameters, uiQuads, textPipeline, in textParameters, atlasPages, in textDrawList, dirtyRecords);
     }
 
     public bool RenderClearFrame(float r, float g, float b, float a)
@@ -945,7 +1184,11 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         ReadOnlySpan<RenderRecordChange> dirtyRecords,
         VulkanGraphicsPipeline? uiPipeline = null,
         in GraphicsFrameParameters uiParameters = default,
-        ReadOnlySpan<UiQuad> uiQuads = default)
+        ReadOnlySpan<UiQuad> uiQuads = default,
+        VulkanTextGraphicsPipeline? textPipeline = null,
+        in TextFrameParameters textParameters = default,
+        ReadOnlySpan<ITextAtlasPage> atlasPages = default,
+        ReadOnlySpan<TextGlyphInstance> textGlyphs = default)
     {
         _ = frameState;
         _ = dirtyRecords;
@@ -1048,6 +1291,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
                     api.CmdDraw(_commandBuffer, 6, 1, 0, 0);
                 }
             }
+            if (textPipeline is { IsAlive: true } && !textGlyphs.IsEmpty)
+            {
+                if (!RenderText(in textParameters, textGlyphs, atlasPages, textPipeline))
+                {
+                    return false;
+                }
+            }
             api.CmdEndRenderPass(_commandBuffer);
             if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
             {
@@ -1103,6 +1353,92 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         }
 
         return success;
+    }
+
+    private bool RenderText(in TextFrameParameters parameters, ReadOnlySpan<TextGlyphInstance> glyphs, ReadOnlySpan<ITextAtlasPage> atlasPages, VulkanTextGraphicsPipeline pipeline)
+    {
+        if (!TextBatching.TryBuild(glyphs, pipeline.OrderedGlyphs, pipeline.BatchGlyphs, out var orderedCount, out var batchCount))
+        {
+            return false;
+        }
+
+        if (!pipeline.EnsureInstanceCapacity((uint)orderedCount))
+        {
+            return false;
+        }
+
+        pipeline.UploadGlyphs(pipeline.OrderedGlyphs.Slice(0, orderedCount));
+
+        var api = _renderer.Api;
+        var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
+        api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
+
+        for (var i = 0; i < batchCount; i++)
+        {
+            var batch = pipeline.BatchGlyphs[i];
+            if (!batch.Key.Clip.TryGetScissor(new WindowMetrics(_extent.Width, _extent.Height, 1), out var uiScissor))
+            {
+                continue;
+            }
+
+            var matchedPage = FindAtlasPage(atlasPages, batch.Key.AtlasPage);
+            if (matchedPage is not VulkanTextAtlasPage atlasPage)
+            {
+                return false;
+            }
+
+            pipeline.UpdateDescriptorSet(atlasPage);
+            var scissor = new Rect2D
+            {
+                Offset = new Offset2D(uiScissor.X, uiScissor.Y),
+                Extent = new Extent2D(uiScissor.Width, uiScissor.Height)
+            };
+            api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
+
+            var pushConstants = new TextPushConstants
+            {
+                ResolutionX = parameters.ResolutionX,
+                ResolutionY = parameters.ResolutionY,
+                TimeSeconds = parameters.TimeSeconds,
+                TextRed = parameters.TextColor.Red,
+                TextGreen = parameters.TextColor.Green,
+                TextBlue = parameters.TextColor.Blue,
+                TextAlpha = parameters.TextColor.Alpha,
+                OutlineRed = parameters.OutlineColor.Red,
+                OutlineGreen = parameters.OutlineColor.Green,
+                OutlineBlue = parameters.OutlineColor.Blue,
+                OutlineAlpha = parameters.OutlineColor.Alpha,
+                OutlineWidth = parameters.OutlineWidth,
+                Reserved = 0
+            };
+            api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, pipeline.Pipeline);
+            api.CmdPushConstants(
+                _commandBuffer,
+                pipeline.PipelineLayout,
+                ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                0,
+                (uint)sizeof(TextPushConstants),
+                &pushConstants);
+
+            var descriptorSet = pipeline.DescriptorSet;
+            api.CmdBindDescriptorSets(_commandBuffer, PipelineBindPoint.Graphics, pipeline.PipelineLayout, 0, 1, &descriptorSet, 0, null);
+            api.CmdDraw(_commandBuffer, 6, (uint)batch.Count, 0, (uint)batch.Start);
+        }
+
+        return true;
+    }
+
+    private static ITextAtlasPage? FindAtlasPage(ReadOnlySpan<ITextAtlasPage> atlasPages, TextAtlasPageId id)
+    {
+        for (var i = 0; i < atlasPages.Length; i++)
+        {
+            if (atlasPages[i].Description.Id == id)
+            {
+                return atlasPages[i];
+            }
+        }
+
+        return null;
     }
 
     private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in GraphicsShaderProgram shaderProgram)
@@ -1276,6 +1612,234 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         }
     }
 
+    private VulkanTextGraphicsPipeline CreateTextPipelineCore(in GraphicsShaderProgram shaderProgram)
+    {
+        if (shaderProgram.Vertex.Stage != Delta.Shader.Abstractions.ShaderStage.Vertex ||
+            shaderProgram.Fragment.Stage != Delta.Shader.Abstractions.ShaderStage.Fragment)
+        {
+            throw new ArgumentException("Graphics shader programs must contain vertex and fragment stages.", nameof(shaderProgram));
+        }
+
+        if (!TextShaderArtifactContract.TryDescribe(shaderProgram, out var layout, out var diagnostic))
+        {
+            throw new ArgumentException(diagnostic.Message, nameof(shaderProgram));
+        }
+
+        var vertexEntryPoint = SpirvEntryPointReader.ReadGraphicsEntryPoint(shaderProgram.Vertex.Spirv, vertex: true);
+        var fragmentEntryPoint = SpirvEntryPointReader.ReadGraphicsEntryPoint(shaderProgram.Fragment.Spirv, vertex: false);
+        if (!string.Equals(vertexEntryPoint, shaderProgram.Vertex.EntryPoint, StringComparison.Ordinal) ||
+            !string.Equals(fragmentEntryPoint, shaderProgram.Fragment.EntryPoint, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Graphics shader entry points must match their SPIR-V OpEntryPoint names.", nameof(shaderProgram));
+        }
+
+        var api = _renderer.Api;
+        var vertexWords = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(shaderProgram.Vertex.Spirv);
+        var fragmentWords = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(shaderProgram.Fragment.Spirv);
+        ShaderModule vertexModule = default;
+        ShaderModule fragmentModule = default;
+        PipelineLayout pipelineLayout = default;
+        Pipeline pipeline = default;
+        DescriptorSetLayout descriptorSetLayout = default;
+        DescriptorPool descriptorPool = default;
+        DescriptorSet descriptorSet = default;
+        try
+        {
+            fixed (uint* vertexCode = vertexWords)
+            {
+                var shaderInfo = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)(vertexWords.Length * sizeof(uint)),
+                    PCode = vertexCode
+                };
+                EnsureSuccess(api.CreateShaderModule(_device, shaderInfo, null, out vertexModule), "CreateShaderModule(text vertex)");
+            }
+
+            fixed (uint* fragmentCode = fragmentWords)
+            {
+                var shaderInfo = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)(fragmentWords.Length * sizeof(uint)),
+                    PCode = fragmentCode
+                };
+                EnsureSuccess(api.CreateShaderModule(_device, shaderInfo, null, out fragmentModule), "CreateShaderModule(text fragment)");
+            }
+
+            var storageBinding = new DescriptorSetLayoutBinding
+            {
+                Binding = layout.VertexStorageBinding,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.VertexBit
+            };
+            var samplerBinding = new DescriptorSetLayoutBinding
+            {
+                Binding = layout.TextureBinding,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit
+            };
+            var bindings = stackalloc DescriptorSetLayoutBinding[2] { storageBinding, samplerBinding };
+            var layoutInfo = new DescriptorSetLayoutCreateInfo
+            {
+                SType = StructureType.DescriptorSetLayoutCreateInfo,
+                BindingCount = 2,
+                PBindings = bindings
+            };
+            EnsureSuccess(api.CreateDescriptorSetLayout(_device, layoutInfo, null, out descriptorSetLayout), "CreateDescriptorSetLayout(text)");
+
+            var poolSizes = stackalloc DescriptorPoolSize[2]
+            {
+                new() { Type = DescriptorType.StorageBuffer, DescriptorCount = 1 },
+                new() { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 1 }
+            };
+            var poolInfo = new DescriptorPoolCreateInfo
+            {
+                SType = StructureType.DescriptorPoolCreateInfo,
+                MaxSets = 1,
+                PoolSizeCount = 2,
+                PPoolSizes = poolSizes
+            };
+            EnsureSuccess(api.CreateDescriptorPool(_device, poolInfo, null, out descriptorPool), "CreateDescriptorPool(text)");
+
+            var setLayouts = stackalloc DescriptorSetLayout[1] { descriptorSetLayout };
+            var allocateInfo = new DescriptorSetAllocateInfo
+            {
+                SType = StructureType.DescriptorSetAllocateInfo,
+                DescriptorPool = descriptorPool,
+                DescriptorSetCount = 1,
+                PSetLayouts = setLayouts
+            };
+            EnsureSuccess(api.AllocateDescriptorSets(_device, allocateInfo, out descriptorSet), "AllocateDescriptorSets(text)");
+
+            var pushConstantRange = new PushConstantRange
+            {
+                StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                Offset = 0,
+                Size = layout.PushConstantSize
+            };
+            var pipelineLayoutInfo = new PipelineLayoutCreateInfo
+            {
+                SType = StructureType.PipelineLayoutCreateInfo,
+                SetLayoutCount = 1,
+                PSetLayouts = setLayouts,
+                PushConstantRangeCount = 1,
+                PPushConstantRanges = &pushConstantRange
+            };
+            EnsureSuccess(api.CreatePipelineLayout(_device, pipelineLayoutInfo, null, out pipelineLayout), "CreatePipelineLayout(text)");
+
+            var vertexEntryPointBytes = Encoding.UTF8.GetBytes(shaderProgram.Vertex.EntryPoint + "\0");
+            var fragmentEntryPointBytes = Encoding.UTF8.GetBytes(shaderProgram.Fragment.EntryPoint + "\0");
+            fixed (byte* vertexEntryPointPtr = vertexEntryPointBytes)
+            fixed (byte* fragmentEntryPointPtr = fragmentEntryPointBytes)
+            {
+                var stages = stackalloc PipelineShaderStageCreateInfo[2];
+                stages[0] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.VertexBit,
+                    Module = vertexModule,
+                    PName = vertexEntryPointPtr
+                };
+                stages[1] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.FragmentBit,
+                    Module = fragmentModule,
+                    PName = fragmentEntryPointPtr
+                };
+
+                var vertexInput = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
+                var inputAssembly = new PipelineInputAssemblyStateCreateInfo
+                {
+                    SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                    Topology = PrimitiveTopology.TriangleList
+                };
+                var viewportState = new PipelineViewportStateCreateInfo
+                {
+                    SType = StructureType.PipelineViewportStateCreateInfo,
+                    ViewportCount = 1,
+                    ScissorCount = 1
+                };
+                var rasterization = new PipelineRasterizationStateCreateInfo
+                {
+                    SType = StructureType.PipelineRasterizationStateCreateInfo,
+                    PolygonMode = PolygonMode.Fill,
+                    CullMode = CullModeFlags.None,
+                    FrontFace = FrontFace.CounterClockwise,
+                    LineWidth = 1f
+                };
+                var multisample = new PipelineMultisampleStateCreateInfo
+                {
+                    SType = StructureType.PipelineMultisampleStateCreateInfo,
+                    RasterizationSamples = SampleCountFlags.Count1Bit
+                };
+                var blendAttachment = new PipelineColorBlendAttachmentState
+                {
+                    BlendEnable = true,
+                    SrcColorBlendFactor = BlendFactor.SrcAlpha,
+                    DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                    ColorBlendOp = BlendOp.Add,
+                    SrcAlphaBlendFactor = BlendFactor.One,
+                    DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                    AlphaBlendOp = BlendOp.Add,
+                    ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
+                };
+                var colorBlend = new PipelineColorBlendStateCreateInfo
+                {
+                    SType = StructureType.PipelineColorBlendStateCreateInfo,
+                    AttachmentCount = 1,
+                    PAttachments = &blendAttachment
+                };
+                var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+                var dynamicState = new PipelineDynamicStateCreateInfo
+                {
+                    SType = StructureType.PipelineDynamicStateCreateInfo,
+                    DynamicStateCount = 2,
+                    PDynamicStates = dynamicStates
+                };
+                var pipelineInfo = new GraphicsPipelineCreateInfo
+                {
+                    SType = StructureType.GraphicsPipelineCreateInfo,
+                    StageCount = 2,
+                    PStages = stages,
+                    PVertexInputState = &vertexInput,
+                    PInputAssemblyState = &inputAssembly,
+                    PViewportState = &viewportState,
+                    PRasterizationState = &rasterization,
+                    PMultisampleState = &multisample,
+                    PColorBlendState = &colorBlend,
+                    PDynamicState = &dynamicState,
+                    Layout = pipelineLayout,
+                    RenderPass = _renderPass,
+                    Subpass = 0
+                };
+                var pipelineOutputs = stackalloc Pipeline[1];
+                EnsureSuccess(api.CreateGraphicsPipelines(_device, default, 1, &pipelineInfo, null, pipelineOutputs), "CreateGraphicsPipelines(text)");
+                pipeline = pipelineOutputs[0];
+            }
+
+            api.DestroyShaderModule(_device, vertexModule, null);
+            api.DestroyShaderModule(_device, fragmentModule, null);
+            vertexModule = default;
+            fragmentModule = default;
+
+            return new VulkanTextGraphicsPipeline(this, pipelineLayout, pipeline, descriptorSetLayout, descriptorPool, descriptorSet, layout.PushConstantSize, layout.VertexStorageBinding, layout.TextureBinding);
+        }
+        catch
+        {
+            if (vertexModule.Handle != default) api.DestroyShaderModule(_device, vertexModule, null);
+            if (fragmentModule.Handle != default) api.DestroyShaderModule(_device, fragmentModule, null);
+            if (pipeline.Handle != default) api.DestroyPipeline(_device, pipeline, null);
+            if (pipelineLayout.Handle != default) api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            if (descriptorPool.Handle != default) api.DestroyDescriptorPool(_device, descriptorPool, null);
+            if (descriptorSetLayout.Handle != default) api.DestroyDescriptorSetLayout(_device, descriptorSetLayout, null);
+            throw;
+        }
+    }
+
     private static void ValidateGraphicsArtifact(Delta.Shader.Abstractions.ShaderArtifact artifact, string parameterName)
     {
         if (artifact.FormatVersion != Delta.Shader.Abstractions.ShaderArtifact.CurrentFormatVersion)
@@ -1337,12 +1901,52 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         pipeline.MarkDestroyed();
     }
 
+    internal void DestroyTextGraphicsPipeline(VulkanTextGraphicsPipeline pipeline)
+    {
+        if (!_graphicsPipelines.Remove(pipeline))
+        {
+            return;
+        }
+
+        var api = _renderer.Api;
+        if (pipeline.Pipeline.Handle != default)
+        {
+            api.DestroyPipeline(_device, pipeline.Pipeline, null);
+        }
+        if (pipeline.PipelineLayout.Handle != default)
+        {
+            api.DestroyPipelineLayout(_device, pipeline.PipelineLayout, null);
+        }
+        if (pipeline.DescriptorPool.Handle != default)
+        {
+            api.DestroyDescriptorPool(_device, pipeline.DescriptorPool, null);
+        }
+        if (pipeline.DescriptorSetLayout.Handle != default)
+        {
+            api.DestroyDescriptorSetLayout(_device, pipeline.DescriptorSetLayout, null);
+        }
+        pipeline.MarkDestroyed();
+    }
+
     private static void EnsureSuccess(Result result, string operation)
     {
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"{operation} failed: {result}");
         }
+    }
+
+    private static uint GetTextPushConstantSize(in GraphicsShaderProgram shaderProgram)
+    {
+        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        var size = Math.Max(vertexSize, fragmentSize);
+        if (size != (uint)sizeof(TextPushConstants))
+        {
+            throw new ArgumentException("Text shader push-constant metadata must match the renderer text ABI.", nameof(shaderProgram));
+        }
+
+        return size;
     }
 
     private SwapchainKHR CreateSwapchain(Vk api, Device device, uint graphicsFamily, uint presentFamily, Extent2D extent,
@@ -1574,10 +2178,19 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession
         if (_device.Handle != default)
         {
             api.DeviceWaitIdle(_device);
+            _textAtlas.DisposeAsync().GetAwaiter().GetResult();
 
             foreach (var pipeline in _graphicsPipelines.ToArray())
             {
-                DestroyGraphicsPipeline(pipeline);
+                switch (pipeline)
+                {
+                    case VulkanGraphicsPipeline graphicsPipeline:
+                        DestroyGraphicsPipeline(graphicsPipeline);
+                        break;
+                    case VulkanTextGraphicsPipeline textPipeline:
+                        DestroyTextGraphicsPipeline(textPipeline);
+                        break;
+                }
             }
 
             for (var i = 0; i < _frameBuffers.Length; i++)
@@ -1629,6 +2242,27 @@ internal struct UiQuadPushConstants
     public float Alpha;
 }
 
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+internal struct TextPushConstants
+{
+    public float ResolutionX;
+    public float ResolutionY;
+    public float TimeSeconds;
+    public float Reserved;
+    public float TextRed;
+    public float TextGreen;
+    public float TextBlue;
+    public float TextAlpha;
+    public float OutlineRed;
+    public float OutlineGreen;
+    public float OutlineBlue;
+    public float OutlineAlpha;
+    public float OutlineWidth;
+    public float Reserved1;
+    public float Reserved2;
+    public float Reserved3;
+}
+
 public sealed unsafe class VulkanGraphicsPipeline : IGraphicsPipeline
 {
     internal VulkanGraphicsPipeline(VulkanWindowSession owner, PipelineLayout pipelineLayout, Pipeline pipeline, uint pushConstantSize)
@@ -1651,9 +2285,176 @@ public sealed unsafe class VulkanGraphicsPipeline : IGraphicsPipeline
         return ValueTask.CompletedTask;
     }
 
+internal void MarkDestroyed()
+    {
+        PipelineLayout = default;
+        Pipeline = default;
+    }
+}
+
+public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
+{
+    internal VulkanTextGraphicsPipeline(VulkanWindowSession owner, PipelineLayout pipelineLayout, Pipeline pipeline, DescriptorSetLayout descriptorSetLayout, DescriptorPool descriptorPool, DescriptorSet descriptorSet, uint pushConstantSize, uint storageBinding, uint textureBinding)
+    {
+        Owner = owner;
+        PipelineLayout = pipelineLayout;
+        Pipeline = pipeline;
+        DescriptorSetLayout = descriptorSetLayout;
+        DescriptorPool = descriptorPool;
+        DescriptorSet = descriptorSet;
+        PushConstantSize = pushConstantSize;
+        StorageBinding = storageBinding;
+        TextureBinding = textureBinding;
+    }
+
+    internal VulkanWindowSession Owner { get; }
+    internal PipelineLayout PipelineLayout { get; private set; }
+    internal Pipeline Pipeline { get; private set; }
+    internal DescriptorSetLayout DescriptorSetLayout { get; private set; }
+    internal DescriptorPool DescriptorPool { get; private set; }
+    internal DescriptorSet DescriptorSet { get; private set; }
+    internal uint PushConstantSize { get; }
+    internal uint StorageBinding { get; }
+    internal uint TextureBinding { get; }
+    internal bool IsAlive => Pipeline.Handle != default && PipelineLayout.Handle != default && DescriptorSetLayout.Handle != default;
+
+    private BufferAllocation _instanceBuffer;
+    private TextGlyphInstance[] _orderedGlyphs = Array.Empty<TextGlyphInstance>();
+    private TextBatchRange[] _batchGlyphs = Array.Empty<TextBatchRange>();
+
+    internal Span<TextGlyphInstance> OrderedGlyphs => _orderedGlyphs;
+    internal Span<TextBatchRange> BatchGlyphs => _batchGlyphs;
+
+    internal bool EnsureInstanceCapacity(uint glyphCount)
+    {
+        var requiredBytes = checked((ulong)Math.Max(1u, glyphCount) * (ulong)Unsafe.SizeOf<TextGlyphInstance>());
+        if (_instanceBuffer.Buffer.Handle != default && _instanceBuffer.AllocationSize >= requiredBytes)
+        {
+            return true;
+        }
+
+        if (_instanceBuffer.Buffer.Handle != default)
+        {
+            Owner.DestroyAllocation(_instanceBuffer);
+        }
+
+        var capacity = NextCapacity(requiredBytes);
+        _instanceBuffer = Owner.CreateBuffer(
+            capacity,
+            BufferUsageFlags.StorageBufferBit,
+            MemoryPropertyFlags.HostVisibleBit,
+            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+
+        if (_orderedGlyphs.Length < glyphCount)
+        {
+            Array.Resize(ref _orderedGlyphs, Math.Max(_orderedGlyphs.Length * 2, (int)glyphCount));
+        }
+
+        if (_batchGlyphs.Length < glyphCount)
+        {
+            Array.Resize(ref _batchGlyphs, Math.Max(_batchGlyphs.Length * 2, (int)glyphCount));
+        }
+
+        return true;
+    }
+
+    internal void UploadGlyphs(ReadOnlySpan<TextGlyphInstance> glyphs)
+    {
+        if (_instanceBuffer.Buffer.Handle == default)
+        {
+            throw new InvalidOperationException("Text instance buffer was not initialized.");
+        }
+
+        var bytes = MemoryMarshal.AsBytes(glyphs);
+        fixed (byte* source = bytes)
+        {
+            void* mapped = null;
+            Owner.Api.MapMemory(Owner.Device, _instanceBuffer.Memory, 0, _instanceBuffer.AllocationSize, 0, &mapped);
+            try
+            {
+                System.Buffer.MemoryCopy(source, mapped, _instanceBuffer.AllocationSize, (nuint)bytes.Length);
+                if (!_instanceBuffer.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+                {
+                    var range = new MappedMemoryRange
+                    {
+                        SType = StructureType.MappedMemoryRange,
+                        Memory = _instanceBuffer.Memory,
+                        Size = (nuint)bytes.Length
+                    };
+                    Owner.Api.FlushMappedMemoryRanges(Owner.Device, 1, &range);
+                }
+            }
+            finally
+            {
+                Owner.Api.UnmapMemory(Owner.Device, _instanceBuffer.Memory);
+            }
+        }
+    }
+
+    internal void UpdateDescriptorSet(VulkanTextAtlasPage atlasPage)
+    {
+        unsafe
+        {
+            var bufferInfo = new DescriptorBufferInfo
+            {
+                Buffer = _instanceBuffer.Buffer,
+                Offset = 0,
+                Range = _instanceBuffer.AllocationSize
+            };
+            var imageInfo = new DescriptorImageInfo
+            {
+                Sampler = atlasPage.Sampler,
+                ImageView = atlasPage.ImageView,
+                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
+            };
+            var writes = stackalloc WriteDescriptorSet[2];
+            writes[0] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = DescriptorSet,
+                DstBinding = StorageBinding,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.StorageBuffer,
+                PBufferInfo = &bufferInfo
+            };
+            writes[1] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = DescriptorSet,
+                DstBinding = TextureBinding,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                PImageInfo = &imageInfo
+            };
+            Owner.Api.UpdateDescriptorSets(Owner.Device, 2, writes, 0, null);
+        }
+    }
+
+    private static ulong NextCapacity(ulong requiredBytes)
+    {
+        var capacity = 64ul;
+        while (capacity < requiredBytes)
+        {
+            capacity <<= 1;
+        }
+
+        return capacity;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Owner.DestroyTextGraphicsPipeline(this);
+        return ValueTask.CompletedTask;
+    }
+
     internal void MarkDestroyed()
     {
         PipelineLayout = default;
         Pipeline = default;
+        DescriptorSetLayout = default;
+        DescriptorPool = default;
+        DescriptorSet = default;
+        _orderedGlyphs = Array.Empty<TextGlyphInstance>();
+        _batchGlyphs = Array.Empty<TextBatchRange>();
     }
 }
