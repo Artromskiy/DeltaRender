@@ -25,6 +25,8 @@ Tool-specific shader regeneration is documented in
 
 ## Code metrics
 
-Run the manual GitHub Actions `Code metrics` workflow when maintainability
-evidence is needed. It enables CA1501/CA1502/CA1505/CA1506 as report-only
-diagnostics and uploads the SARIF, build log and exit summary as artifacts.
+Run the manual GitHub Actions `Code metrics` workflow before committing a
+substantial change, then inspect its SARIF and summary artifacts. The rules
+CA1501/CA1502/CA1505/CA1506 are report-only signals; do not refactor a method
+for one isolated warning. Refactor when several metrics remain over their
+limits, the issue persists across runs, or profiling identifies a hot path.
