@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+# Report-only maintainability metrics; the metrics workflow does not fail builds.
+dotnet_diagnostic.CA1501.severity = suggestion
+dotnet_diagnostic.CA1502.severity = suggestion
+dotnet_diagnostic.CA1505.severity = suggestion
+dotnet_diagnostic.CA1506.severity = suggestion

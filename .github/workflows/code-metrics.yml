@@ -1,0 +1,49 @@
+name: Code metrics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metrics:
+    name: .NET code metrics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.x
+            10.x
+      - name: Discover target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -print | sort | head -n 1)"
+          if [[ -z "$target" ]]; then target="$(find . -maxdepth 4 -name '*.csproj' -print | sort | head -n 1)"; fi
+          [[ -n "$target" ]] || { echo 'No .NET solution or project found.' >&2; exit 1; }
+          echo "path=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore
+        run: dotnet restore "${{ steps.target.outputs.path }}"
+      - name: Build and collect analyzer metrics
+        shell: bash
+        env:
+          TARGET: ${{ steps.target.outputs.path }}
+        run: |
+          set -uo pipefail
+          mkdir -p artifacts/code-metrics; set +e
+          dotnet build "$TARGET" -c Release --no-restore --disable-build-servers -m:1 /p:UseSharedCompilation=false /p:AnalysisMode=AllEnabledByDefault /p:ErrorLog="$GITHUB_WORKSPACE/artifacts/code-metrics/diagnostics.sarif,version=2.1" 2>&1 | tee artifacts/code-metrics/build.log
+          status=${PIPESTATUS[0]}; set -e
+          echo "Build exit code: $status" | tee artifacts/code-metrics/summary.txt; exit 0
+      - name: Upload metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: code-metrics
+          path: artifacts/code-metrics
+          if-no-files-found: warn
