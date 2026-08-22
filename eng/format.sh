@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # Folder mode deliberately avoids MSBuild/Roslyn workspace discovery.  On
 # macOS/.NET 10 that discovery can hang even when `dotnet build` is healthy.
 # It formats every tracked-looking C# file under this project root.
-format_args=(whitespace --folder . --exclude ./obj ./bin --verbosity minimal)
+format_args=(whitespace --folder . --exclude ./obj --exclude ./bin --verbosity minimal)
 if [[ "${FORMAT_CHECK:-0}" == "1" ]]; then
     format_args+=(--verify-no-changes)
 fi
