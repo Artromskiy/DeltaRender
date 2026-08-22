@@ -47,6 +47,7 @@ dotnet_diagnostic.CA1825.severity = suggestion
 dotnet_diagnostic.CA1845.severity = suggestion
 dotnet_diagnostic.CA1846.severity = suggestion
 dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0011.severity = warning
 dotnet_diagnostic.IDE0055.severity = warning
 dotnet_diagnostic.IDE0060.severity = suggestion
 dotnet_diagnostic.IDE0090.severity = suggestion
