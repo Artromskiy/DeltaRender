@@ -34,7 +34,7 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p artifacts/code-metrics
-          dotnet format "${{ steps.target.outputs.path }}" --severity info --no-restore --verify-no-changes 2>&1 | tee artifacts/code-metrics/format.log
+          dotnet format whitespace --folder . --exclude ./obj ./bin --verify-no-changes --verbosity minimal 2>&1 | tee artifacts/code-metrics/format.log
       - name: Build and collect analyzer metrics
         shell: bash
         env:
