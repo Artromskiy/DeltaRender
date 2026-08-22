@@ -30,3 +30,7 @@ substantial change, then inspect its SARIF and summary artifacts. The rules
 CA1501/CA1502/CA1505/CA1506 are report-only signals; do not refactor a method
 for one isolated warning. Refactor when several metrics remain over their
 limits, the issue persists across runs, or profiling identifies a hot path.
+
+For local application run `./eng/format.sh`; for a non-mutating check use
+`FORMAT_CHECK=1 ./eng/format.sh`. Run the check before committing substantial
+changes. The script uses the repository `.editorconfig` and `Directory.Build.props`.
