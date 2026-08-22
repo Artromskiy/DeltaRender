@@ -17,8 +17,14 @@ if [[ "${FORMAT_RESTORE:-0}" == "1" ]]; then
     dotnet restore "$target"
 fi
 
+format_args=("$target" --severity info --no-restore --verbosity minimal)
 if [[ "${FORMAT_CHECK:-0}" == "1" ]]; then
-    dotnet format "$target" --severity info --no-restore --verify-no-changes
+    format_args+=(--verify-no-changes)
+fi
+
+timeout_seconds="${FORMAT_TIMEOUT_SECONDS:-60}"
+if command -v perl >/dev/null 2>&1; then
+    perl -e 'alarm shift; exec @ARGV' "$timeout_seconds" dotnet format "${format_args[@]}"
 else
-    dotnet format "$target" --severity info --no-restore
+    dotnet format "${format_args[@]}"
 fi
