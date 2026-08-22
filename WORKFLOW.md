@@ -34,3 +34,5 @@ limits, the issue persists across runs, or profiling identifies a hot path.
 For local application run `./eng/format.sh`; for a non-mutating check use
 `FORMAT_CHECK=1 ./eng/format.sh`. Run the check before committing substantial
 changes. The script uses the repository `.editorconfig` and `Directory.Build.props`.
+It skips restore by default; use `FORMAT_RESTORE=1 ./eng/format.sh` only when
+assets are missing or dependencies changed.

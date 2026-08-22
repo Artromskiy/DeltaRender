@@ -13,7 +13,9 @@ if [[ -z "$target" ]]; then
     exit 1
 fi
 
-dotnet restore "$target"
+if [[ "${FORMAT_RESTORE:-0}" == "1" ]]; then
+    dotnet restore "$target"
+fi
 
 if [[ "${FORMAT_CHECK:-0}" == "1" ]]; then
     dotnet format "$target" --severity info --no-restore --verify-no-changes
