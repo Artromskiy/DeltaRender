@@ -122,13 +122,22 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         _dirtyBatchSubmitCount,
         _uploadStaging.AllocationSize);
 
-    public TextAtlasUploadStatistics AtlasUploadStatistics => _textAtlas!.AtlasUploadStatistics;
+    public TextAtlasUploadStatistics AtlasUploadStatistics => TextAtlas.AtlasUploadStatistics;
 
-    public ITextAtlasPage CreateAtlasPage(in TextAtlasPageDescription description) => _textAtlas!.CreateAtlasPage(description);
+    public ITextAtlasPage CreateAtlasPage(in TextAtlasPageDescription description) => TextAtlas.CreateAtlasPage(description);
 
-    public bool UploadAtlasPage(ITextAtlasPage page, ReadOnlySpan<byte> pixels, uint sourceRowPitch) => _textAtlas!.UploadAtlasPage(page, pixels, sourceRowPitch);
+    public bool UploadAtlasPage(ITextAtlasPage page, ReadOnlySpan<byte> pixels, uint sourceRowPitch) => TextAtlas.UploadAtlasPage(page, pixels, sourceRowPitch);
 
-    public bool UploadAtlasDirtyRanges(ITextAtlasPage page, ReadOnlySpan<TextAtlasDirtyRange> ranges) => _textAtlas!.UploadAtlasDirtyRanges(page, ranges);
+    public bool UploadAtlasDirtyRanges(ITextAtlasPage page, ReadOnlySpan<TextAtlasDirtyRange> ranges) => TextAtlas.UploadAtlasDirtyRanges(page, ranges);
+
+    private VulkanTextAtlasService TextAtlas
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _textAtlas ?? throw new InvalidOperationException("The Vulkan text atlas service is unavailable.");
+        }
+    }
 
     public ComputeDeviceLimits Limits { get; }
 
@@ -158,6 +167,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     public bool Upload(IComputeStorageBuffer destination, ReadOnlySpan<byte> source, ulong destinationOffset = 0)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
         if (!TryGetBuffer(destination, out var target) || !Fits(target.ByteLength, destinationOffset, (ulong)source.Length))
         {
             return false;
@@ -179,6 +189,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     public bool UploadRanges(IComputeStorageBuffer destination, ReadOnlySpan<ComputeUploadRange> ranges)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
         if (ranges.IsEmpty)
         {
             return true;
@@ -282,6 +293,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     public bool Readback(IComputeStorageBuffer source, Span<byte> destination, ulong sourceOffset = 0)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
         if (!TryGetBuffer(source, out var target) || !Fits(target.ByteLength, sourceOffset, (ulong)destination.Length))
         {
             return false;
@@ -567,7 +579,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
         if (!computePipeline.TryUpdateDescriptors(bindings, out var error))
         {
-            return ComputeDispatchResult.Invalid(error!);
+            return ComputeDispatchResult.Invalid(error ?? "Descriptor update failed without a diagnostic.");
         }
 
         BeginCommandBuffer();
@@ -647,6 +659,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     public ComputeDirtyUpdateResult ApplyDirtyRecords(IComputeStorageBuffer destination, ReadOnlySpan<RenderRecordChange> dirtyRecords, uint recordStride, uint recordCapacity)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
         if (dirtyRecords.IsEmpty)
         {
             return ComputeDirtyUpdateResult.Empty;
@@ -1018,10 +1031,16 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             bindings);
     }
 
-    private bool TryGetBuffer(IComputeStorageBuffer buffer, out VulkanStorageBuffer result)
+    private bool TryGetBuffer(IComputeStorageBuffer buffer, [NotNullWhen(true)] out VulkanStorageBuffer? result)
     {
-        result = buffer as VulkanStorageBuffer ?? null!;
-        return result is not null && ReferenceEquals(result.Owner, this) && result.Buffer.Handle != default;
+        if (buffer is VulkanStorageBuffer candidate && ReferenceEquals(candidate.Owner, this) && candidate.Buffer.Handle != default)
+        {
+            result = candidate;
+            return true;
+        }
+
+        result = null;
+        return false;
     }
 
     private static bool Fits(ulong length, ulong offset, ulong size) => offset <= length && size <= length - offset;

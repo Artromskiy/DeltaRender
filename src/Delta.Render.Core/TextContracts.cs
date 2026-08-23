@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Delta.Shader.Abstractions;
 
 namespace Delta.Render.Core;
@@ -520,9 +521,9 @@ public static class TextShaderArtifactContract
         return true;
     }
 
-    private static bool TryGetStorageBuffer(IReadOnlyList<ShaderAbiResource> resources, out ShaderAbiResource resource)
+    private static bool TryGetStorageBuffer(IReadOnlyList<ShaderAbiResource> resources, [NotNullWhen(true)] out ShaderAbiResource? resource)
     {
-        resource = default!;
+        resource = null;
         var seen = new HashSet<(uint Set, uint Binding)>();
         foreach (var candidate in resources)
         {
@@ -544,9 +545,9 @@ public static class TextShaderArtifactContract
         return false;
     }
 
-    private static bool TryGetSampledTexture(IReadOnlyList<ShaderAbiResource> resources, out ShaderAbiResource resource)
+    private static bool TryGetSampledTexture(IReadOnlyList<ShaderAbiResource> resources, [NotNullWhen(true)] out ShaderAbiResource? resource)
     {
-        resource = default!;
+        resource = null;
         foreach (var candidate in resources)
         {
             if (candidate.Category == "sampled-texture" && candidate.Access == ShaderResourceAccess.ReadOnly)

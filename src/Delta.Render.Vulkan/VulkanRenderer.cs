@@ -45,9 +45,13 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     public Instance Instance { get; private set; }
     public Device Device { get; private set; }
 
-    private KhrSurface _khrSurface = null!;
-    private KhrSwapchain _khrSwapchain = null!;
-    private ExtDebugUtils _extDebug = null!;
+    private KhrSurface? _khrSurface;
+    private KhrSwapchain? _khrSwapchain;
+    private ExtDebugUtils? _extDebug;
+
+    private KhrSurface SurfaceExtension => _khrSurface ?? throw new InvalidOperationException("Vulkan surface extension is not initialized.");
+    private KhrSwapchain SwapchainExtension => _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized.");
+    private ExtDebugUtils DebugExtension => _extDebug ?? throw new InvalidOperationException("Vulkan debug extension is not initialized.");
 
     private DebugUtilsMessengerEXT _debugMessenger;
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
@@ -137,8 +141,8 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     internal uint GetGraphicsFamily() => _graphicsFamily;
     internal uint GetPresentFamily() => _presentFamily;
     internal PhysicalDevice GetPhysicalDevice() => _physicalDevice;
-    internal KhrSurface GetKhrSurface() => _khrSurface;
-    internal KhrSwapchain GetKhrSwapchain() => _khrSwapchain;
+    internal KhrSurface GetKhrSurface() => SurfaceExtension;
+    internal KhrSwapchain GetKhrSwapchain() => SwapchainExtension;
     internal Device GetDevice() => Device;
 
     private void InitializeForWindow(IVulkanWindowSurfaceSource surfaceSource, RenderDiagnosticBag diagnostics)
@@ -251,20 +255,20 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             if (Api.TryGetInstanceExtension(Instance, out _extDebug))
             {
                 _debugCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugUtilsCallback);
-                _ = _extDebug.CreateDebugUtilsMessenger(
-                    Instance,
-                    new DebugUtilsMessengerCreateInfoEXT
-                    {
-                        SType = StructureType.DebugUtilsMessengerCreateInfoExt,
-                        MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
-                                      DebugUtilsMessageTypeFlagsEXT.ValidationBitExt |
-                                      DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
-                        MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
-                                        DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt |
-                                        DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt,
-                        PNext = null,
-                        PfnUserCallback = _debugCallback
-                    }, null, out _debugMessenger);
+                _ = DebugExtension.CreateDebugUtilsMessenger(
+                        Instance,
+                        new DebugUtilsMessengerCreateInfoEXT
+                        {
+                            SType = StructureType.DebugUtilsMessengerCreateInfoExt,
+                            MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
+                                          DebugUtilsMessageTypeFlagsEXT.ValidationBitExt |
+                                          DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
+                            MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
+                                            DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt |
+                                            DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt,
+                            PNext = null,
+                            PfnUserCallback = _debugCallback
+                        }, null, out _debugMessenger);
             }
             else
             {
@@ -373,7 +377,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 hasGraphics = true;
             }
 
-            _ = _khrSurface.GetPhysicalDeviceSurfaceSupport(physicalDevice, i, surface, out var canPresent);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(physicalDevice, i, surface, out var canPresent);
             if (!hasPresent && canPresent)
             {
                 hasPresent = true;
@@ -425,11 +429,11 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface capability counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool HasSwapChainDetails(SurfaceKHR surface, PhysicalDevice physicalDevice)
     {
-        _ = _khrSurface.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out _);
+        _ = SurfaceExtension.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out _);
         uint formatCount = 0;
-        _ = _khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, &formatCount, null);
+        _ = SurfaceExtension.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, &formatCount, null);
         uint modeCount = 0;
-        _ = _khrSurface.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, &modeCount, null);
+        _ = SurfaceExtension.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, &modeCount, null);
         return formatCount != 0 && modeCount != 0;
     }
 
@@ -463,7 +467,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 graphicsFamily = i;
             }
 
-            _ = _khrSurface.GetPhysicalDeviceSurfaceSupport(_physicalDevice, i, surface, out var canPresent);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(_physicalDevice, i, surface, out var canPresent);
             if (canPresent && presentFamily == uint.MaxValue)
             {
                 presentFamily = i;
@@ -556,14 +560,14 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             return false;
         }
 
-        var capabilitiesResult = _khrSurface.GetPhysicalDeviceSurfaceCapabilities(_physicalDevice, surface, out capabilities);
+        var capabilitiesResult = SurfaceExtension.GetPhysicalDeviceSurfaceCapabilities(_physicalDevice, surface, out capabilities);
         if (capabilitiesResult != Result.Success)
         {
             return false;
         }
 
         uint formatCount = 0;
-        _ = _khrSurface.GetPhysicalDeviceSurfaceFormats(_physicalDevice, surface, &formatCount, null);
+        _ = SurfaceExtension.GetPhysicalDeviceSurfaceFormats(_physicalDevice, surface, &formatCount, null);
         if (formatCount == 0)
         {
             return false;
@@ -572,11 +576,11 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         formats = new SurfaceFormatKHR[(int)formatCount];
         fixed (SurfaceFormatKHR* pFormats = formats)
         {
-            _ = _khrSurface.GetPhysicalDeviceSurfaceFormats(_physicalDevice, surface, &formatCount, pFormats);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfaceFormats(_physicalDevice, surface, &formatCount, pFormats);
         }
 
         uint presentModeCount = 0;
-        _ = _khrSurface.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, surface, &presentModeCount, null);
+        _ = SurfaceExtension.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, surface, &presentModeCount, null);
         if (presentModeCount == 0)
         {
             presentModes = Array.Empty<PresentModeKHR>();
@@ -586,7 +590,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         presentModes = new PresentModeKHR[(int)presentModeCount];
         fixed (PresentModeKHR* pPresentModes = presentModes)
         {
-            _ = _khrSurface.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, surface, &presentModeCount, pPresentModes);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, surface, &presentModeCount, pPresentModes);
         }
 
         return true;
@@ -643,7 +647,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         if (IsValidationEnabled && _debugMessenger.Handle != default)
         {
-            _extDebug.DestroyDebugUtilsMessenger(Instance, _debugMessenger, null);
+            DebugExtension.DestroyDebugUtilsMessenger(Instance, _debugMessenger, null);
             _debugMessenger = default;
         }
 
@@ -656,19 +660,19 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         if (_extDebug is not null)
         {
             _extDebug.Dispose();
-            _extDebug = null!;
+            _extDebug = null;
         }
 
         if (_khrSwapchain is not null)
         {
             _khrSwapchain.Dispose();
-            _khrSwapchain = null!;
+            _khrSwapchain = null;
         }
 
         if (_khrSurface is not null)
         {
             _khrSurface.Dispose();
-            _khrSurface = null!;
+            _khrSurface = null;
         }
 
         _nativeContext?.Dispose();

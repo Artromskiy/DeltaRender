@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using Delta.Render.Core;
 using Silk.NET.Vulkan;
 using VulkanImage = Silk.NET.Vulkan.Image;
@@ -289,10 +290,16 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
         return ValueTask.CompletedTask;
     }
 
-    internal bool TryGetAtlasPage(ITextAtlasPage page, out VulkanTextAtlasPage result)
+    internal bool TryGetAtlasPage(ITextAtlasPage page, [NotNullWhen(true)] out VulkanTextAtlasPage? result)
     {
-        result = page as VulkanTextAtlasPage ?? null!;
-        return result is not null && ReferenceEquals(result.Owner, this) && result.Image.Handle != default;
+        if (page is VulkanTextAtlasPage candidate && ReferenceEquals(candidate.Owner, this) && candidate.Image.Handle != default)
+        {
+            result = candidate;
+            return true;
+        }
+
+        result = null;
+        return false;
     }
 
     internal void DestroyAtlasPage(VulkanTextAtlasPage page)
