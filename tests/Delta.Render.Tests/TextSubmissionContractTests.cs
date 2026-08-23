@@ -215,6 +215,78 @@ public sealed class TextSubmissionContractTests
         Assert.Equal(new TextAtlasPageId(6), session.SubmittedGlyphs[0].AtlasPage);
     }
 
+    [Fact]
+    public void UiRenderBatchAdapterPreservesRectanglesTextAndDirtySelection()
+    {
+        using var adapter = new UiRenderBatchAdapter();
+        var rectangles = new[] { new UiQuad(1, 2, 3, 4, 1, 0, 0, 1) };
+        var text = new[]
+        {
+            new TextSubmissionRecord(
+                new TextSubmissionHandle(TextSubmissionOwnerKind.XamlElement, 2, 1),
+                TextAnchor.ScreenPixels(new TextScreenAnchor(4, 5)),
+                new TextRun(new[] { Glyph(8, 0, 0) }),
+                UiClipRect.Unbounded,
+                1,
+                0)
+        };
+        var dirty = new[] { RenderRecordChange.Remove(3, 9) };
+
+        adapter.Replace(rectangles, text, dirty);
+        var batch = adapter.Borrow();
+
+        Assert.Equal(1, batch.Rectangles.Length);
+        Assert.Equal(rectangles[0], batch.Rectangles[0]);
+        Assert.Equal(1, batch.TextSubmissions.Length);
+        Assert.Equal(1, batch.DirtyRecords.Length);
+        Assert.Equal(dirty[0], batch.DirtyRecords[0]);
+
+        adapter.Replace(ReadOnlySpan<UiQuad>.Empty, ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty);
+        Assert.True(adapter.Borrow().IsEmpty);
+    }
+
+    [Fact]
+    public void UiRenderBatchSubmissionUsesTheCombinedUiTextAndDirtySeam()
+    {
+        using var session = new RecordingSession();
+        using var uiPipeline = new FakePipeline();
+        using var textPipeline = new FakePipeline();
+        using var adapter = new UiRenderBatchAdapter();
+        adapter.Replace(
+            new[] { new UiQuad(1, 2, 3, 4, 1, 1, 1, 1) },
+            new[]
+            {
+                new TextSubmissionRecord(
+                    new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 3, 1),
+                    TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)),
+                    new TextRun(new[] { Glyph(9, 0, 0) }),
+                    UiClipRect.Unbounded,
+                    1,
+                    0)
+            },
+            new[] { RenderRecordChange.Remove(4, 5) });
+        var batch = adapter.Borrow();
+        var ordered = new TextGlyphInstance[1];
+        var ranges = new TextBatchRange[1];
+
+        Assert.True(session.Submit(
+            uiPipeline,
+            new GraphicsFrameParameters(64, 64, 0),
+            textPipeline,
+            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
+            ReadOnlySpan<ITextAtlasPage>.Empty,
+            in batch,
+            new TextProjectionContext(64, 64, 1),
+            null,
+            ordered,
+            ranges));
+
+        Assert.Equal(1, session.SubmitCount);
+        Assert.Single(session.SubmittedQuads);
+        Assert.Single(session.SubmittedDirtyRecords);
+        Assert.Single(session.SubmittedGlyphs);
+    }
+
     private static TextGlyphInstance Glyph(uint page, int x, int y, UiClipRect? clip = null) =>
         new(new TextAtlasPageId(page), new TextUvRect(0, 0, 0.1f, 0.1f), new TextPixelBounds(x, y, 10, 10),
             new TextColor(1, 1, 1, 1), clip ?? UiClipRect.Unbounded, TextRenderMode.Sdf, 4, 0.01f, 11);
@@ -238,6 +310,8 @@ public sealed class TextSubmissionContractTests
     {
         public void Dispose() { }
         public int SubmitCount { get; private set; }
+        public UiQuad[] SubmittedQuads { get; private set; } = Array.Empty<UiQuad>();
+        public RenderRecordChange[] SubmittedDirtyRecords { get; private set; } = Array.Empty<RenderRecordChange>();
         public TextGlyphInstance[] SubmittedGlyphs { get; private set; } = Array.Empty<TextGlyphInstance>();
         public RenderWindowId WindowId => new(Guid.Empty);
 
@@ -252,6 +326,8 @@ public sealed class TextSubmissionContractTests
         public bool SubmitFrame(IGraphicsPipeline uiPipeline, in GraphicsFrameParameters uiParameters, in UiDrawList uiDrawList, IGraphicsPipeline textPipeline, in TextFrameParameters textParameters, ReadOnlySpan<ITextAtlasPage> atlasPages, in TextDrawList textDrawList, ReadOnlySpan<RenderRecordChange> dirtyRecords)
         {
             SubmitCount++;
+            SubmittedQuads = uiDrawList.Quads.ToArray();
+            SubmittedDirtyRecords = dirtyRecords.ToArray();
             SubmittedGlyphs = textDrawList.Glyphs.ToArray();
             return true;
         }

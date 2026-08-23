@@ -17,5 +17,9 @@
   anchor, positioned glyph run, clip/order and dirty generation. The current
   core slice resolves anchors and feeds the existing allocation-free batching;
   producer adapters remain outside Render.
+- Renderer-facing handoff is now `UiRenderBatchAdapter` -> borrowed
+  `UiRenderBatch`: rectangles, positioned text submissions and dirty records are
+  copied into reusable neutral storage; no XAML/ECS/Vulkan types or raw storage
+  handles cross the boundary.
 
 Shared acceptance lives in [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md).
