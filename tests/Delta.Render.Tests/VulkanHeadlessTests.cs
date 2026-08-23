@@ -8,7 +8,7 @@ namespace Delta.Render.Tests;
 public class VulkanHeadlessTests
 {
     [Fact]
-    public void Headless_vulkan_probe_returns_diagnostic_or_ready_state()
+    public void HeadlessVulkanProbeReturnsDiagnosticOrReadyState()
     {
         var result = VulkanEnvironmentProbe.CheckHeadless();
         Assert.NotNull(result.Diagnostics);
@@ -24,7 +24,7 @@ public class VulkanHeadlessTests
     }
 
     [Fact]
-    public void Headless_sdl_probe_reports_clear_status_without_throwing()
+    public void HeadlessSdlProbeReportsClearStatusWithoutThrowing()
     {
         var result = Sdl3WindowFactory.CheckHeadlessDisplay();
         Assert.True(result.Status is RuntimeStatus.Ok or RuntimeStatus.MissingDisplay or RuntimeStatus.Unknown or RuntimeStatus.Unsupported);

@@ -2,14 +2,13 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
+using Silk.NET.Core.Contexts;
+using Silk.NET.Core.Native;
+using Silk.NET.Vulkan;
 using DeltaShaderAccess = Delta.Shader.Abstractions.ShaderResourceAccess;
 using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
 using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
 using DeltaShaderStage = Delta.Shader.Abstractions.ShaderStage;
-using Silk.NET.Core;
-using Silk.NET.Core.Contexts;
-using Silk.NET.Core.Native;
-using Silk.NET.Vulkan;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Delta.Render.Vulkan;
@@ -177,8 +176,15 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     public bool UploadRanges(IComputeStorageBuffer destination, ReadOnlySpan<ComputeUploadRange> ranges)
     {
         ThrowIfDisposed();
-        if (ranges.IsEmpty) return true;
-        if (!TryGetBuffer(destination, out var target)) return false;
+        if (ranges.IsEmpty)
+        {
+            return true;
+        }
+
+        if (!TryGetBuffer(destination, out var target))
+        {
+            return false;
+        }
 
         var sorted = ArrayPool<ManagedUploadRange>.Shared.Rent(ranges.Length);
         var validCount = 0;
@@ -187,7 +193,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             for (var i = 0; i < ranges.Length; i++)
             {
                 var range = ranges[i];
-                if (range.Source.IsEmpty) continue;
+                if (range.Source.IsEmpty)
+                {
+                    continue;
+                }
+
                 var byteLength = (ulong)range.Source.Length;
                 if ((range.DestinationOffset & 3) != 0 || (byteLength & 3) != 0 || !Fits(target.ByteLength, range.DestinationOffset, byteLength))
                 {
@@ -197,7 +207,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 sorted[validCount++] = new ManagedUploadRange(range.DestinationOffset, range.Source, byteLength, i);
             }
 
-            if (validCount == 0) return true;
+            if (validCount == 0)
+            {
+                return true;
+            }
+
             Array.Sort(sorted, 0, validCount, ManagedUploadDestinationComparer.Instance);
 
             var runs = ArrayPool<ManagedUploadRun>.Shared.Rent(validCount);
@@ -223,7 +237,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 }
 
                 var stagingBytes = runs[runCount - 1].StagingOffset + (ulong)runs[runCount - 1].ByteLength;
-                if (stagingBytes > int.MaxValue) return false;
+                if (stagingBytes > int.MaxValue)
+                {
+                    return false;
+                }
+
                 EnsureUploadStagingCapacity(stagingBytes);
                 FillManagedUploadStaging(sorted, validCount, runs, runCount, stagingBytes);
 
@@ -364,12 +382,24 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         var bindings = metadata.Bindings.ToArray();
         var stableMetadata = new ComputeShaderMetadata(metadata.AbiLayout, metadata.LocalSizeX, metadata.LocalSizeY, metadata.LocalSizeZ, bindings);
         var maxSet = 0u;
-        for (var i = 0; i < bindings.Length; i++) maxSet = Math.Max(maxSet, bindings[i].Set);
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            maxSet = Math.Max(maxSet, bindings[i].Set);
+        }
+
         var setCount = checked((int)maxSet + 1);
         var bindingsBySet = new List<ComputeDescriptorBinding>[setCount];
         var layoutBindings = new DescriptorSetLayoutBinding[setCount][];
-        for (var set = 0; set < setCount; set++) bindingsBySet[set] = new List<ComputeDescriptorBinding>();
-        for (var i = 0; i < bindings.Length; i++) bindingsBySet[(int)bindings[i].Set].Add(bindings[i]);
+        for (var set = 0; set < setCount; set++)
+        {
+            bindingsBySet[set] = new List<ComputeDescriptorBinding>();
+        }
+
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            bindingsBySet[(int)bindings[i].Set].Add(bindings[i]);
+        }
+
         for (var set = 0; set < setCount; set++)
         {
             var setBindings = bindingsBySet[set];
@@ -483,13 +513,32 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         }
         catch
         {
-            if (shaderModule.Handle != default) _api.DestroyShaderModule(_device, shaderModule, null);
-            if (pipeline.Handle != default) _api.DestroyPipeline(_device, pipeline, null);
-            if (pipelineLayout.Handle != default) _api.DestroyPipelineLayout(_device, pipelineLayout, null);
-            if (descriptorPool.Handle != default) _api.DestroyDescriptorPool(_device, descriptorPool, null);
+            if (shaderModule.Handle != default)
+            {
+                _api.DestroyShaderModule(_device, shaderModule, null);
+            }
+
+            if (pipeline.Handle != default)
+            {
+                _api.DestroyPipeline(_device, pipeline, null);
+            }
+
+            if (pipelineLayout.Handle != default)
+            {
+                _api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            }
+
+            if (descriptorPool.Handle != default)
+            {
+                _api.DestroyDescriptorPool(_device, descriptorPool, null);
+            }
+
             foreach (var layout in descriptorSetLayouts)
             {
-                if (layout.Handle != default) _api.DestroyDescriptorSetLayout(_device, layout, null);
+                if (layout.Handle != default)
+                {
+                    _api.DestroyDescriptorSetLayout(_device, layout, null);
+                }
             }
             throw;
         }
@@ -729,7 +778,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     internal void DestroyBuffer(VulkanStorageBuffer buffer)
     {
-        if (buffer.Buffer.Handle == default) return;
+        if (buffer.Buffer.Handle == default)
+        {
+            return;
+        }
+
         _api.DestroyBuffer(_device, buffer.Buffer, null);
         _api.FreeMemory(_device, buffer.Memory, null);
         _buffers.Remove(buffer);
@@ -738,12 +791,27 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     internal void DestroyPipeline(VulkanComputePipeline pipeline)
     {
-        if (pipeline.Pipeline.Handle != default) _api.DestroyPipeline(_device, pipeline.Pipeline, null);
-        if (pipeline.PipelineLayout.Handle != default) _api.DestroyPipelineLayout(_device, pipeline.PipelineLayout, null);
-        if (pipeline.DescriptorPool.Handle != default) _api.DestroyDescriptorPool(_device, pipeline.DescriptorPool, null);
+        if (pipeline.Pipeline.Handle != default)
+        {
+            _api.DestroyPipeline(_device, pipeline.Pipeline, null);
+        }
+
+        if (pipeline.PipelineLayout.Handle != default)
+        {
+            _api.DestroyPipelineLayout(_device, pipeline.PipelineLayout, null);
+        }
+
+        if (pipeline.DescriptorPool.Handle != default)
+        {
+            _api.DestroyDescriptorPool(_device, pipeline.DescriptorPool, null);
+        }
+
         foreach (var layout in pipeline.DescriptorSetLayouts)
         {
-            if (layout.Handle != default) _api.DestroyDescriptorSetLayout(_device, layout, null);
+            if (layout.Handle != default)
+            {
+                _api.DestroyDescriptorSetLayout(_device, layout, null);
+            }
         }
         _pipelines.Remove(pipeline);
         pipeline.MarkDestroyed();
@@ -751,13 +819,25 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     public ValueTask DisposeAsync()
     {
-        if (_disposed) return ValueTask.CompletedTask;
+        if (_disposed)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _disposed = true;
         try
         {
             _api.DeviceWaitIdle(_device);
-            foreach (var pipeline in _pipelines.ToArray()) DestroyPipeline(pipeline);
-            foreach (var buffer in _buffers.ToArray()) DestroyBuffer(buffer);
+            foreach (var pipeline in _pipelines.ToArray())
+            {
+                DestroyPipeline(pipeline);
+            }
+
+            foreach (var buffer in _buffers.ToArray())
+            {
+                DestroyBuffer(buffer);
+            }
+
             if (_textAtlas is not null)
             {
                 _textAtlas.DisposeAsync().GetAwaiter().GetResult();
@@ -766,10 +846,25 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             _uploadStaging = default;
             DestroyAllocation(_readbackStaging);
             _readbackStaging = default;
-            if (_fence.Handle != default) _api.DestroyFence(_device, _fence, null);
-            if (_commandPool.Handle != default) _api.DestroyCommandPool(_device, _commandPool, null);
-            if (_device.Handle != default) _api.DestroyDevice(_device, null);
-            if (Instance.Handle != default) _api.DestroyInstance(Instance, null);
+            if (_fence.Handle != default)
+            {
+                _api.DestroyFence(_device, _fence, null);
+            }
+
+            if (_commandPool.Handle != default)
+            {
+                _api.DestroyCommandPool(_device, _commandPool, null);
+            }
+
+            if (_device.Handle != default)
+            {
+                _api.DestroyDevice(_device, null);
+            }
+
+            if (Instance.Handle != default)
+            {
+                _api.DestroyInstance(Instance, null);
+            }
         }
         finally
         {
@@ -780,21 +875,41 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private void ValidateShaderMetadata(ReadOnlySpan<uint> words, in ComputeShaderMetadata metadata)
     {
-        if (words.Length < 5 || words[0] != SpirvMagic) throw new ArgumentException("SPIR-V words are missing the SPIR-V magic header.", nameof(words));
+        if (words.Length < 5 || words[0] != SpirvMagic)
+        {
+            throw new ArgumentException("SPIR-V words are missing the SPIR-V magic header.", nameof(words));
+        }
+
         if (metadata.AbiLayout != ComputeAbiLayout.Std430 || metadata.LocalSizeX == 0 || metadata.LocalSizeY == 0 || metadata.LocalSizeZ == 0)
+        {
             throw new ArgumentException("Compute metadata must declare std430 and non-zero local sizes.", nameof(metadata));
-        if (metadata.LocalSizeX > Limits.MaxComputeWorkGroupSizeX) throw new ArgumentOutOfRangeException(nameof(metadata), "The declared local size exceeds the device limit.");
+        }
+
+        if (metadata.LocalSizeX > Limits.MaxComputeWorkGroupSizeX)
+        {
+            throw new ArgumentOutOfRangeException(nameof(metadata), "The declared local size exceeds the device limit.");
+        }
+
         var bindings = metadata.Bindings.Span;
-        if (bindings.IsEmpty) throw new ArgumentException("At least one descriptor binding is required.", nameof(metadata));
+        if (bindings.IsEmpty)
+        {
+            throw new ArgumentException("At least one descriptor binding is required.", nameof(metadata));
+        }
+
         for (var i = 0; i < bindings.Length; i++)
         {
             var binding = bindings[i];
             if (binding.Set >= Limits.MaxBoundDescriptorSets || binding.Kind != ComputeDescriptorKind.StorageBuffer || binding.ArrayCount != 1)
+            {
                 throw new ArgumentException($"Storage-buffer set {binding.Set} is outside the device MaxBoundDescriptorSets={Limits.MaxBoundDescriptorSets} or has unsupported kind/array count.", nameof(metadata));
+            }
+
             for (var j = 0; j < i; j++)
             {
                 if (bindings[j].Set == binding.Set && bindings[j].Binding == binding.Binding)
+                {
                     throw new ArgumentException($"Descriptor bindings must be unique per set: ({binding.Set},{binding.Binding}).", nameof(metadata));
+                }
             }
         }
     }
@@ -803,21 +918,40 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     {
         var manifest = artifact.Manifest;
         if (artifact.FormatVersion != DeltaShaderArtifact.CurrentFormatVersion)
+        {
             throw new ArgumentException($"Unsupported Delta.Shader artifact format {artifact.FormatVersion}; expected {DeltaShaderArtifact.CurrentFormatVersion}.", nameof(artifact));
+        }
+
         if (manifest.Version != DeltaShaderManifest.CurrentVersion)
+        {
             throw new ArgumentException($"Unsupported Delta.Shader ABI manifest version {manifest.Version}; expected {DeltaShaderManifest.CurrentVersion}.", nameof(artifact));
+        }
+
         if (manifest.Stage != DeltaShaderStage.Compute)
+        {
             throw new ArgumentException("Only compute ShaderArtifact instances are supported.", nameof(artifact));
+        }
+
         if (string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        {
             throw new ArgumentException("Delta.Shader ABI manifest must declare an entry point.", nameof(artifact));
+        }
+
         if (!string.Equals(manifest.StorageLayout, "std430", StringComparison.Ordinal))
+        {
             throw new ArgumentException("Only std430 Delta.Shader storage layout is supported.", nameof(artifact));
+        }
+
         if (manifest.LocalSizeX == 0 || manifest.LocalSizeY == 0 || manifest.LocalSizeZ == 0)
+        {
             throw new ArgumentException("Delta.Shader ABI manifest must declare non-zero local sizes.", nameof(artifact));
+        }
 
         var resources = manifest.Resources ?? Array.Empty<Delta.Shader.Abstractions.ShaderAbiResource>();
         if (resources.Count == 0)
+        {
             throw new ArgumentException("Delta.Shader ABI manifest must declare at least one resource.", nameof(artifact));
+        }
 
         var bindings = new ComputeDescriptorBinding[resources.Count];
         requirements = new VulkanDescriptorRequirement[resources.Count];
@@ -826,17 +960,34 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         {
             var resource = resources[i];
             if (!seenBindings.Add((resource.Set, resource.Binding)))
+            {
                 throw new ArgumentException($"Delta.Shader ABI manifest contains duplicate descriptor set/binding {resource.Set}/{resource.Binding}.", nameof(artifact));
+            }
+
             if (string.IsNullOrWhiteSpace(resource.Name) || !string.Equals(resource.Category, "storage-buffer", StringComparison.Ordinal))
+            {
                 throw new ArgumentException($"Resource '{resource.Name}' is not a storage-buffer resource.", nameof(artifact));
+            }
+
             if (!string.Equals(resource.Layout, "std430", StringComparison.Ordinal))
+            {
                 throw new ArgumentException($"Resource '{resource.Name}' does not declare std430 layout.", nameof(artifact));
+            }
+
             if (resource.Alignment == 0 || resource.Alignment % 4 != 0 || resource.Offset % resource.Alignment != 0 || resource.ArrayStride == 0 || resource.ArrayStride % resource.Alignment != 0 || resource.Size == 0 || resource.ArrayStride < resource.Size)
+            {
                 throw new ArgumentException($"Resource '{resource.Name}' has invalid std430 offset/size/stride metadata.", nameof(artifact));
+            }
+
             if (checked(resource.Offset + resource.Size) > resource.ArrayStride)
+            {
                 throw new ArgumentException($"Resource '{resource.Name}' member range exceeds its array stride.", nameof(artifact));
+            }
+
             if (resource.MatrixStride is uint matrixStride && (matrixStride == 0 || matrixStride % 4 != 0))
+            {
                 throw new ArgumentException($"Resource '{resource.Name}' has invalid matrix stride metadata.", nameof(artifact));
+            }
 
             var access = resource.Access switch
             {
@@ -881,10 +1032,18 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private bool EndAndWait()
     {
-        if (_api.EndCommandBuffer(_commandBuffer) != Result.Success) return false;
+        if (_api.EndCommandBuffer(_commandBuffer) != Result.Success)
+        {
+            return false;
+        }
+
         var commandBuffer = _commandBuffer;
         var submit = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &commandBuffer };
-        if (_api.QueueSubmit(_queue, 1, &submit, _fence) != Result.Success) return false;
+        if (_api.QueueSubmit(_queue, 1, &submit, _fence) != Result.Success)
+        {
+            return false;
+        }
+
         return _api.WaitForFences(_device, 1, _fence, true, ulong.MaxValue) == Result.Success;
     }
 
@@ -913,7 +1072,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private bool SubmitUploadBatch(VulkanStorageBuffer target, ReadOnlySpan<BufferCopy> copies)
     {
-        if (copies.IsEmpty) return true;
+        if (copies.IsEmpty)
+        {
+            return true;
+        }
 
         var preBarriers = ArrayPool<BufferMemoryBarrier>.Shared.Rent(copies.Length + 1);
         var postBarriers = ArrayPool<BufferMemoryBarrier>.Shared.Rent(copies.Length);
@@ -987,7 +1149,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private void EnsureUploadStagingCapacity(ulong requiredBytes)
     {
-        if (_uploadStaging.Buffer.Handle != default && _uploadStaging.AllocationSize >= requiredBytes) return;
+        if (_uploadStaging.Buffer.Handle != default && _uploadStaging.AllocationSize >= requiredBytes)
+        {
+            return;
+        }
 
         var requestedSize = Math.Max(requiredBytes, MinimumVulkanBufferSize);
         var currentSize = _uploadStaging.AllocationSize;
@@ -1015,7 +1180,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private void EnsureReadbackStagingCapacity(ulong requiredBytes)
     {
-        if (_readbackStaging.Buffer.Handle != default && _readbackStaging.AllocationSize >= requiredBytes) return;
+        if (_readbackStaging.Buffer.Handle != default && _readbackStaging.AllocationSize >= requiredBytes)
+        {
+            return;
+        }
 
         var requestedSize = Math.Max(requiredBytes, MinimumVulkanBufferSize);
         var currentSize = _readbackStaging.AllocationSize;
@@ -1055,14 +1223,21 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 for (var rangeIndex = run.Start; rangeIndex < run.End; rangeIndex++)
                 {
                     var range = ranges[rangeIndex];
-                    if (range.PayloadSize == 0) continue;
+                    if (range.PayloadSize == 0)
+                    {
+                        continue;
+                    }
+
                     var destinationOffset = checked((int)((ulong)(rangeIndex - run.Start) * range.RecordStride));
                     var payload = new ReadOnlySpan<byte>((void*)(nuint)range.PayloadAddress, checked((int)range.PayloadSize));
                     payload.CopyTo(destination.Slice(destinationOffset, checked((int)range.PayloadSize)));
                 }
             }
 
-            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+            {
+                Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+            }
         }
         finally
         {
@@ -1091,7 +1266,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 }
             }
 
-            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+            if (!_uploadStaging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+            {
+                Flush(_uploadStaging.Memory, _uploadStaging.AllocationSize);
+            }
         }
         finally
         {
@@ -1108,7 +1286,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         try
         {
             source.CopyTo(new Span<byte>(mapped, source.Length));
-            if (!properties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Flush(memory, allocationSize);
+            if (!properties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+            {
+                Flush(memory, allocationSize);
+            }
         }
         finally { _api.UnmapMemory(_device, memory); }
     }
@@ -1119,7 +1300,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         Ensure(_api.MapMemory(_device, memory, 0, allocationSize, 0, &mapped), "MapMemory");
         try
         {
-            if (!properties.HasFlag(MemoryPropertyFlags.HostCoherentBit)) Invalidate(memory, allocationSize);
+            if (!properties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+            {
+                Invalidate(memory, allocationSize);
+            }
+
             new ReadOnlySpan<byte>(mapped, destination.Length).CopyTo(destination);
         }
         finally { _api.UnmapMemory(_device, memory); }
@@ -1153,8 +1338,15 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private void DestroyAllocation(BufferAllocation allocation)
     {
-        if (allocation.Buffer.Handle != default) _api.DestroyBuffer(_device, allocation.Buffer, null);
-        if (allocation.Memory.Handle != default) _api.FreeMemory(_device, allocation.Memory, null);
+        if (allocation.Buffer.Handle != default)
+        {
+            _api.DestroyBuffer(_device, allocation.Buffer, null);
+        }
+
+        if (allocation.Memory.Handle != default)
+        {
+            _api.FreeMemory(_device, allocation.Memory, null);
+        }
     }
 
     private uint FindMemoryType(uint typeBits, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
@@ -1162,13 +1354,29 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         uint fallback = uint.MaxValue;
         for (uint i = 0; i < _memoryProperties.MemoryTypeCount; i++)
         {
-            if ((typeBits & (1u << (int)i)) == 0) continue;
+            if ((typeBits & (1u << (int)i)) == 0)
+            {
+                continue;
+            }
+
             var flags = _memoryProperties.MemoryTypes[(int)i].PropertyFlags;
-            if (!flags.HasFlag(required)) continue;
-            if (flags.HasFlag(preferred)) return i;
+            if (!flags.HasFlag(required))
+            {
+                continue;
+            }
+
+            if (flags.HasFlag(preferred))
+            {
+                return i;
+            }
+
             fallback = i;
         }
-        if (fallback != uint.MaxValue) return fallback;
+        if (fallback != uint.MaxValue)
+        {
+            return fallback;
+        }
+
         throw new InvalidOperationException($"No Vulkan memory type satisfies {required}.");
     }
 
@@ -1179,10 +1387,18 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         var properties = new ExtensionProperties[(int)count];
         Ensure(_api.EnumerateInstanceExtensionProperties((byte*)null, &count, properties), "EnumerateInstanceExtensionProperties");
         var available = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var property in properties) available.Add(Marshal.PtrToStringAnsi((nint)property.ExtensionName) ?? string.Empty);
+        foreach (var property in properties)
+        {
+            available.Add(Marshal.PtrToStringAnsi((nint)property.ExtensionName) ?? string.Empty);
+        }
+
         var extensions = new List<string>();
         var portability = available.Contains("VK_KHR_portability_enumeration");
-        if (portability) extensions.Add("VK_KHR_portability_enumeration");
+        if (portability)
+        {
+            extensions.Add("VK_KHR_portability_enumeration");
+        }
+
         var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(extensions.ToArray());
         try
         {
@@ -1204,7 +1420,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     {
         uint count = 0;
         Ensure(_api.EnumeratePhysicalDevices(instance, &count, null), "EnumeratePhysicalDevices");
-        if (count == 0) throw new InvalidOperationException("No Vulkan physical device is available.");
+        if (count == 0)
+        {
+            throw new InvalidOperationException("No Vulkan physical device is available.");
+        }
+
         var devices = new PhysicalDevice[(int)count];
         Ensure(_api.EnumeratePhysicalDevices(instance, &count, devices), "EnumeratePhysicalDevices");
         foreach (var device in devices)
@@ -1232,7 +1452,11 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         var extensions = new ExtensionProperties[(int)extensionCount];
         _api.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &extensionCount, extensions);
         var available = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var extension in extensions) available.Add(Marshal.PtrToStringAnsi((nint)extension.ExtensionName) ?? string.Empty);
+        foreach (var extension in extensions)
+        {
+            available.Add(Marshal.PtrToStringAnsi((nint)extension.ExtensionName) ?? string.Empty);
+        }
+
         var requested = available.Contains("VK_KHR_portability_subset") ? new[] { "VK_KHR_portability_subset" } : Array.Empty<string>();
         var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(requested);
         try
@@ -1251,8 +1475,15 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     {
         try
         {
-            if (_device.Handle != default) _api.DestroyDevice(_device, null);
-            if (Instance.Handle != default) _api.DestroyInstance(Instance, null);
+            if (_device.Handle != default)
+            {
+                _api.DestroyDevice(_device, null);
+            }
+
+            if (Instance.Handle != default)
+            {
+                _api.DestroyInstance(Instance, null);
+            }
         }
         finally { _nativeContext?.Dispose(); }
     }
@@ -1261,7 +1492,10 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
     private static void Ensure(Result result, string operation)
     {
-        if (result != Result.Success) throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");
+        if (result != Result.Success)
+        {
+            throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");
+        }
     }
 
     private readonly record struct BufferAllocation(VulkanBuffer Buffer, DeviceMemory Memory, ulong AllocationSize, MemoryPropertyFlags MemoryProperties);

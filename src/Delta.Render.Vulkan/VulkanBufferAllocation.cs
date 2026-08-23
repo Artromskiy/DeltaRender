@@ -1,4 +1,3 @@
-using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 

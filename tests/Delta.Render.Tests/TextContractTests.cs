@@ -10,7 +10,7 @@ public sealed class TextContractTests
             new TextColor(1, 1, 1, 1), clip ?? UiClipRect.Unbounded, TextRenderMode.Sdf, 4, 0.01f, pipeline);
 
     [Fact]
-    public void Empty_draw_list_has_no_batches()
+    public void EmptyDrawListHasNoBatches()
     {
         Span<TextGlyphInstance> ordered = stackalloc TextGlyphInstance[1];
         Span<TextBatchRange> batches = stackalloc TextBatchRange[1];
@@ -20,7 +20,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Batching_preserves_multiple_pages_pipeline_and_clips_without_per_glyph_draws()
+    public void BatchingPreservesMultiplePagesPipelineAndClipsWithoutPerGlyphDraws()
     {
         var clip = new UiClipRect(0, 0, 50, 50);
         var source = new[] { Glyph(1, 0, 0, clip), Glyph(2, 10, 0, clip), Glyph(1, 20, 0, clip), Glyph(1, 30, 0, clip, 2) };
@@ -35,7 +35,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Clip_visibility_covers_empty_partial_and_fully_clipped_glyphs_and_resize()
+    public void ClipVisibilityCoversEmptyPartialAndFullyClippedGlyphsAndResize()
     {
         var metrics = new WindowMetrics(100, 80, 1);
         Assert.False(Glyph(1, 0, 0, new UiClipRect(200, 200, 10, 10)).IsVisible(metrics));
@@ -45,7 +45,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Text_run_and_invalid_glyphs_are_explicit()
+    public void TextRunAndInvalidGlyphsAreExplicit()
     {
         var run = new TextRun(new[] { Glyph(1, 0, 0) });
         Assert.False(run.IsEmpty);
@@ -55,7 +55,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Atlas_dirty_range_validates_pitch_and_source_size()
+    public void AtlasDirtyRangeValidatesPitchAndSourceSize()
     {
         var valid = new TextAtlasDirtyRange(0, 0, 2, 2, 2, new byte[4]);
         Assert.True(valid.IsValid);
@@ -64,7 +64,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Shader_artifact_contract_reports_invalid_when_manifest_is_incomplete()
+    public void ShaderArtifactContractReportsInvalidWhenManifestIsIncomplete()
     {
         var bytes = new byte[20];
         var vertex = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
@@ -80,7 +80,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Shader_artifact_contract_accepts_same_binding_number_in_different_sets()
+    public void ShaderArtifactContractAcceptsSameBindingNumberInDifferentSets()
     {
         var bytes = new byte[20];
         var vertex = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
@@ -147,7 +147,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Gray8_atlas_fixture_exposes_page_and_glyph_contracts()
+    public void Gray8AtlasFixtureExposesPageAndGlyphContracts()
     {
         var fixture = AtlasFixture.Load();
 
@@ -165,7 +165,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Text_batching_preserves_grouped_instance_order_and_batch_counts()
+    public void TextBatchingPreservesGroupedInstanceOrderAndBatchCounts()
     {
         var clipA = new UiClipRect(0, 0, 32, 32);
         var clipB = new UiClipRect(8, 8, 16, 16);

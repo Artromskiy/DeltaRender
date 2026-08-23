@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using System.Text.RegularExpressions;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Delta.Render.Core;
 
 namespace Delta.Render.Tests;
@@ -35,23 +35,32 @@ internal static class AtlasFixture
     private static byte[] DecodeGray8Png(byte[] png, out int width, out int height)
     {
         if (png.Length < 33 || png[0] != 0x89 || png[1] != 0x50 || png[2] != 0x4E || png[3] != 0x47)
+        {
             throw new InvalidDataException("Atlas fixture is not a PNG.");
+        }
 
         var offset = 8;
         var ihdrLength = ReadBigEndianInt32(png.AsSpan(offset, 4));
         offset += 4;
         if (png[offset] != (byte)'I' || png[offset + 1] != (byte)'H' || png[offset + 2] != (byte)'D' || png[offset + 3] != (byte)'R')
+        {
             throw new InvalidDataException("Atlas fixture is missing IHDR.");
+        }
+
         offset += 4;
         if (ihdrLength < 13)
+        {
             throw new InvalidDataException("Atlas fixture IHDR chunk is truncated.");
+        }
 
         width = ReadBigEndianInt32(png.AsSpan(offset, 4));
         height = ReadBigEndianInt32(png.AsSpan(offset + 4, 4));
         var bitDepth = png[offset + 8];
         var colorType = png[offset + 9];
         if (bitDepth != 8 || colorType != 0)
+        {
             throw new InvalidDataException($"Atlas fixture is not grayscale 8-bit: depth={bitDepth}, color={colorType}.");
+        }
 
         var idat = new MemoryStream();
         offset = 8;
@@ -61,13 +70,20 @@ internal static class AtlasFixture
             offset += 4;
             var type = System.Text.Encoding.ASCII.GetString(png, offset, 4);
             offset += 4;
-            if (offset + length > png.Length) throw new InvalidDataException("Atlas fixture PNG chunk overflow.");
+            if (offset + length > png.Length)
+            {
+                throw new InvalidDataException("Atlas fixture PNG chunk overflow.");
+            }
+
             if (type == "IDAT")
             {
                 idat.Write(png, offset, length);
             }
             offset += length + 4;
-            if (type == "IEND") break;
+            if (type == "IEND")
+            {
+                break;
+            }
         }
 
         using var input = new MemoryStream(idat.ToArray());

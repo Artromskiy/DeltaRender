@@ -111,10 +111,26 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
         }
         catch
         {
-            if (sampler.Handle != default) api.DestroySampler(device, sampler, null);
-            if (view.Handle != default) api.DestroyImageView(device, view, null);
-            if (image.Handle != default) api.DestroyImage(device, image, null);
-            if (memory.Handle != default) api.FreeMemory(device, memory, null);
+            if (sampler.Handle != default)
+            {
+                api.DestroySampler(device, sampler, null);
+            }
+
+            if (view.Handle != default)
+            {
+                api.DestroyImageView(device, view, null);
+            }
+
+            if (image.Handle != default)
+            {
+                api.DestroyImage(device, image, null);
+            }
+
+            if (memory.Handle != default)
+            {
+                api.FreeMemory(device, memory, null);
+            }
+
             throw;
         }
     }
@@ -283,8 +299,16 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
 
         var api = _context.Api;
         var device = _context.Device;
-        if (page.Sampler.Handle != default) api.DestroySampler(device, page.Sampler, null);
-        if (page.ImageView.Handle != default) api.DestroyImageView(device, page.ImageView, null);
+        if (page.Sampler.Handle != default)
+        {
+            api.DestroySampler(device, page.Sampler, null);
+        }
+
+        if (page.ImageView.Handle != default)
+        {
+            api.DestroyImageView(device, page.ImageView, null);
+        }
+
         api.DestroyImage(device, page.Image, null);
         api.FreeMemory(device, page.Memory, null);
         _atlasPages.Remove(page);
@@ -390,8 +414,15 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
     {
         var api = _context.Api;
         var device = _context.Device;
-        if (allocation.Buffer.Handle != default) api.DestroyBuffer(device, allocation.Buffer, null);
-        if (allocation.Memory.Handle != default) api.FreeMemory(device, allocation.Memory, null);
+        if (allocation.Buffer.Handle != default)
+        {
+            api.DestroyBuffer(device, allocation.Buffer, null);
+        }
+
+        if (allocation.Memory.Handle != default)
+        {
+            api.FreeMemory(device, allocation.Memory, null);
+        }
     }
 
     private uint FindMemoryType(uint typeBits, MemoryPropertyFlags required, MemoryPropertyFlags preferred)

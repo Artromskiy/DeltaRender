@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Linq;
 using Delta.Render.Core;
 using Xunit;
 
@@ -8,7 +7,7 @@ namespace Delta.Render.Tests;
 public class RenderContractTests
 {
     [Fact]
-    public void IRenderWindow_contract_is_surface_and_metrics_focused()
+    public void IRenderWindowContractIsSurfaceAndMetricsFocused()
     {
         var members = typeof(IRenderWindow)
             .GetMembers(BindingFlags.Instance | BindingFlags.Public)
@@ -22,7 +21,7 @@ public class RenderContractTests
     }
 
     [Fact]
-    public void IRenderWindowFrameSession_contract_exposes_lifecycle_and_resize()
+    public void IRenderWindowFrameSessionContractExposesLifecycleAndResize()
     {
         var methods = typeof(IRenderWindowFrameSession)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
@@ -36,7 +35,7 @@ public class RenderContractTests
     }
 
     [Fact]
-    public void RenderRecordChange_supports_zero_allocation_path()
+    public void RenderRecordChangeSupportsZeroAllocationPath()
     {
         var changed = RenderRecordChange.Upsert(entityId: 42, componentKindId: 11, payloadAddress: 12345, payloadSize: 16);
         var removed = RenderRecordChange.Remove(entityId: 43, componentKindId: 12);

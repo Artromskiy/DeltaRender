@@ -1,5 +1,4 @@
 using Delta.Render.Core;
-using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 

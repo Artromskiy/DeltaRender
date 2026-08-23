@@ -8,7 +8,7 @@ namespace Delta.Render.Tests;
 public sealed class GraphicsContractTests
 {
     [Fact]
-    public void Graphics_program_requires_paired_vertex_and_fragment_stages()
+    public void GraphicsProgramRequiresPairedVertexAndFragmentStages()
     {
         var bytes = new byte[4];
         var program = new CoreGraphicsShaderProgram(
@@ -25,7 +25,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Graphics_frame_parameters_validate_resolution_and_time()
+    public void GraphicsFrameParametersValidateResolutionAndTime()
     {
         Assert.True(new GraphicsFrameParameters(960, 540, 1.25f).IsValid);
         Assert.False(new GraphicsFrameParameters(0, 540, 1.25f).IsValid);
@@ -33,7 +33,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Ui_quad_is_a_value_only_consumer_owned_draw_record()
+    public void UiQuadIsAValueOnlyConsumerOwnedDrawRecord()
     {
         Assert.True(new UiQuad(1, 2, 3, 4, 1, 0.5f, 0.25f, 1).IsValid);
         Assert.False(new UiQuad(1, 2, 0, 4, 1, 0.5f, 0.25f, 1).IsValid);
@@ -42,7 +42,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Ui_draw_list_preserves_consumer_span_without_copying()
+    public void UiDrawListPreservesConsumerSpanWithoutCopying()
     {
         Span<UiQuad> quads = stackalloc UiQuad[2];
         quads[0] = new UiQuad(0, 0, 10, 10, 1, 0, 0, 1);
@@ -55,7 +55,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Ui_scissor_contract_covers_empty_one_multi_and_clipped_batches()
+    public void UiScissorContractCoversEmptyOneMultiAndClippedBatches()
     {
         var metrics = new WindowMetrics(100, 80, 1);
         var empty = new UiDrawList(ReadOnlySpan<UiQuad>.Empty);
@@ -77,7 +77,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Ui_scissor_contract_is_resize_safe_and_clamps_to_extent()
+    public void UiScissorContractIsResizeSafeAndClampsToExtent()
     {
         var clip = new UiClipRect(40, 20, 40, 40);
 
@@ -92,7 +92,7 @@ public sealed class GraphicsContractTests
     }
 
     [Fact]
-    public void Frame_session_exposes_graphics_without_event_pump_ownership()
+    public void FrameSessionExposesGraphicsWithoutEventPumpOwnership()
     {
         var members = typeof(IRenderWindowFrameSession).GetMethods()
             .Select(static method => method.Name)

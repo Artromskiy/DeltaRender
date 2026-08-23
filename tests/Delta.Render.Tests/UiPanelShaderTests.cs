@@ -5,7 +5,7 @@ namespace Delta.Render.Tests;
 public sealed class UiPanelShaderTests
 {
     [Fact]
-    public void Generated_vertex_shader_preserves_two_triangle_local_vertex_table()
+    public void GeneratedVertexShaderPreservesTwoTriangleLocalVertexTable()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "ui-panel.vert.glsl");
         var source = File.ReadAllText(path);

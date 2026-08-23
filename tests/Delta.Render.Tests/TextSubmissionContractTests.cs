@@ -6,7 +6,7 @@ namespace Delta.Render.Tests;
 public sealed class TextSubmissionContractTests
 {
     [Fact]
-    public void Entity_and_xaml_handles_share_generation_safe_neutral_shape()
+    public void EntityAndXamlHandlesShareGenerationSafeNeutralShape()
     {
         var entity = new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 7, 3);
         var xaml = new TextSubmissionHandle(TextSubmissionOwnerKind.XamlElement, 9, 4);
@@ -18,7 +18,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Screen_records_are_resolved_and_grouped_without_per_glyph_api()
+    public void ScreenRecordsAreResolvedAndGroupedWithoutPerGlyphApi()
     {
         var glyphs = new[]
         {
@@ -55,7 +55,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void World_records_require_projection_and_clip_is_intersected()
+    public void WorldRecordsRequireProjectionAndClipIsIntersected()
     {
         var glyph = Glyph(2, 0, 0, new UiClipRect(0, 0, 50, 50));
         var record = new TextSubmissionRecord(
@@ -97,7 +97,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Invalid_and_empty_records_are_rejected_without_throwing()
+    public void InvalidAndEmptyRecordsAreRejectedWithoutThrowing()
     {
         var invalid = new TextSubmissionRecord(
             new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 4, 1),
@@ -124,7 +124,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Dirty_changes_and_lifetime_generation_reject_stale_records()
+    public void DirtyChangesAndLifetimeGenerationRejectStaleRecords()
     {
         var owner = new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 8, 4);
         var record = new TextSubmissionRecord(owner, TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)),
@@ -138,7 +138,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Submission_batches_preserve_snapshot_order_instead_of_merging_across_runs()
+    public void SubmissionBatchesPreserveSnapshotOrderInsteadOfMergingAcrossRuns()
     {
         var first = new TextSubmissionRecord(new TextSubmissionHandle(TextSubmissionOwnerKind.XamlElement, 1, 1),
             TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)), new TextRun(new[] { Glyph(4, 0, 0) }),
@@ -164,7 +164,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Text_batching_preserves_a_b_a_draw_order()
+    public void TextBatchingPreservesABADrawOrder()
     {
         var source = new[] { Glyph(4, 0, 0), Glyph(5, 10, 0), Glyph(4, 20, 0) };
         var ordered = new TextGlyphInstance[3];
@@ -179,7 +179,7 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
-    public void Text_submission_extension_reaches_existing_ui_text_submit_seam()
+    public void TextSubmissionExtensionReachesExistingUiTextSubmitSeam()
     {
         using var session = new RecordingSession();
         using var uiPipeline = new FakePipeline();

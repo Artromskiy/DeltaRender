@@ -7,7 +7,7 @@ namespace Delta.Render.Tests;
 public sealed class VulkanTextAtlasTests
 {
     [Fact]
-    public async Task Atlas_upload_reuses_and_grows_staging_and_rejects_invalid_lifetime_handles()
+    public async Task AtlasUploadReusesAndGrowsStagingAndRejectsInvalidLifetimeHandles()
     {
         var fixture = AtlasFixture.Load();
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
@@ -47,7 +47,7 @@ public sealed class VulkanTextAtlasTests
     }
 
     [Fact]
-    public async Task Atlas_upload_validates_foreign_page_ranges_and_noop_batches()
+    public async Task AtlasUploadValidatesForeignPageRangesAndNoopBatches()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var otherDevice = new VulkanComputeDevice(new VulkanRendererOptions());
@@ -67,7 +67,7 @@ public sealed class VulkanTextAtlasTests
     }
 
     [Fact]
-    public async Task Atlas_fixture_page_is_usable_for_dirty_upload_and_viewer_contract()
+    public async Task AtlasFixturePageIsUsableForDirtyUploadAndViewerContract()
     {
         var fixture = AtlasFixture.Load();
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());

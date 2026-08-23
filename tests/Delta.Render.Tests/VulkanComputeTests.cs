@@ -1,19 +1,18 @@
-using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
 using Delta.Render.Vulkan;
+using Xunit;
 using DeltaShaderAccess = Delta.Shader.Abstractions.ShaderResourceAccess;
 using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
 using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
 using DeltaShaderResource = Delta.Shader.Abstractions.ShaderAbiResource;
-using Xunit;
 
 namespace Delta.Render.Tests;
 
 public sealed class VulkanComputeTests
 {
     [Fact]
-    public async Task Std430_compute_dispatch_matches_cpu_oracle_for_required_sizes()
+    public async Task Std430ComputeDispatchMatchesCpuOracleForRequiredSizes()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
         var metadata = new ComputeShaderMetadata(
@@ -34,7 +33,11 @@ public sealed class VulkanComputeTests
         {
             await using var buffer = device.CreateStorageBuffer((ulong)size * sizeof(uint));
             var values = new uint[size];
-            for (var i = 0; i < values.Length; i++) values[i] = (uint)i;
+            for (var i = 0; i < values.Length; i++)
+            {
+                values[i] = (uint)i;
+            }
+
             var input = MemoryMarshal.AsBytes(values.AsSpan());
 
             Assert.True(device.Upload(buffer, input), $"upload failed for {size}");
@@ -54,7 +57,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Shader_artifact_manifest_creates_compute_pipeline_without_raw_metadata()
+    public async Task ShaderArtifactManifestCreatesComputePipelineWithoutRawMetadata()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
         var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
@@ -93,7 +96,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Shader_artifact_manifest_rejects_duplicate_bindings_and_invalid_stride()
+    public async Task ShaderArtifactManifestRejectsDuplicateBindingsAndInvalidStride()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv"));
         var resource = new DeltaShaderResource
@@ -149,7 +152,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Shader_artifact_rejects_manifest_entry_point_mismatch()
+    public async Task ShaderArtifactRejectsManifestEntryPointMismatch()
     {
         var words = new uint[]
         {
@@ -186,7 +189,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Multi_ssbo_artifact_dispatch_matches_oracle_and_repeated_dispatch()
+    public async Task MultiSsboArtifactDispatchMatchesOracleAndRepeatedDispatch()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi.spv"));
         var artifact = CreateMultiBufferArtifact(shader);
@@ -230,7 +233,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Multi_set_zero_binding_and_set_one_binding_dispatch_matches_oracle()
+    public async Task MultiSetZeroBindingAndSetOneBindingDispatchMatchesOracle()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi_sets.spv"));
         var artifact = new DeltaShaderArtifact(shader, new DeltaShaderManifest
@@ -293,7 +296,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Multi_ssbo_dispatch_rejects_missing_extra_duplicate_and_read_only_bindings()
+    public async Task MultiSsboDispatchRejectsMissingExtraDuplicateAndReadOnlyBindings()
     {
         var shader = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_multi.spv"));
         var metadata = new ComputeShaderMetadata(
@@ -333,7 +336,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Upload_ranges_coalesce_adjacent_and_overlapping_ranges_and_reuse_staging()
+    public async Task UploadRangesCoalesceAdjacentAndOverlappingRangesAndReuseStaging()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(32);
@@ -401,7 +404,7 @@ public sealed class VulkanComputeTests
         });
 
     [Fact]
-    public async Task Dirty_records_validate_ranges_and_coalesce_adjacent_updates()
+    public async Task DirtyRecordsValidateRangesAndCoalesceAdjacentUpdates()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(64);
@@ -435,7 +438,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Dirty_records_batch_disjoint_ranges_reuses_and_grows_staging()
+    public async Task DirtyRecordsBatchDisjointRangesReusesAndGrowsStaging()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(4096);
@@ -493,7 +496,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Empty_dirty_batch_is_no_op_without_staging_or_submit()
+    public async Task EmptyDirtyBatchIsNoOpWithoutStagingOrSubmit()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(64);
@@ -506,7 +509,7 @@ public sealed class VulkanComputeTests
     }
 
     [Fact]
-    public async Task Invalid_dirty_ranges_are_rejected_without_allocating_staging()
+    public async Task InvalidDirtyRangesAreRejectedWithoutAllocatingStaging()
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(64);
