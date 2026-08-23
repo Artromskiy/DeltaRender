@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Delta.Render.Core;
@@ -9,13 +10,19 @@ using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
 
 namespace Delta.Render.Smoke;
 
+[SuppressMessage("Performance", "CA2007:Do not directly await a Task", Justification = "The bounded native smoke has no synchronization context; await-using declarations intentionally keep Vulkan resources scoped to each smoke operation.")]
 internal static class Program
 {
+    private const string ComputeZeroMessage = "compute-size=0 pass=no-op";
+    private const string DirtyRecordsMessage = "dirty-records pass=coalesced";
+    private const string MultiComputeZeroMessage = "multi-compute-size=0 pass=no-op";
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "The executable smoke boundary converts renderer/native failures into a process exit diagnostic.")]
     private static async Task<int> Main(string[] args)
     {
         if (args.Any(a => string.Equals(a, "--compute", StringComparison.OrdinalIgnoreCase)))
         {
-            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"), GetOption(args, "--compute-manifest"));
+            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"), GetOption(args, "--compute-manifest")).ConfigureAwait(false);
         }
 
         var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
@@ -26,7 +33,7 @@ internal static class Program
         if (headless)
         {
             var probe = VulkanEnvironmentProbe.CheckHeadless();
-            Console.WriteLine(probe.Diagnostics.ToText());
+            await Console.Out.WriteLineAsync(probe.Diagnostics.ToText());
             return probe.Usable ? 0 : 1;
         }
 
@@ -35,8 +42,8 @@ internal static class Program
 
         if (!result.Success || result.Window is null)
         {
-            Console.Error.WriteLine("Window creation failed");
-            Console.Error.WriteLine(result.Diagnostics.ToText());
+            await Console.Error.WriteLineAsync("Window creation failed");
+            await Console.Error.WriteLineAsync(result.Diagnostics.ToText());
             return 1;
         }
 
@@ -53,7 +60,7 @@ internal static class Program
                 var frameState = session.BeginFrame();
                 if (!frameState.IsValid || !session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
                 {
-                    Console.Error.WriteLine("Failed to render clear frame.");
+                    await Console.Error.WriteLineAsync("Failed to render clear frame.");
                     return 1;
                 }
             }
@@ -73,7 +80,7 @@ internal static class Program
                 if (!File.Exists(vertexPath) || !File.Exists(fragmentPath) ||
                     !File.Exists(vertexManifestPath) || !File.Exists(fragmentManifestPath))
                 {
-                    Console.Error.WriteLine("Graphics fixtures were not found; use --clear for the swapchain-only path.");
+                    await Console.Error.WriteLineAsync("Graphics fixtures were not found; use --clear for the swapchain-only path.");
                     return 1;
                 }
 
@@ -97,19 +104,19 @@ internal static class Program
                         : SubmitFullscreenFrame(session, pipeline, in parameters);
                     if (!rendered)
                     {
-                        Console.Error.WriteLine("Failed to render fullscreen graphics frame.");
+                        await Console.Error.WriteLineAsync("Failed to render fullscreen graphics frame.");
                         return 1;
                     }
 
                     renderedFrames++;
                 }
-                Console.WriteLine($"graphics={(panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
+                await Console.Out.WriteLineAsync($"graphics={(panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("Renderer initialization failed:");
-            Console.Error.WriteLine(ex);
+            await Console.Error.WriteLineAsync("Renderer initialization failed:");
+            await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);
             return 1;
         }
 
@@ -117,6 +124,7 @@ internal static class Program
         return 0;
     }
 
+    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Graphics fixture loading occurs before SDL event pumping and must remain on the Cocoa main thread.")]
     private static DeltaShaderArtifact LoadShaderArtifact(string spirvPath, string manifestPath)
     {
         var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(File.ReadAllText(manifestPath))
@@ -176,12 +184,12 @@ internal static class Program
         var shaderPath = externalShaderPath ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
         if (!File.Exists(shaderPath))
         {
-            Console.Error.WriteLine($"Compute shader was not found: {shaderPath}");
+            await Console.Error.WriteLineAsync($"Compute shader was not found: {shaderPath}");
             return 1;
         }
 
-        Console.WriteLine($"compute-shader={Path.GetFullPath(shaderPath)}");
-        var shader = File.ReadAllBytes(shaderPath);
+        await Console.Out.WriteLineAsync($"compute-shader={Path.GetFullPath(shaderPath)}");
+        var shader = await File.ReadAllBytesAsync(shaderPath).ConfigureAwait(false);
         var metadata = new ComputeShaderMetadata(
             ComputeAbiLayout.Std430,
             64,
@@ -195,14 +203,14 @@ internal static class Program
         {
             if (string.IsNullOrWhiteSpace(externalManifestPath) || !File.Exists(externalManifestPath))
             {
-                Console.Error.WriteLine("Generated compute smoke requires --compute-manifest alongside --compute-shader.");
+                await Console.Error.WriteLineAsync("Generated compute smoke requires --compute-manifest alongside --compute-shader.");
                 return 1;
             }
 
-            var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(await File.ReadAllTextAsync(externalManifestPath));
+            var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(await File.ReadAllTextAsync(externalManifestPath).ConfigureAwait(false));
             if (manifest is null)
             {
-                Console.Error.WriteLine($"Delta.Shader manifest was empty: {externalManifestPath}");
+                await Console.Error.WriteLineAsync($"Delta.Shader manifest was empty: {externalManifestPath}");
                 return 1;
             }
 
@@ -215,7 +223,7 @@ internal static class Program
 
         await using (pipeline)
         {
-            return await RunComputeSizesAsync(device, pipeline);
+            return await RunComputeSizesAsync(device, pipeline).ConfigureAwait(false);
         }
     }
 
@@ -223,7 +231,7 @@ internal static class Program
     {
         if (pipeline.Metadata.Bindings.Length == 2)
         {
-            return await RunMultiBufferComputeSizesAsync(device, pipeline);
+            return await RunMultiBufferComputeSizesAsync(device, pipeline).ConfigureAwait(false);
         }
 
         var localSizeX = pipeline.Metadata.LocalSizeX;
@@ -236,10 +244,10 @@ internal static class Program
                 var noOp = device.Dispatch(pipeline, ReadOnlySpan<ComputeBufferBinding>.Empty, 0);
                 if (noOp.Status != ComputeDispatchStatus.NoOp)
                 {
-                    Console.Error.WriteLine("zero-sized dispatch was not a no-op");
+                    await Console.Error.WriteLineAsync("zero-sized dispatch was not a no-op");
                     return 1;
                 }
-                Console.WriteLine("compute-size=0 pass=no-op");
+                await Console.Out.WriteLineAsync(ComputeZeroMessage);
                 continue;
             }
 
@@ -252,20 +260,20 @@ internal static class Program
             var bytes = MemoryMarshal.AsBytes(values.AsSpan());
             if (!device.Upload(buffer, bytes))
             {
-                return FailCompute(size, "upload");
+                return await FailComputeAsync(size, "upload");
             }
 
             var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
             var dispatch = device.Dispatch(pipeline, new[] { new ComputeBufferBinding(0, 0, buffer) }, groups);
             if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed)
             {
-                return FailCompute(size, dispatch.Error ?? "dispatch");
+                return await FailComputeAsync(size, dispatch.Error ?? "dispatch");
             }
 
             var output = new byte[bytes.Length];
             if (!device.Readback(buffer, output))
             {
-                return FailCompute(size, "readback");
+                return await FailComputeAsync(size, "readback");
             }
 
             var actual = MemoryMarshal.Cast<byte, uint>(output);
@@ -273,10 +281,10 @@ internal static class Program
             {
                 if (actual[i] != (uint)(i * 2 + 1))
                 {
-                    return FailCompute(size, $"oracle mismatch at {i}: {actual[i]}");
+                    return await FailComputeAsync(size, $"oracle mismatch at {i}: {actual[i]}");
                 }
             }
-            Console.WriteLine($"compute-size={size} groups={groups} pass=oracle");
+            await Console.Out.WriteLineAsync($"compute-size={size} groups={groups} pass=oracle");
         }
 
         var recordStride = 16u;
@@ -295,21 +303,21 @@ internal static class Program
             var update = device.ApplyDirtyRecords(recordBuffer, changes, recordStride, 4);
             if (!update.Succeeded || update.UploadRuns != 1)
             {
-                return FailCompute(-1, update.Error ?? "dirty-record update");
+                return await FailComputeAsync(-1, update.Error ?? "dirty-record update");
             }
 
             var records = new byte[64];
             if (!device.Readback(recordBuffer, records))
             {
-                return FailCompute(-1, "dirty-record readback");
+                return await FailComputeAsync(-1, "dirty-record readback");
             }
 
             if (!records.AsSpan(16, 16).SequenceEqual(payloadBytes) || !records.AsSpan(32, 16).SequenceEqual(payloadBytes) || !records.AsSpan(48, 16).SequenceEqual(new byte[16]))
             {
-                return FailCompute(-1, "dirty-record oracle mismatch");
+                return await FailComputeAsync(-1, "dirty-record oracle mismatch");
             }
 
-            Console.WriteLine("dirty-records pass=coalesced");
+            await Console.Out.WriteLineAsync(DirtyRecordsMessage);
         }
         finally
         {
@@ -331,10 +339,10 @@ internal static class Program
                 var noOp = device.Dispatch(pipeline, ReadOnlySpan<ComputeBufferBinding>.Empty, 0);
                 if (noOp.Status != ComputeDispatchStatus.NoOp)
                 {
-                    Console.Error.WriteLine("zero-sized multi-buffer dispatch was not a no-op");
+                    await Console.Error.WriteLineAsync("zero-sized multi-buffer dispatch was not a no-op");
                     return 1;
                 }
-                Console.WriteLine("multi-compute-size=0 pass=no-op");
+                await Console.Out.WriteLineAsync(MultiComputeZeroMessage);
                 continue;
             }
 
@@ -347,7 +355,7 @@ internal static class Program
             var inputBytes = MemoryMarshal.AsBytes(values.AsSpan());
             if (!device.Upload(input, inputBytes))
             {
-                return FailCompute(size, "multi-buffer input upload");
+                return await FailComputeAsync(size, "multi-buffer input upload");
             }
 
             var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
@@ -361,13 +369,13 @@ internal static class Program
                 groups);
             if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed)
             {
-                return FailCompute(size, dispatch.Error ?? "multi-buffer dispatch");
+                return await FailComputeAsync(size, dispatch.Error ?? "multi-buffer dispatch");
             }
 
             var outputBytes = new byte[inputBytes.Length];
             if (!device.Readback(output, outputBytes))
             {
-                return FailCompute(size, "multi-buffer readback");
+                return await FailComputeAsync(size, "multi-buffer readback");
             }
 
             var actual = MemoryMarshal.Cast<byte, uint>(outputBytes);
@@ -375,10 +383,10 @@ internal static class Program
             {
                 if (actual[i] != (uint)(i * 2 + 1))
                 {
-                    return FailCompute(size, $"multi-buffer oracle mismatch at {i}: {actual[i]}");
+                    return await FailComputeAsync(size, $"multi-buffer oracle mismatch at {i}: {actual[i]}");
                 }
             }
-            Console.WriteLine($"multi-compute-size={size} groups={groups} pass=oracle");
+            await Console.Out.WriteLineAsync($"multi-compute-size={size} groups={groups} pass=oracle");
         }
 
         return 0;
@@ -397,9 +405,9 @@ internal static class Program
         return null;
     }
 
-    private static int FailCompute(int size, string reason)
+    private static async Task<int> FailComputeAsync(int size, string reason)
     {
-        Console.Error.WriteLine($"compute-size={size} failed: {reason}");
+        await Console.Error.WriteLineAsync($"compute-size={size} failed: {reason}");
         return 1;
     }
 }

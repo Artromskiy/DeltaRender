@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,15 +15,17 @@ namespace Delta.Render.Vulkan;
 
 public sealed unsafe class VulkanRenderer : IAsyncDisposable
 {
-    private readonly INativeContext? _nativeContext;
+    private static readonly string[] MoltenVkLibraryNames = ["libMoltenVK.dylib", "MoltenVK"];
+    private readonly DefaultNativeContext? _nativeContext;
 
     public VulkanRenderer(VulkanRendererOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         Options = options;
 
         if (OperatingSystem.IsMacOS())
         {
-            _nativeContext = new DefaultNativeContext(new[] { "libMoltenVK.dylib", "MoltenVK" });
+            _nativeContext = new DefaultNativeContext(MoltenVkLibraryNames);
             Api = new Vk(_nativeContext);
         }
         else
@@ -64,10 +67,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     public IRenderWindowFrameSession CreateWindowSession(IRenderWindow window)
     {
         var sessionDiagnostics = new RenderDiagnosticBag();
-        if (window is null)
-        {
-            throw new ArgumentNullException(nameof(window));
-        }
+        ArgumentNullException.ThrowIfNull(window);
 
         if (!IsInitialized)
         {
@@ -277,6 +277,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return true;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes extension counts through unsafe out pointers that the analyzer cannot model.")]
     private bool IsInstanceExtensionPresent(string extensionName)
     {
         unsafe
@@ -304,6 +305,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         }
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes device counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool SelectPhysicalDevice(SurfaceKHR surface, RenderDiagnosticBag diagnostics)
     {
         uint deviceCount = 0;
@@ -339,6 +341,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return false;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
     private bool IsDeviceSuitable(PhysicalDevice physicalDevice, SurfaceKHR surface)
     {
         if (!DeviceSupportsSwapchainExtensions(physicalDevice, KhrSwapchain.ExtensionName))
@@ -380,6 +383,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return hasGraphics && hasPresent;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes extension counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool DeviceSupportsSwapchainExtensions(PhysicalDevice device, params string[] requiredExtensions)
     {
         uint extensionCount = 0;
@@ -418,6 +422,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return true;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface capability counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool HasSwapChainDetails(SurfaceKHR surface, PhysicalDevice physicalDevice)
     {
         _ = _khrSurface.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out _);
@@ -428,6 +433,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return formatCount != 0 && modeCount != 0;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool CreateLogicalDevice(SurfaceKHR surface, RenderDiagnosticBag diagnostics)
     {
         if (_physicalDevice.Handle == default)
@@ -538,6 +544,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return true;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface format and present-mode counts through unsafe out pointers that the analyzer cannot model.")]
     internal unsafe bool QuerySwapchainSupport(SurfaceKHR surface, out SurfaceCapabilitiesKHR capabilities, out SurfaceFormatKHR[] formats, out PresentModeKHR[] presentModes)
     {
         capabilities = default;
@@ -646,6 +653,26 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             Instance = default;
         }
 
+        if (_extDebug is not null)
+        {
+            _extDebug.Dispose();
+            _extDebug = null!;
+        }
+
+        if (_khrSwapchain is not null)
+        {
+            _khrSwapchain.Dispose();
+            _khrSwapchain = null!;
+        }
+
+        if (_khrSurface is not null)
+        {
+            _khrSurface.Dispose();
+            _khrSurface = null!;
+        }
+
+        _nativeContext?.Dispose();
+
         IsInitialized = false;
         return ValueTask.CompletedTask;
     }
@@ -659,7 +686,9 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly VulkanRenderer _renderer;
     private readonly RenderWindowId _windowId;
     private readonly SurfaceKHR _surface;
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
     private readonly KhrSurface _khrSurface;
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
     private readonly KhrSwapchain _khrSwapchain;
     private readonly Queue _graphicsQueue;
     private readonly Queue _presentQueue;
@@ -678,6 +707,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
     private readonly List<IGraphicsPipeline> _graphicsPipelines = new();
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The shared atlas service is disposed by the window-session cleanup path after its Vulkan resources are idle.")]
     private readonly VulkanTextAtlasService _textAtlas;
 
     private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
@@ -1906,8 +1936,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
     private static uint GetPushConstantSize(in GraphicsShaderProgram shaderProgram)
     {
-        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
-        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.Count > 0 ? shaderProgram.Vertex.Manifest.PushConstants[0].Size : 0;
+        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.Count > 0 ? shaderProgram.Fragment.Manifest.PushConstants[0].Size : 0;
         if (vertexSize != 0 && fragmentSize != 0 && vertexSize != fragmentSize)
         {
             throw new ArgumentException("Graphics shader stages must use the same push-constant size.", nameof(shaderProgram));
@@ -1977,8 +2007,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
     private static uint GetTextPushConstantSize(in GraphicsShaderProgram shaderProgram)
     {
-        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
-        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.FirstOrDefault()?.Size ?? 0;
+        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.Count > 0 ? shaderProgram.Vertex.Manifest.PushConstants[0].Size : 0;
+        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.Count > 0 ? shaderProgram.Fragment.Manifest.PushConstants[0].Size : 0;
         var size = Math.Max(vertexSize, fragmentSize);
         if (size != (uint)sizeof(TextPushConstants))
         {
@@ -2062,6 +2092,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return swapchain;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes swapchain image counts through unsafe out pointers that the analyzer cannot model.")]
     private static (ImageView[] ImageViews, Framebuffer[] Framebuffers) CreateSwapchainImageViews(
         Vk api,
         KhrSwapchain khrSwapchain,
@@ -2217,7 +2248,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         if (_device.Handle != default)
         {
             api.DeviceWaitIdle(_device);
-            _textAtlas.DisposeAsync().GetAwaiter().GetResult();
+            _textAtlas.Dispose();
 
             foreach (var pipeline in _graphicsPipelines.ToArray())
             {

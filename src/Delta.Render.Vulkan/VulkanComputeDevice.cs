@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
@@ -18,7 +19,8 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     private const uint SpirvMagic = 0x07230203;
     private const ulong MinimumVulkanBufferSize = 4;
 
-    private readonly INativeContext? _nativeContext;
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The Silk native context is explicitly disposed in the Vulkan device cleanup finally block.")]
+    private readonly DefaultNativeContext? _nativeContext;
     private readonly Vk _api;
     private readonly List<VulkanStorageBuffer> _buffers = new();
     private readonly List<VulkanComputePipeline> _pipelines = new();
@@ -34,6 +36,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     private CommandBuffer _commandBuffer;
     private Fence _fence;
     private PhysicalDeviceMemoryProperties _memoryProperties;
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The atlas service is disposed explicitly during the device cleanup path after the queue is idle.")]
     private VulkanTextAtlasService? _textAtlas;
     private bool _disposed;
 
@@ -376,7 +379,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         return CreateComputePipelineCore(spirvWords, in metadata, Array.Empty<VulkanDescriptorRequirement>(), "main");
     }
 
-    private IComputePipeline CreateComputePipelineCore(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements, string entryPointName)
+    private VulkanComputePipeline CreateComputePipelineCore(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements, string entryPointName)
     {
         ValidateShaderMetadata(spirvWords, in metadata);
         var bindings = metadata.Bindings.ToArray();
@@ -840,7 +843,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
             if (_textAtlas is not null)
             {
-                _textAtlas.DisposeAsync().GetAwaiter().GetResult();
+                _textAtlas.Dispose();
             }
             DestroyAllocation(_uploadStaging);
             _uploadStaging = default;
@@ -870,6 +873,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         {
             _nativeContext?.Dispose();
         }
+        _api.Dispose();
         return ValueTask.CompletedTask;
     }
 
@@ -1416,6 +1420,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         finally { SilkMarshal.Free((nint)extensionPointers); }
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan enumeration writes count outputs through unsafe FFI; the analyzer cannot model the native count contract.")]
     private PhysicalDevice SelectPhysicalDevice(Instance instance, out uint queueFamily)
     {
         uint count = 0;

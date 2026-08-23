@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics.CodeAnalysis;
 using Delta.Render.Core;
 using Delta.Render.Vulkan;
 using Xunit;
@@ -9,6 +10,7 @@ using DeltaShaderResource = Delta.Shader.Abstractions.ShaderAbiResource;
 
 namespace Delta.Render.Tests;
 
+[SuppressMessage("Performance", "CA2007:Do not directly await a Task", Justification = "These tests deliberately use await-using declarations to cover async Vulkan lifetime; the resource is scoped to the test and no synchronization context is present.")]
 public sealed class VulkanComputeTests
 {
     [Fact]

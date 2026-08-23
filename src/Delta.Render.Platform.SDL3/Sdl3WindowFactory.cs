@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Delta.Render.Core;
 
 namespace Delta.Render.Platform.SDL3;
@@ -8,6 +9,7 @@ public sealed class Sdl3WindowFactory : IRenderWindowFactory
     // render-facing IRenderWindow contract.
     public static void PumpEvents() => Sdl3Runtime.PumpEvents();
 
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "WindowCreateResult transfers the newly created SDL window to its caller on success.")]
     public WindowCreateResult CreateWindow(WindowConfiguration configuration)
     {
         var diagnostics = new RenderDiagnosticBag();

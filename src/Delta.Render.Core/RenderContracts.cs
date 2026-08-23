@@ -18,7 +18,7 @@ public readonly record struct WindowMetrics(uint Width, uint Height, float DpiSc
 
 public record struct WindowConfiguration(string Title, uint Width = 1280, uint Height = 720, bool Resizable = true, bool HighDpiAware = true);
 
-public enum RenderRecordChangeKind : byte
+public enum RenderRecordChangeKind
 {
     Upserted = 0,
     Removed = 1

@@ -5,15 +5,18 @@ using Delta.Render.Core;
 
 namespace Delta.Render.Tests;
 
-internal static class AtlasFixture
+internal static partial class AtlasFixture
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [GeneratedRegex(@"(?<=\d),(?=\d)")]
+    private static partial Regex DecimalCommaRegex();
 
     public static AtlasFixtureData Load()
     {
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures", "delta-text-atlas");
         var atlasJson = File.ReadAllText(Path.Combine(root, "atlas.json"));
-        atlasJson = Regex.Replace(atlasJson, @"(?<=\d),(?=\d)", ".");
+        atlasJson = DecimalCommaRegex().Replace(atlasJson, ".");
         var summary = JsonSerializer.Deserialize<AtlasFixtureSummary>(
             atlasJson,
             JsonOptions);

@@ -52,7 +52,7 @@ public sealed class ComputeDispatcher<TResource> : IComputeDispatcher<TResource>
             throw new InvalidOperationException(result.Error ?? "The compute dispatch was rejected by the device.");
         }
 
-        await Task.CompletedTask;
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -63,14 +63,14 @@ public sealed class ComputeDispatcher<TResource> : IComputeDispatcher<TResource>
         }
 
         _disposed = true;
-        await _pipeline.DisposeAsync();
+        await _pipeline.DisposeAsync().ConfigureAwait(false);
     }
 
     private void ThrowIfDisposed()
     {
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(ComputeDispatcher<TResource>));
+            ObjectDisposedException.ThrowIf(_disposed, typeof(ComputeDispatcher<TResource>));
         }
     }
 }

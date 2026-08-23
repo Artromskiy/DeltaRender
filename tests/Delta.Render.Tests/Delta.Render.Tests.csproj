@@ -4,6 +4,7 @@
     <RootNamespace>Delta.Render.Tests</RootNamespace>
     <AssemblyName>Delta.Render.Tests</AssemblyName>
     <PackageId>Delta.Render.Tests</PackageId>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

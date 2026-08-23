@@ -2,17 +2,17 @@ using Delta.Shader.Abstractions;
 
 namespace Delta.Render.Core;
 
-public enum ComputeAbiLayout : byte
+public enum ComputeAbiLayout
 {
     Std430 = 0
 }
 
-public enum ComputeDescriptorKind : byte
+public enum ComputeDescriptorKind
 {
     StorageBuffer = 0
 }
 
-public enum ComputeBufferAccess : byte
+public enum ComputeBufferAccess
 {
     ReadOnly = 0,
     WriteOnly = 1,
@@ -50,7 +50,7 @@ public readonly record struct ComputeDeviceLimits(
     uint MaxComputeWorkGroupCountX,
     uint MaxBoundDescriptorSets = 1);
 
-public enum ComputeDispatchStatus : byte
+public enum ComputeDispatchStatus
 {
     Executed = 0,
     NoOp = 1,

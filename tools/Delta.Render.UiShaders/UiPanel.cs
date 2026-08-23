@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Delta.Maths;
 using Delta.Shader.Abstractions;
 
@@ -5,13 +6,23 @@ namespace Delta.Render.UiShaders;
 
 public static class UiPanel
 {
+    /// <summary>Push-constant values shared by the generated panel stages.</summary>
+    [SuppressMessage("Design", "CA1034:Nested types should not be visible", Justification = "The nested type is the public push-constant ABI emitted by Delta.Shader.")]
+    [SuppressMessage("Usage", "CA1815:Override equals and operator equals on value types", Justification = "The shader ABI parameter struct is not used as a managed value key.")]
     public struct Parameters
     {
+        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
+        /// <summary>Viewport resolution in pixels.</summary>
         public float2 Resolution;
+        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
+        /// <summary>Panel rectangle in pixel coordinates.</summary>
         public float4 Rect;
+        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
+        /// <summary>Panel premultiplied color.</summary>
         public float4 Color;
     }
 
+    /// <summary>Emits the panel triangle-list vertex position.</summary>
     [VertexShader]
     public static void Vertex(
         [VertexIndex] uint vertexIndex,
@@ -37,6 +48,7 @@ public static class UiPanel
         position = new float4(clip.x, clip.y, 0f, 1f);
     }
 
+    /// <summary>Emits the panel fragment color.</summary>
     [FragmentShader]
     public static void Fragment(
         [PushConstant] Parameters parameters,

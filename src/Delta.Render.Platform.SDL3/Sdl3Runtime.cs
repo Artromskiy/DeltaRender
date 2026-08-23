@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Delta.Render.Core;
 using SDL3;
 
@@ -25,6 +26,7 @@ internal static class Sdl3Runtime
         return !string.IsNullOrWhiteSpace(error);
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryInitialize(out RenderDiagnosticBag diagnostics)
     {
         diagnostics = new RenderDiagnosticBag();
@@ -64,6 +66,7 @@ internal static class Sdl3Runtime
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryCreateWindow(string title, uint width, uint height, bool resizable, out ulong windowHandle, out RenderDiagnosticBag diagnostics)
     {
         windowHandle = 0;
@@ -95,6 +98,7 @@ internal static class Sdl3Runtime
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryDestroyWindow(ulong windowHandle)
     {
         if (windowHandle == 0)
@@ -123,6 +127,7 @@ internal static class Sdl3Runtime
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryGetRequiredInstanceExtensions(out string[] extensionNames, out RenderDiagnosticBag diagnostics)
     {
         extensionNames = Array.Empty<string>();
@@ -156,6 +161,7 @@ internal static class Sdl3Runtime
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryCreateSurface(ulong windowHandle, ulong vkInstance, ulong allocatorAddress, out ulong surfaceHandle, out RenderDiagnosticBag diagnostics)
     {
         surfaceHandle = 0;
@@ -189,6 +195,7 @@ internal static class Sdl3Runtime
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
     public static bool TryDestroySurface(ulong windowHandle, ulong vulkanInstance, ulong surfaceHandle)
     {
         if (windowHandle == 0 || vulkanInstance == 0 || surfaceHandle == 0)

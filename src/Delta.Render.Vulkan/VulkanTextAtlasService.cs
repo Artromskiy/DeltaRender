@@ -266,7 +266,7 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
         }
     }
 
-    public ValueTask DisposeAsync()
+    public void Dispose()
     {
         var api = _context.Api;
         var device = _context.Device;
@@ -281,6 +281,11 @@ internal sealed unsafe class VulkanTextAtlasService : ITextAtlasDevice, IAsyncDi
             _atlasStaging = default;
         }
 
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
         return ValueTask.CompletedTask;
     }
 

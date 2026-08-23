@@ -5,6 +5,7 @@
     <RootNamespace>Delta.Render.Smoke</RootNamespace>
     <AssemblyName>Delta.Render.Smoke</AssemblyName>
     <PackageId>Delta.Render.Smoke</PackageId>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <RuntimeIdentifiers>osx-arm64;win-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 

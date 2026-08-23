@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- IDE0005 emits EnableGenerateDocumentationFile when XML documentation is not part of this project's public contract. -->
+    <NoWarn>$(NoWarn);IDE0005</NoWarn>
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildThisFileDirectory)=/src/</PathMap>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

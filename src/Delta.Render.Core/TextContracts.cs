@@ -7,13 +7,13 @@ public readonly record struct TextAtlasPageId(uint Value)
     public bool IsValid => Value != 0;
 }
 
-public enum TextAtlasFormat : byte
+public enum TextAtlasFormat
 {
     R8Unorm = 0,
     Rgba8Unorm = 1
 }
 
-public enum TextRenderMode : byte
+public enum TextRenderMode
 {
     Sdf = 0,
     Msdf = 1
@@ -96,14 +96,19 @@ public readonly record struct TextFrameParameters(
                            float.IsFinite(OutlineWidth) && OutlineWidth >= 0;
 }
 
-public readonly struct TextRun
+public readonly struct TextRun : IEquatable<TextRun>
 {
     public TextRun(ReadOnlyMemory<TextGlyphInstance> glyphs) => Glyphs = glyphs;
     public ReadOnlyMemory<TextGlyphInstance> Glyphs { get; }
     public bool IsEmpty => Glyphs.IsEmpty;
+    public bool Equals(TextRun other) => Glyphs.Equals(other.Glyphs);
+    public override bool Equals(object? obj) => obj is TextRun other && Equals(other);
+    public override int GetHashCode() => Glyphs.GetHashCode();
+    public static bool operator ==(TextRun left, TextRun right) => left.Equals(right);
+    public static bool operator !=(TextRun left, TextRun right) => !left.Equals(right);
 }
 
-public enum TextSubmissionOwnerKind : byte
+public enum TextSubmissionOwnerKind
 {
     Entity = 0,
     XamlElement = 1
@@ -167,7 +172,7 @@ public readonly record struct TextSubmissionRecord(
         => Owner == currentOwner && DirtyGeneration == currentVersion;
 }
 
-public enum TextSubmissionChangeKind : byte
+public enum TextSubmissionChangeKind
 {
     Upserted = 0,
     Removed = 1
@@ -383,7 +388,7 @@ public interface ITextAtlasDevice
     bool UploadAtlasDirtyRanges(ITextAtlasPage page, ReadOnlySpan<TextAtlasDirtyRange> ranges);
 }
 
-public enum TextShaderArtifactStatus : byte
+public enum TextShaderArtifactStatus
 {
     Ready = 0,
     Invalid = 1,
@@ -483,7 +488,7 @@ public static class TextShaderArtifactContract
             0,
             0,
             ShaderResourceAccess.ReadOnly,
-            manifest.PushConstants.FirstOrDefault()?.Size ?? 0);
+            manifest.PushConstants.Count > 0 ? manifest.PushConstants[0].Size : 0);
         message = string.Empty;
         return true;
     }
@@ -510,7 +515,7 @@ public static class TextShaderArtifactContract
             texture.Set,
             texture.Binding,
             texture.Access,
-            manifest.PushConstants.FirstOrDefault()?.Size ?? 0);
+            manifest.PushConstants.Count > 0 ? manifest.PushConstants[0].Size : 0);
         message = string.Empty;
         return true;
     }
