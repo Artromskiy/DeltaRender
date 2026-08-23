@@ -20,7 +20,7 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void Batching_groups_multiple_pages_pipeline_and_clips_without_per_glyph_draws()
+    public void Batching_preserves_multiple_pages_pipeline_and_clips_without_per_glyph_draws()
     {
         var clip = new UiClipRect(0, 0, 50, 50);
         var source = new[] { Glyph(1, 0, 0, clip), Glyph(2, 10, 0, clip), Glyph(1, 20, 0, clip), Glyph(1, 30, 0, clip, 2) };
@@ -28,8 +28,8 @@ public sealed class TextContractTests
         Span<TextBatchRange> batches = stackalloc TextBatchRange[4];
         Assert.True(TextBatching.TryBuild(source, ordered, batches, out var count, out var batchCount));
         Assert.Equal(4, count);
-        Assert.Equal(3, batchCount);
-        Assert.Equal(2, batches[0].Count);
+        Assert.Equal(4, batchCount);
+        Assert.Equal(1, batches[0].Count);
         Assert.Equal(new TextAtlasPageId(1), batches[0].Key.AtlasPage);
         Assert.Equal(new TextAtlasPageId(2), batches[1].Key.AtlasPage);
     }

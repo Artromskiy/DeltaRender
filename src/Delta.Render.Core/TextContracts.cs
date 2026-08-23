@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using Delta.Shader.Abstractions;
 
 namespace Delta.Render.Core;
@@ -70,7 +68,11 @@ public readonly record struct TextGlyphInstance(
 
     public bool IsVisible(WindowMetrics metrics)
     {
-        if (!IsValid || !Clip.TryGetScissor(metrics, out var scissor)) return false;
+        if (!IsValid || !Clip.TryGetScissor(metrics, out var scissor))
+        {
+            return false;
+        }
+
         var right = (long)PixelBounds.X + PixelBounds.Width;
         var bottom = (long)PixelBounds.Y + PixelBounds.Height;
         return right > scissor.X && bottom > scissor.Y && (long)PixelBounds.X < scissor.X + (long)scissor.Width &&
@@ -101,6 +103,219 @@ public readonly struct TextRun
     public bool IsEmpty => Glyphs.IsEmpty;
 }
 
+public enum TextSubmissionOwnerKind : byte
+{
+    Entity = 0,
+    XamlElement = 1
+}
+
+public readonly record struct TextSubmissionHandle(TextSubmissionOwnerKind Kind, ulong Value, uint Generation)
+{
+    public bool IsValid => Value != 0 && Generation != 0 && Kind is TextSubmissionOwnerKind.Entity or TextSubmissionOwnerKind.XamlElement;
+}
+
+public readonly record struct TextScreenAnchor(float X, float Y)
+{
+    public bool IsValid => float.IsFinite(X) && float.IsFinite(Y);
+}
+
+public readonly record struct TextWorldAnchor(float X, float Y, float Z)
+{
+    public bool IsValid => float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z);
+}
+
+public readonly record struct TextProjectionContext(uint Width, uint Height, float DpiScale)
+{
+    public bool IsValid => Width > 0 && Height > 0 && float.IsFinite(DpiScale) && DpiScale > 0;
+}
+
+public interface ITextWorldProjection
+{
+    bool TryProject(in TextWorldAnchor anchor, in TextProjectionContext context, out TextScreenAnchor screen);
+}
+
+public readonly record struct TextAnchor
+{
+    private TextAnchor(TextScreenAnchor screen, TextWorldAnchor world, bool isWorld)
+    {
+        Screen = screen;
+        World = world;
+        IsWorld = isWorld;
+    }
+
+    public TextScreenAnchor Screen { get; }
+    public TextWorldAnchor World { get; }
+    public bool IsWorld { get; }
+    public bool IsValid => IsWorld ? World.IsValid : Screen.IsValid;
+    public static TextAnchor ScreenPixels(TextScreenAnchor value) => new(value, default, false);
+    public static TextAnchor WorldSpace(TextWorldAnchor value) => new(default, value, true);
+}
+
+public readonly record struct TextSubmissionRecord(
+    TextSubmissionHandle Owner,
+    TextAnchor Anchor,
+    TextRun Glyphs,
+    UiClipRect Clip,
+    uint DirtyGeneration,
+    int Order)
+{
+    public uint Version => DirtyGeneration;
+
+    public bool IsValid => Owner.IsValid && Anchor.IsValid && !Glyphs.IsEmpty && Clip.IsValid && DirtyGeneration != 0;
+
+    public bool Matches(in TextSubmissionHandle currentOwner, uint currentVersion)
+        => Owner == currentOwner && DirtyGeneration == currentVersion;
+}
+
+public enum TextSubmissionChangeKind : byte
+{
+    Upserted = 0,
+    Removed = 1
+}
+
+public readonly record struct TextSubmissionChange(
+    TextSubmissionChangeKind Kind,
+    TextSubmissionHandle Owner,
+    uint Version,
+    TextSubmissionRecord Record)
+{
+    public bool IsValid => Owner.IsValid && Version != 0 &&
+                           (Kind == TextSubmissionChangeKind.Removed ||
+                            Kind == TextSubmissionChangeKind.Upserted && Record.Matches(Owner, Version));
+}
+
+public readonly ref struct TextSubmissionFrame
+{
+    public TextSubmissionFrame(ReadOnlySpan<TextSubmissionRecord> records) => Records = records;
+    public ReadOnlySpan<TextSubmissionRecord> Records { get; }
+    public int Count => Records.Length;
+    public bool IsEmpty => Records.IsEmpty;
+}
+
+public static class TextSubmissionBatching
+{
+    // This is the neutral glue boundary for Entity and XAML producers. The
+    // producer owns runs and generation tokens; Render only resolves anchors,
+    // intersects clips, and feeds its existing allocation-free TextBatching path.
+    public static bool TryBuild(
+        in TextSubmissionFrame frame,
+        in TextProjectionContext projectionContext,
+        ITextWorldProjection? worldProjection,
+        Span<TextGlyphInstance> ordered,
+        Span<TextBatchRange> batches,
+        out int orderedCount,
+        out int batchCount,
+        out int rejectedCount)
+    {
+        orderedCount = 0;
+        batchCount = 0;
+        rejectedCount = 0;
+        if (!projectionContext.IsValid || ordered.Length < CountGlyphs(frame.Records) || batches.Length < ordered.Length)
+        {
+            return false;
+        }
+
+        for (var recordIndex = 0; recordIndex < frame.Records.Length; recordIndex++)
+        {
+            var record = frame.Records[recordIndex];
+            if (!record.IsValid || !TryResolveAnchor(record.Anchor, projectionContext, worldProjection, out var anchor))
+            {
+                rejectedCount++;
+                continue;
+            }
+
+            var glyphs = record.Glyphs.Glyphs.Span;
+            for (var glyphIndex = 0; glyphIndex < glyphs.Length; glyphIndex++)
+            {
+                var glyph = glyphs[glyphIndex];
+                if (!glyph.IsValid)
+                {
+                    rejectedCount++;
+                    continue;
+                }
+
+                var bounds = glyph.PixelBounds with
+                {
+                    X = checked(glyph.PixelBounds.X + (int)MathF.Round(anchor.X)),
+                    Y = checked(glyph.PixelBounds.Y + (int)MathF.Round(anchor.Y))
+                };
+                var clip = IntersectClip(glyph.Clip, record.Clip);
+                var adjusted = glyph with { PixelBounds = bounds, Clip = clip };
+                if (!adjusted.IsValid)
+                {
+                    rejectedCount++;
+                    continue;
+                }
+
+                if (batchCount > 0 && batches[batchCount - 1].Key == adjusted.BatchKey &&
+                    batches[batchCount - 1].End == orderedCount)
+                {
+                    ordered[orderedCount++] = adjusted;
+                    var previous = batches[batchCount - 1];
+                    batches[batchCount - 1] = previous with { Count = previous.Count + 1 };
+                }
+                else
+                {
+                    ordered[orderedCount] = adjusted;
+                    batches[batchCount++] = new TextBatchRange(adjusted.BatchKey, orderedCount, 1);
+                    orderedCount++;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveAnchor(in TextAnchor anchor, in TextProjectionContext context,
+        ITextWorldProjection? worldProjection, out TextScreenAnchor screen)
+    {
+        if (!anchor.IsValid)
+        {
+            screen = default;
+            return false;
+        }
+
+        if (!anchor.IsWorld)
+        {
+            screen = anchor.Screen;
+            return true;
+        }
+
+        screen = default;
+        return worldProjection is not null && worldProjection.TryProject(anchor.World, context, out screen) && screen.IsValid;
+    }
+
+    private static int CountGlyphs(ReadOnlySpan<TextSubmissionRecord> records)
+    {
+        var count = 0;
+        for (var i = 0; i < records.Length; i++)
+        {
+            count = checked(count + records[i].Glyphs.Glyphs.Length);
+        }
+
+        return count;
+    }
+
+    private static UiClipRect IntersectClip(UiClipRect left, UiClipRect right)
+    {
+        if (left.IsUnbounded)
+        {
+            return right;
+        }
+
+        if (right.IsUnbounded)
+        {
+            return left;
+        }
+
+        var x = MathF.Max(left.X, right.X);
+        var y = MathF.Max(left.Y, right.Y);
+        var rightEdge = MathF.Min(left.X + left.Width, right.X + right.Width);
+        var bottomEdge = MathF.Min(left.Y + left.Height, right.Y + right.Height);
+        return new UiClipRect(x, y, rightEdge - x, bottomEdge - y);
+    }
+}
+
 public readonly ref struct TextDrawList
 {
     public TextDrawList(ReadOnlySpan<TextGlyphInstance> glyphs) => Glyphs = glyphs;
@@ -126,22 +341,27 @@ public static class TextBatching
     {
         orderedCount = 0;
         batchCount = 0;
-        if (ordered.Length < source.Length || batches.Length < source.Length) return false;
+        if (ordered.Length < source.Length || batches.Length < source.Length)
+        {
+            return false;
+        }
+
         for (var sourceIndex = 0; sourceIndex < source.Length; sourceIndex++)
         {
-            var key = source[sourceIndex].BatchKey;
-            var seen = false;
-            for (var prior = 0; prior < sourceIndex; prior++)
+            var glyph = source[sourceIndex];
+            var key = glyph.BatchKey;
+            if (batchCount > 0 && batches[batchCount - 1].Key == key && batches[batchCount - 1].End == orderedCount)
             {
-                if (source[prior].BatchKey == key) { seen = true; break; }
+                ordered[orderedCount++] = glyph;
+                var previous = batches[batchCount - 1];
+                batches[batchCount - 1] = previous with { Count = previous.Count + 1 };
             }
-            if (seen) continue;
-            var start = orderedCount;
-            for (var glyphIndex = sourceIndex; glyphIndex < source.Length; glyphIndex++)
+            else
             {
-                if (source[glyphIndex].BatchKey == key) ordered[orderedCount++] = source[glyphIndex];
+                ordered[orderedCount] = glyph;
+                batches[batchCount++] = new TextBatchRange(key, orderedCount, 1);
+                orderedCount++;
             }
-            batches[batchCount++] = new TextBatchRange(key, start, orderedCount - start);
         }
         return true;
     }
@@ -188,7 +408,10 @@ public static class TextShaderArtifactContract
     {
         if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
             program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+        {
             return new(TextShaderArtifactStatus.Invalid, "Unsupported ShaderArtifact format version.");
+        }
+
         if (!TryDescribe(program, out _, out var diagnostic))
         {
             return diagnostic;
