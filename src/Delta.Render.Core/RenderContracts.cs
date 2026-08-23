@@ -24,13 +24,15 @@ public enum RenderRecordChangeKind
     Removed = 1
 }
 
-public readonly record struct RenderRecordChange(ulong EntityId, uint ComponentKindId, RenderRecordChangeKind Kind, ulong PayloadAddress, uint PayloadSize)
+public readonly record struct RenderRecordChange(ulong EntityId, uint ComponentKindId, RenderRecordChangeKind Kind, ReadOnlyMemory<byte> Payload)
 {
-    public static RenderRecordChange Upsert(ulong entityId, uint componentKindId, ulong payloadAddress, uint payloadSize)
-        => new(entityId, componentKindId, RenderRecordChangeKind.Upserted, payloadAddress, payloadSize);
+    public uint PayloadSize => (uint)Payload.Length;
+
+    public static RenderRecordChange Upsert(ulong entityId, uint componentKindId, ReadOnlyMemory<byte> payload)
+        => new(entityId, componentKindId, RenderRecordChangeKind.Upserted, payload);
 
     public static RenderRecordChange Remove(ulong entityId, uint componentKindId)
-        => new(entityId, componentKindId, RenderRecordChangeKind.Removed, 0, 0);
+        => new(entityId, componentKindId, RenderRecordChangeKind.Removed, ReadOnlyMemory<byte>.Empty);
 }
 
 public readonly record struct RenderFrameState(bool IsValid, bool RequiresResize, uint ImageIndex, WindowMetrics Metrics)

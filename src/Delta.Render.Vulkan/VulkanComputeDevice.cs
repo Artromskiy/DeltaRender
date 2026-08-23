@@ -685,8 +685,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             for (var i = 0; i < dirtyRecords.Length; i++)
             {
                 var change = dirtyRecords[i];
-                if (change.EntityId >= recordCapacity || change.PayloadSize > recordStride ||
-                    (change.PayloadSize != 0 && change.PayloadAddress == 0))
+                if (change.EntityId >= recordCapacity || change.PayloadSize > recordStride)
                 {
                     rejected++;
                     continue;
@@ -694,7 +693,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
                 ranges[validCount++] = new DirtyRange(
                     checked((ulong)change.EntityId * recordStride),
-                    change.PayloadAddress,
+                    change.Payload,
                     change.PayloadSize,
                     recordStride,
                     i);
@@ -788,7 +787,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         }
         finally
         {
-            ArrayPool<DirtyRange>.Shared.Return(ranges);
+            ArrayPool<DirtyRange>.Shared.Return(ranges, clearArray: true);
         }
     }
 
@@ -1252,8 +1251,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                     }
 
                     var destinationOffset = checked((int)((ulong)(rangeIndex - run.Start) * range.RecordStride));
-                    var payload = new ReadOnlySpan<byte>((void*)(nuint)range.PayloadAddress, checked((int)range.PayloadSize));
-                    payload.CopyTo(destination.Slice(destinationOffset, checked((int)range.PayloadSize)));
+                    range.Payload.Span.CopyTo(destination.Slice(destinationOffset, checked((int)range.PayloadSize)));
                 }
             }
 
@@ -1525,7 +1523,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     private readonly record struct BufferAllocation(VulkanBuffer Buffer, DeviceMemory Memory, ulong AllocationSize, MemoryPropertyFlags MemoryProperties);
     private readonly record struct ManagedUploadRange(ulong DestinationOffset, ReadOnlyMemory<byte> Source, ulong ByteLength, int Sequence);
     private readonly record struct ManagedUploadRun(int Start, int End, ulong StagingOffset, ulong DestinationOffset, int ByteLength);
-    private readonly record struct DirtyRange(ulong Offset, ulong PayloadAddress, uint PayloadSize, uint RecordStride, int Sequence);
+    private readonly record struct DirtyRange(ulong Offset, ReadOnlyMemory<byte> Payload, uint PayloadSize, uint RecordStride, int Sequence);
     private readonly record struct DirtyUploadRun(int Start, int End, ulong StagingOffset, ulong DestinationOffset, int ByteLength);
 
     private sealed class ManagedUploadDestinationComparer : IComparer<ManagedUploadRange>

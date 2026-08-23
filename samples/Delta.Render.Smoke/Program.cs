@@ -289,40 +289,31 @@ internal static class Program
 
         var recordStride = 16u;
         await using var recordBuffer = device.CreateStorageBuffer(64);
-        var payload = Marshal.AllocHGlobal((int)recordStride);
-        try
+        var payloadBytes = Enumerable.Range(0, (int)recordStride).Select(static value => (byte)value).ToArray();
+        var changes = new[]
         {
-            var payloadBytes = Enumerable.Range(0, (int)recordStride).Select(static value => (byte)value).ToArray();
-            Marshal.Copy(payloadBytes, 0, payload, payloadBytes.Length);
-            var changes = new[]
-            {
-                RenderRecordChange.Upsert(1, 7, (ulong)payload, recordStride),
-                RenderRecordChange.Upsert(2, 7, (ulong)payload, recordStride),
-                RenderRecordChange.Remove(3, 7)
-            };
-            var update = device.ApplyDirtyRecords(recordBuffer, changes, recordStride, 4);
-            if (!update.Succeeded || update.UploadRuns != 1)
-            {
-                return await FailComputeAsync(-1, update.Error ?? "dirty-record update");
-            }
-
-            var records = new byte[64];
-            if (!device.Readback(recordBuffer, records))
-            {
-                return await FailComputeAsync(-1, "dirty-record readback");
-            }
-
-            if (!records.AsSpan(16, 16).SequenceEqual(payloadBytes) || !records.AsSpan(32, 16).SequenceEqual(payloadBytes) || !records.AsSpan(48, 16).SequenceEqual(new byte[16]))
-            {
-                return await FailComputeAsync(-1, "dirty-record oracle mismatch");
-            }
-
-            await Console.Out.WriteLineAsync(DirtyRecordsMessage);
-        }
-        finally
+            RenderRecordChange.Upsert(1, 7, payloadBytes),
+            RenderRecordChange.Upsert(2, 7, payloadBytes),
+            RenderRecordChange.Remove(3, 7)
+        };
+        var update = device.ApplyDirtyRecords(recordBuffer, changes, recordStride, 4);
+        if (!update.Succeeded || update.UploadRuns != 1)
         {
-            Marshal.FreeHGlobal(payload);
+            return await FailComputeAsync(-1, update.Error ?? "dirty-record update");
         }
+
+        var records = new byte[64];
+        if (!device.Readback(recordBuffer, records))
+        {
+            return await FailComputeAsync(-1, "dirty-record readback");
+        }
+
+        if (!records.AsSpan(16, 16).SequenceEqual(payloadBytes) || !records.AsSpan(32, 16).SequenceEqual(payloadBytes) || !records.AsSpan(48, 16).SequenceEqual(new byte[16]))
+        {
+            return await FailComputeAsync(-1, "dirty-record oracle mismatch");
+        }
+
+        await Console.Out.WriteLineAsync(DirtyRecordsMessage);
 
         return 0;
     }

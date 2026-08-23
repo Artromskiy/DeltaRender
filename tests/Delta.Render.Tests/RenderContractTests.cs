@@ -37,18 +37,19 @@ public class RenderContractTests
     [Fact]
     public void RenderRecordChangeSupportsZeroAllocationPath()
     {
-        var changed = RenderRecordChange.Upsert(entityId: 42, componentKindId: 11, payloadAddress: 12345, payloadSize: 16);
+        var payload = new byte[16];
+        var changed = RenderRecordChange.Upsert(entityId: 42, componentKindId: 11, payload);
         var removed = RenderRecordChange.Remove(entityId: 43, componentKindId: 12);
 
         Assert.Equal(42ul, changed.EntityId);
         Assert.Equal(RenderRecordChangeKind.Upserted, changed.Kind);
         Assert.Equal(11u, changed.ComponentKindId);
-        Assert.Equal(12345ul, changed.PayloadAddress);
+        Assert.Equal(payload, changed.Payload.ToArray());
         Assert.Equal(16u, changed.PayloadSize);
 
         Assert.Equal(43ul, removed.EntityId);
         Assert.Equal(RenderRecordChangeKind.Removed, removed.Kind);
         Assert.Equal(0u, removed.PayloadSize);
-        Assert.Equal(0ul, removed.PayloadAddress);
+        Assert.Empty(removed.Payload.ToArray());
     }
 }

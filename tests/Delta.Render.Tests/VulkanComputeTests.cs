@@ -410,33 +410,24 @@ public sealed class VulkanComputeTests
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(64);
-        var payload = Marshal.AllocHGlobal(16);
-        try
+        var bytes = Enumerable.Range(0, 16).Select(static value => (byte)value).ToArray();
+        var changes = new[]
         {
-            var bytes = Enumerable.Range(0, 16).Select(static value => (byte)value).ToArray();
-            Marshal.Copy(bytes, 0, payload, bytes.Length);
-            var changes = new[]
-            {
-                RenderRecordChange.Upsert(1, 7, (ulong)payload, 16),
-                RenderRecordChange.Upsert(2, 7, (ulong)payload, 16),
-                RenderRecordChange.Remove(3, 7)
-            };
+            RenderRecordChange.Upsert(1, 7, bytes),
+            RenderRecordChange.Upsert(2, 7, bytes),
+            RenderRecordChange.Remove(3, 7)
+        };
 
-            var result = device.ApplyDirtyRecords(buffer, changes, 16, 4);
-            Assert.True(result.Succeeded, result.Error);
-            Assert.Equal(3, result.AcceptedRecords);
-            Assert.Equal(1, result.UploadRuns);
+        var result = device.ApplyDirtyRecords(buffer, changes, 16, 4);
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(3, result.AcceptedRecords);
+        Assert.Equal(1, result.UploadRuns);
 
-            var output = new byte[64];
-            Assert.True(device.Readback(buffer, output));
-            Assert.Equal(bytes, output.AsSpan(16, 16).ToArray());
-            Assert.Equal(bytes, output.AsSpan(32, 16).ToArray());
-            Assert.Equal(new byte[16], output.AsSpan(48, 16).ToArray());
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(payload);
-        }
+        var output = new byte[64];
+        Assert.True(device.Readback(buffer, output));
+        Assert.Equal(bytes, output.AsSpan(16, 16).ToArray());
+        Assert.Equal(bytes, output.AsSpan(32, 16).ToArray());
+        Assert.Equal(new byte[16], output.AsSpan(48, 16).ToArray());
     }
 
     [Fact]
@@ -444,57 +435,48 @@ public sealed class VulkanComputeTests
     {
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
         await using var buffer = device.CreateStorageBuffer(4096);
-        var payload = Marshal.AllocHGlobal(16 * 32);
-        try
-        {
-            var bytes = Enumerable.Range(0, 16 * 32).Select(static value => (byte)value).ToArray();
-            Marshal.Copy(bytes, 0, payload, bytes.Length);
+        var bytes = Enumerable.Range(0, 16 * 32).Select(static value => (byte)value).ToArray();
 
-            var before = device.UploadStatistics;
-            var first = device.ApplyDirtyRecords(
-                buffer,
-                new[]
-                {
-                    RenderRecordChange.Upsert(1, 7, (ulong)payload, 16),
-                    RenderRecordChange.Upsert(3, 7, (ulong)(payload + 16), 16)
-                },
-                16,
-                256);
+        var before = device.UploadStatistics;
+        var first = device.ApplyDirtyRecords(
+            buffer,
+            new[]
+            {
+                RenderRecordChange.Upsert(1, 7, bytes.AsMemory(0, 16)),
+                RenderRecordChange.Upsert(3, 7, bytes.AsMemory(16, 16))
+            },
+            16,
+            256);
 
-            Assert.True(first.Succeeded, first.Error);
-            Assert.Equal(2, first.UploadRuns);
-            var afterFirst = device.UploadStatistics;
-            Assert.Equal(before.StagingAllocationCount + 1, afterFirst.StagingAllocationCount);
-            Assert.Equal(before.DirtyBatchSubmitCount + 1, afterFirst.DirtyBatchSubmitCount);
+        Assert.True(first.Succeeded, first.Error);
+        Assert.Equal(2, first.UploadRuns);
+        var afterFirst = device.UploadStatistics;
+        Assert.Equal(before.StagingAllocationCount + 1, afterFirst.StagingAllocationCount);
+        Assert.Equal(before.DirtyBatchSubmitCount + 1, afterFirst.DirtyBatchSubmitCount);
 
-            var second = device.ApplyDirtyRecords(
-                buffer,
-                new[] { RenderRecordChange.Upsert(5, 7, (ulong)(payload + 32), 16) },
-                16,
-                256);
+        var second = device.ApplyDirtyRecords(
+            buffer,
+            new[] { RenderRecordChange.Upsert(5, 7, bytes.AsMemory(32, 16)) },
+            16,
+            256);
 
-            Assert.True(second.Succeeded, second.Error);
-            var afterReuse = device.UploadStatistics;
-            Assert.Equal(afterFirst.StagingAllocationCount, afterReuse.StagingAllocationCount);
-            Assert.Equal(afterFirst.DirtyBatchSubmitCount + 1, afterReuse.DirtyBatchSubmitCount);
+        Assert.True(second.Succeeded, second.Error);
+        var afterReuse = device.UploadStatistics;
+        Assert.Equal(afterFirst.StagingAllocationCount, afterReuse.StagingAllocationCount);
+        Assert.Equal(afterFirst.DirtyBatchSubmitCount + 1, afterReuse.DirtyBatchSubmitCount);
 
-            var recordsForGrowth = checked((int)(afterReuse.StagingCapacity / 16) + 1);
-            var growthChanges = Enumerable.Range(0, recordsForGrowth)
-                .Select(index => RenderRecordChange.Upsert((uint)index, 7, (ulong)payload, 16))
-                .ToArray();
-            var grown = device.ApplyDirtyRecords(buffer, growthChanges, 16, 256);
+        var recordsForGrowth = checked((int)(afterReuse.StagingCapacity / 16) + 1);
+        var growthChanges = Enumerable.Range(0, recordsForGrowth)
+            .Select(index => RenderRecordChange.Upsert((uint)index, 7, bytes.AsMemory(0, 16)))
+            .ToArray();
+        var grown = device.ApplyDirtyRecords(buffer, growthChanges, 16, 256);
 
-            Assert.True(grown.Succeeded, grown.Error);
-            Assert.Equal(1, grown.UploadRuns);
-            var afterGrow = device.UploadStatistics;
-            Assert.Equal(afterReuse.StagingAllocationCount + 1, afterGrow.StagingAllocationCount);
-            Assert.Equal(afterReuse.DirtyBatchSubmitCount + 1, afterGrow.DirtyBatchSubmitCount);
-            Assert.True(afterGrow.StagingCapacity > afterReuse.StagingCapacity);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(payload);
-        }
+        Assert.True(grown.Succeeded, grown.Error);
+        Assert.Equal(1, grown.UploadRuns);
+        var afterGrow = device.UploadStatistics;
+        Assert.Equal(afterReuse.StagingAllocationCount + 1, afterGrow.StagingAllocationCount);
+        Assert.Equal(afterReuse.DirtyBatchSubmitCount + 1, afterGrow.DirtyBatchSubmitCount);
+        Assert.True(afterGrow.StagingCapacity > afterReuse.StagingCapacity);
     }
 
     [Fact]
@@ -517,8 +499,8 @@ public sealed class VulkanComputeTests
         await using var buffer = device.CreateStorageBuffer(64);
         var invalid = new[]
         {
-            RenderRecordChange.Upsert(4, 7, 0, 16),
-            RenderRecordChange.Upsert(1, 7, 0, 17)
+            RenderRecordChange.Upsert(4, 7, new byte[16]),
+            RenderRecordChange.Upsert(1, 7, new byte[17])
         };
 
         var result = device.ApplyDirtyRecords(buffer, invalid, 16, 4);
