@@ -1,9 +1,8 @@
-using System.Runtime.InteropServices;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Buffers;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
 using Delta.Render.Core;
-using Silk.NET.Core;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
@@ -542,8 +541,8 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     internal unsafe bool QuerySwapchainSupport(SurfaceKHR surface, out SurfaceCapabilitiesKHR capabilities, out SurfaceFormatKHR[] formats, out PresentModeKHR[] presentModes)
     {
         capabilities = default;
-            formats = Array.Empty<SurfaceFormatKHR>();
-            presentModes = Array.Empty<PresentModeKHR>();
+        formats = Array.Empty<SurfaceFormatKHR>();
+        presentModes = Array.Empty<PresentModeKHR>();
 
         if (surface.Handle == 0 || _physicalDevice.Handle == default)
         {
@@ -573,9 +572,9 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         _ = _khrSurface.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, surface, &presentModeCount, null);
         if (presentModeCount == 0)
         {
-                presentModes = Array.Empty<PresentModeKHR>();
-                return false;
-            }
+            presentModes = Array.Empty<PresentModeKHR>();
+            return false;
+        }
 
         presentModes = new PresentModeKHR[(int)presentModeCount];
         fixed (PresentModeKHR* pPresentModes = presentModes)
@@ -1304,16 +1303,16 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
                 return false;
             }
 
-        var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
-        var imageAvailable = _imageAvailable;
-        var renderComplete = _renderComplete;
-        var commandBuffer = _commandBuffer;
-        var imageIndex = _activeImageIndex;
-        var swapchain = _swapchain;
-        var submitInfo = new SubmitInfo
-        {
-            SType = StructureType.SubmitInfo,
-            WaitSemaphoreCount = 1,
+            var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
+            var imageAvailable = _imageAvailable;
+            var renderComplete = _renderComplete;
+            var commandBuffer = _commandBuffer;
+            var imageIndex = _activeImageIndex;
+            var swapchain = _swapchain;
+            var submitInfo = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                WaitSemaphoreCount = 1,
                 PWaitSemaphores = &imageAvailable,
                 PWaitDstStageMask = waitStages,
                 CommandBufferCount = 1,
@@ -1334,13 +1333,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
             var presentInfo = new PresentInfoKHR
             {
-            SType = StructureType.PresentInfoKhr,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = &renderComplete,
-            SwapchainCount = 1,
-            PSwapchains = &swapchain,
-            PImageIndices = &imageIndex
-        };
+                SType = StructureType.PresentInfoKhr,
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = &renderComplete,
+                SwapchainCount = 1,
+                PSwapchains = &swapchain,
+                PImageIndices = &imageIndex
+            };
 
             var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
             success = (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
@@ -1604,10 +1603,26 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         }
         catch
         {
-            if (vertexModule.Handle != default) api.DestroyShaderModule(_device, vertexModule, null);
-            if (fragmentModule.Handle != default) api.DestroyShaderModule(_device, fragmentModule, null);
-            if (pipeline.Handle != default) api.DestroyPipeline(_device, pipeline, null);
-            if (pipelineLayout.Handle != default) api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            if (vertexModule.Handle != default)
+            {
+                api.DestroyShaderModule(_device, vertexModule, null);
+            }
+
+            if (fragmentModule.Handle != default)
+            {
+                api.DestroyShaderModule(_device, fragmentModule, null);
+            }
+
+            if (pipeline.Handle != default)
+            {
+                api.DestroyPipeline(_device, pipeline, null);
+            }
+
+            if (pipelineLayout.Handle != default)
+            {
+                api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            }
+
             throw;
         }
     }
@@ -1830,12 +1845,36 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         }
         catch
         {
-            if (vertexModule.Handle != default) api.DestroyShaderModule(_device, vertexModule, null);
-            if (fragmentModule.Handle != default) api.DestroyShaderModule(_device, fragmentModule, null);
-            if (pipeline.Handle != default) api.DestroyPipeline(_device, pipeline, null);
-            if (pipelineLayout.Handle != default) api.DestroyPipelineLayout(_device, pipelineLayout, null);
-            if (descriptorPool.Handle != default) api.DestroyDescriptorPool(_device, descriptorPool, null);
-            if (descriptorSetLayout.Handle != default) api.DestroyDescriptorSetLayout(_device, descriptorSetLayout, null);
+            if (vertexModule.Handle != default)
+            {
+                api.DestroyShaderModule(_device, vertexModule, null);
+            }
+
+            if (fragmentModule.Handle != default)
+            {
+                api.DestroyShaderModule(_device, fragmentModule, null);
+            }
+
+            if (pipeline.Handle != default)
+            {
+                api.DestroyPipeline(_device, pipeline, null);
+            }
+
+            if (pipelineLayout.Handle != default)
+            {
+                api.DestroyPipelineLayout(_device, pipelineLayout, null);
+            }
+
+            if (descriptorPool.Handle != default)
+            {
+                api.DestroyDescriptorPool(_device, descriptorPool, null);
+            }
+
+            if (descriptorSetLayout.Handle != default)
+            {
+                api.DestroyDescriptorSetLayout(_device, descriptorSetLayout, null);
+            }
+
             throw;
         }
     }
@@ -2285,7 +2324,7 @@ public sealed unsafe class VulkanGraphicsPipeline : IGraphicsPipeline
         return ValueTask.CompletedTask;
     }
 
-internal void MarkDestroyed()
+    internal void MarkDestroyed()
     {
         PipelineLayout = default;
         Pipeline = default;
