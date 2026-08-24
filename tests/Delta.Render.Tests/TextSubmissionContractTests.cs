@@ -330,6 +330,7 @@ public sealed class TextSubmissionContractTests
             rootClip.Id);
         var rectangle = new UiQuad(10, 20, 100, 80, 1, 1, 1, 1)
         {
+            Kind = UiRenderDrawKind.Image,
             Clip = nestedClip.Bounds,
             ClipId = nestedClip.Id,
             Resource = new UiRenderResourceHandle(17, 3),
@@ -353,6 +354,7 @@ public sealed class TextSubmissionContractTests
         var batch = adapter.Borrow(in frame);
 
         Assert.Equal(rectangle, batch.Rectangles[0]);
+        Assert.Equal(UiRenderDrawKind.Image, batch.Rectangles[0].Kind);
         Assert.Equal(new UiRenderResourceHandle(17, 3), batch.Rectangles[0].Resource);
         Assert.Equal(nestedClip.Id, batch.Rectangles[0].ClipId);
         Assert.Equal(rootClip, batch.Clips[0]);

@@ -78,6 +78,14 @@ public readonly record struct UiRenderDrawDelta(
     public bool IsEmpty => Commands.Count == 0 && Clips.Count == 0 && TextRuns.Count == 0;
 }
 
+public enum UiRenderDrawKind
+{
+    Rectangle,
+    TextRun,
+    Image,
+    Viewport
+}
+
 public readonly record struct UiQuad(
     float X,
     float Y,
@@ -88,6 +96,8 @@ public readonly record struct UiQuad(
     float Blue,
     float Alpha)
 {
+    public UiRenderDrawKind Kind { get; init; }
+
     public UiClipRect Clip { get; init; } = UiClipRect.Unbounded;
 
     public UiRenderClipId ClipId { get; init; }
