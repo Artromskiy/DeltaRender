@@ -44,14 +44,30 @@ public sealed class VulkanSessionRollbackTests
     public void CommitTransfersOwnershipAndRollbackBecomesNoOp()
     {
         var cleanupCount = 0;
-        var ledger = new VulkanSessionRollbackLedger();
-        ledger.Own(VulkanSessionResourceStage.RenderPass, () => cleanupCount++);
+        var acquirer = new VulkanSessionResourceAcquirer();
+        acquirer.Acquire(_ => { }, _ => cleanupCount++);
 
-        ledger.Commit();
-        ledger.Rollback();
-        ledger.Rollback();
+        acquirer.Commit();
+        acquirer.Rollback();
+        acquirer.Rollback();
 
         Assert.Equal(0, cleanupCount);
+    }
+
+    [Fact]
+    public void FailureAfterAllAcquisitionsBeforeCommitRollsBackEveryStage()
+    {
+        var order = new List<VulkanSessionResourceStage>();
+        var acquirer = new VulkanSessionResourceAcquirer();
+        acquirer.Acquire(_ => { }, stage => order.Add(stage));
+        var original = new InvalidOperationException("finalization");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => acquirer.RollbackPreserving(original));
+
+        Assert.Same(original, exception);
+        Assert.Equal(VulkanSessionResourceStages.All.Reverse(), order);
+        acquirer.Rollback();
+        Assert.Equal(VulkanSessionResourceStages.All.Length, order.Count);
     }
 
     private static void AcquireUntilFailure(VulkanSessionResourceStage failedStage, List<VulkanSessionResourceStage> order)

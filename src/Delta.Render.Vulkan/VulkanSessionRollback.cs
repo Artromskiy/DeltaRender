@@ -110,9 +110,11 @@ internal sealed class VulkanSessionResourceAcquirer
             acquire(stage);
             _ledger.Own(stage, () => cleanup(stage));
         }
-
-        _ledger.Commit();
     }
+
+    internal void Commit() => _ledger.Commit();
+
+    internal void Rollback() => _ledger.Rollback();
 
     internal void RollbackPreserving(Exception original) => _ledger.RollbackPreserving(original);
 }

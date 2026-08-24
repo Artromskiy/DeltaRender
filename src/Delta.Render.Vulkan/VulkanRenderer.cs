@@ -682,8 +682,6 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly SurfaceKHR _surface;
     private readonly VulkanSurfaceLease _surfaceLease;
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
-    private readonly KhrSurface _khrSurface;
-    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
     private readonly KhrSwapchain _khrSwapchain;
     private readonly Queue _graphicsQueue;
     private readonly Queue _presentQueue;
@@ -735,7 +733,6 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         _presentQueue = renderer.GetPresentQueue();
         _graphicsFamily = renderer.GetGraphicsFamily();
         _presentFamily = renderer.GetPresentFamily();
-        _khrSurface = renderer.GetKhrSurface();
         _khrSwapchain = renderer.GetKhrSwapchain();
 
         var acquirer = new VulkanSessionResourceAcquirer();
@@ -779,6 +776,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             _memoryProperties = memoryProperties;
             _textAtlas = textAtlas ?? throw new InvalidOperationException("Text atlas initialization did not complete.");
             surfaceLease.TransferToSession();
+            acquirer.Commit();
         }
         catch (Exception exception)
         {
