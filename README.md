@@ -40,14 +40,16 @@ the production contract. `GraphicsShaderProgram` is owned only by
 `Delta.Shader.Abstractions`; DeltaRender validates and consumes that canonical
 artifact rather than defining a local duplicate.
 
-`UiRenderBatchAdapter` copies rectangle, text-submission and dirty-record
-structures into reusable adapter-owned backing storage. It preserves each
-record's clip, owner/generation, order, and dirty/version fields. Nested
-`TextRun.Glyphs` and `RenderRecordChange.Payload` memory remains borrowed from
-the producer for the current frame; it must remain valid through submission
-and must not be retained after the next adapter replace or dispose operation.
-Borrowed frame tokens are generation-checked and become stale after either
-operation.
+`UiRenderBatchAdapter` copies draw, clip-node, text-submission and dirty-record
+structures into reusable adapter-owned backing storage. The canonical replace
+path preserves draw kind, resource handle, effective clip and clip identity,
+parent clip hierarchy, owner/order metadata and command/clip/text dirty ranges
+with their base/next versions. Nested `TextRun.Glyphs` and
+`RenderRecordChange.Payload` memory remains borrowed from the producer for the
+current frame; it must remain valid through submission and must not be retained
+after the next adapter replace or dispose operation. Borrowed frame tokens are
+generation-checked and become stale after either operation. Resource metadata
+preservation does not yet imply sampled-image rendering by the Vulkan UI path.
 
 Desktop targets are Windows/Linux Vulkan and macOS arm64/x64 through MoltenVK
 portability enumeration. Native macOS runs require an explicit RID.

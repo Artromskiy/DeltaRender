@@ -31,7 +31,9 @@ reverse-order native-handle rollback, platform surface transfer and cleanup
 failures without loading Vulkan or opening a window.
 The headless UI handoff tests also cover adapter-owned record backing,
 borrowed glyph/payload lifetime, clip/order/version preservation and stale
-generation rejection.
+generation rejection. They additionally round-trip a non-default resource
+handle, nested clip nodes and non-empty command/clip/text dirty ranges through
+the canonical batch without loading Vulkan.
 
 ## Code metrics
 

@@ -22,6 +22,9 @@ Ordered cross-project ownership and gates are in
   importing XAML/ECS types or raw storage handles.
 - [x] Contract-test the canonical handoff's copied records, borrowed nested
   glyph/payload memory, clip/order/version preservation and stale frame tokens.
+- [x] Preserve renderer-neutral draw kind/resource handles, clip identity and
+  hierarchy, plus command/clip/text version ranges in the canonical borrowed
+  batch. Sampled image consumption remains separate renderer work.
 
 ## P2 — frame surface cleanup
 
