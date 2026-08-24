@@ -17,6 +17,10 @@ Renderer-facing frame contracts contain frame identity, views, surfaces and
 render data only. They never carry `DeltaTime` or define a clock. Simulation,
 fixed-step, scaled, unscaled and editor time domains belong to DeltaEngine and
 are converted into explicit feature or shader data before render submission.
+The next canonical submission boundary is specified by the
+[`RenderGraph` contracts](src/Delta.Render.Core/RenderGraph/README.md); the
+existing specialized frame APIs remain migration paths until their consumers
+move to it.
 
 Compute supports validated artifacts, multiple SSBO bindings, upload, dispatch
 and readback. Graphics supports paired vertex/fragment artifacts, swapchain

@@ -7,6 +7,11 @@ Ordered cross-project ownership and gates are in
 
 - [x] Remove the local duplicate `GraphicsShaderProgram`; consume the canonical
   `Delta.Shader.Abstractions` owner without adapter copies.
+- [x] Define the Vulkan-only render-graph contracts, explicit per-view surface,
+  viewport and `PixelRect`, canonical DeltaShader pipeline descriptions and
+  raster/compute/transfer command contexts.
+- [ ] Implement the graph in `Delta.Render.Vulkan`, then migrate fullscreen,
+  UI/text and mesh submissions before removing specialized frame overloads.
 
 ## P1 — canonical UI/text submission
 
