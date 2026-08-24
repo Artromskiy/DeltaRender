@@ -472,15 +472,20 @@ public static class TextShaderArtifactContract
     private static bool ValidateVertex(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
     {
         layout = default;
-        if (manifest.Version != ShaderAbiManifest.CurrentVersion || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        if (manifest.Version != ShaderAbiManifest.CurrentVersion || manifest.Stage != ShaderStage.Vertex || string.IsNullOrWhiteSpace(manifest.EntryPointName))
         {
             message = "Vertex text artifact manifest is incomplete.";
             return false;
         }
 
-        if (!TryGetStorageBuffer(manifest.Resources, out var storage))
+        if (manifest.Resources.Count != 1 || !TryGetStorageBuffer(manifest.Resources, out var storage))
         {
-            message = "Missing vertex text storage buffer resource at set/binding declared by the shader manifest.";
+            message = "Vertex text artifact must declare exactly one storage buffer resource.";
+            return false;
+        }
+
+        if (!ValidateGlyphStorage(storage, out message) || !ValidatePushConstants(manifest, out message))
+        {
             return false;
         }
 
@@ -491,7 +496,7 @@ public static class TextShaderArtifactContract
             0,
             0,
             ShaderResourceAccess.ReadOnly,
-            manifest.PushConstants.Count > 0 ? manifest.PushConstants[0].Size : 0);
+            64);
         message = string.Empty;
         return true;
     }
@@ -499,15 +504,21 @@ public static class TextShaderArtifactContract
     private static bool ValidateFragment(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
     {
         layout = default;
-        if (manifest.Version != ShaderAbiManifest.CurrentVersion || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        if (manifest.Version != ShaderAbiManifest.CurrentVersion || manifest.Stage != ShaderStage.Fragment || string.IsNullOrWhiteSpace(manifest.EntryPointName))
         {
             message = "Fragment text artifact manifest is incomplete.";
             return false;
         }
 
-        if (!TryGetSampledTexture(manifest.Resources, out var texture))
+        if (manifest.Resources.Count != 1 || !TryGetSampledTexture(manifest.Resources, out var texture))
         {
-            message = "Missing sampled texture resource in fragment text manifest.";
+            message = "Fragment text artifact must declare exactly one sampled texture resource.";
+            return false;
+        }
+
+        if (texture.Set != 0 || (texture.Binding != 3 && texture.Binding != 4) || !ValidatePushConstants(manifest, out message))
+        {
+            message = "Fragment text artifact has an incompatible sampler set/binding or push-constant contract.";
             return false;
         }
 
@@ -518,7 +529,79 @@ public static class TextShaderArtifactContract
             texture.Set,
             texture.Binding,
             texture.Access,
-            manifest.PushConstants.Count > 0 ? manifest.PushConstants[0].Size : 0);
+            64);
+        message = string.Empty;
+        return true;
+    }
+
+    private static bool ValidatePushConstants(ShaderAbiManifest manifest, out string message)
+    {
+        if (manifest.PushConstants.Count != 1)
+        {
+            message = "Text shader stages require exactly one push-constant block.";
+            return false;
+        }
+
+        var block = manifest.PushConstants[0];
+        if (block.Size != 64 || block.Alignment != 16 || block.ArrayStride != 64 || block.Members.Count != 4)
+        {
+            message = "Text shader push constants must use the canonical 64-byte layout.";
+            return false;
+        }
+
+        var expected = new (string Name, string Type, uint Offset, uint Size)[]
+        {
+            ("Resolution", "vec2", 0, 8),
+            ("TextColor", "vec4", 16, 16),
+            ("OutlineColor", "vec4", 32, 16),
+            ("OutlineWidth", "float", 48, 4)
+        };
+        for (var index = 0; index < expected.Length; index++)
+        {
+            var member = block.Members[index];
+            var required = expected[index];
+            if (member.Name != required.Name || member.GlslType != required.Type || member.Offset != required.Offset ||
+                member.Size != required.Size || member.ArrayStride != required.Size)
+            {
+                message = "Text shader push-constant members do not match the canonical layout.";
+                return false;
+            }
+        }
+
+        message = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateGlyphStorage(ShaderAbiResource resource, out string message)
+    {
+        if (resource.Set != 0 || resource.Binding != 0 || resource.Stage != ShaderStage.Vertex ||
+            !resource.ReadOnly || resource.Access != ShaderResourceAccess.ReadOnly || resource.Layout != "std430" ||
+            resource.ArrayStride != 48 || resource.Size != 48 || resource.Packing.Scheme != "std430" || resource.Packing.Stride != 48 ||
+            resource.Members.Count != 4)
+        {
+            message = "Text glyph storage must be readonly std430 set 0 binding 0 with stride 48.";
+            return false;
+        }
+
+        var expected = new (string Name, string Type, uint Offset, uint Size)[]
+        {
+            ("PixelMin", "vec2", 0, 8),
+            ("PixelMax", "vec2", 8, 8),
+            ("UvRect", "vec4", 16, 16),
+            ("Color", "vec4", 32, 16)
+        };
+        for (var index = 0; index < expected.Length; index++)
+        {
+            var member = resource.Members[index];
+            var required = expected[index];
+            if (member.Name != required.Name || member.GlslType != required.Type || member.Offset != required.Offset ||
+                member.Size != required.Size || member.ArrayStride != required.Size)
+            {
+                message = "Text glyph storage members do not match the canonical std430 layout.";
+                return false;
+            }
+        }
+
         message = string.Empty;
         return true;
     }
@@ -536,7 +619,7 @@ public static class TextShaderArtifactContract
 
             if (candidate.Category == "storage-buffer")
             {
-                if (candidate.Access == ShaderResourceAccess.ReadOnly && candidate.Layout == "std430")
+                if (candidate.ReadOnly && candidate.Access == ShaderResourceAccess.ReadOnly && candidate.Layout == "std430")
                 {
                     resource = candidate;
                     return true;
@@ -552,7 +635,8 @@ public static class TextShaderArtifactContract
         resource = null;
         foreach (var candidate in resources)
         {
-            if (candidate.Category == "sampled-texture" && candidate.Access == ShaderResourceAccess.ReadOnly)
+            if (candidate.Category == "sampled-texture" && candidate.Stage == ShaderStage.Fragment &&
+                candidate.ReadOnly && candidate.Access == ShaderResourceAccess.ReadOnly)
             {
                 resource = candidate;
                 return true;

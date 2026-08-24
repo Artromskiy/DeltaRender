@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Delta.Render.Core;
 using Delta.Shader.Abstractions;
 using Xunit;
@@ -81,70 +82,170 @@ public sealed class TextContractTests
     }
 
     [Fact]
-    public void ShaderArtifactContractAcceptsSameBindingNumberInDifferentSets()
+    public void ShaderArtifactContractAcceptsCanonicalTextManifest()
     {
         var bytes = new byte[20];
-        var vertex = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
-        {
-            Version = Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion,
-            Stage = Delta.Shader.Abstractions.ShaderStage.Vertex,
-            EntryPointName = "main",
-            PushConstants = new[]
-            {
-                new Delta.Shader.Abstractions.ShaderAbiPushConstant
-                {
-                    Size = 16
-                }
-            },
-            Resources = new[]
-            {
-                new Delta.Shader.Abstractions.ShaderAbiResource
-                {
-                    Name = "glyphs",
-                    Category = "storage-buffer",
-                    Stage = Delta.Shader.Abstractions.ShaderStage.Vertex,
-                    Set = 0,
-                    Binding = 0,
-                    Access = Delta.Shader.Abstractions.ShaderResourceAccess.ReadOnly,
-                    Layout = "std430",
-                    ReadOnly = true
-                }
-            }
-        });
-        var fragment = new Delta.Shader.Abstractions.ShaderArtifact(bytes, new Delta.Shader.Abstractions.ShaderAbiManifest
-        {
-            Version = Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion,
-            Stage = Delta.Shader.Abstractions.ShaderStage.Fragment,
-            EntryPointName = "main",
-            PushConstants = new[]
-            {
-                new Delta.Shader.Abstractions.ShaderAbiPushConstant
-                {
-                    Size = 16
-                }
-            },
-            Resources = new[]
-            {
-                new Delta.Shader.Abstractions.ShaderAbiResource
-                {
-                    Name = "atlas",
-                    Category = "sampled-texture",
-                    Stage = Delta.Shader.Abstractions.ShaderStage.Fragment,
-                    Set = 1,
-                    Binding = 0,
-                    Access = Delta.Shader.Abstractions.ShaderResourceAccess.ReadOnly
-                }
-            }
-        });
+        var vertex = new ShaderArtifact(bytes, CanonicalVertexManifest());
+        var fragment = new ShaderArtifact(bytes, CanonicalFragmentManifest(3));
 
         var valid = TextShaderArtifactContract.TryDescribe(new GraphicsShaderProgram(vertex, fragment), out var layout, out var diagnostic);
         Assert.True(valid);
         Assert.Equal(TextShaderArtifactStatus.Ready, diagnostic.Status);
         Assert.Equal(0u, layout.VertexStorageSet);
         Assert.Equal(0u, layout.VertexStorageBinding);
-        Assert.Equal(1u, layout.TextureSet);
-        Assert.Equal(0u, layout.TextureBinding);
-        Assert.Equal(16u, layout.PushConstantSize);
+        Assert.Equal(0u, layout.TextureSet);
+        Assert.Equal(3u, layout.TextureBinding);
+        Assert.Equal(64u, layout.PushConstantSize);
+
+        var malformedStride = TextShaderArtifactContract.Validate(new GraphicsShaderProgram(
+            new ShaderArtifact(bytes, CanonicalVertexManifest(CanonicalGlyphStorage(arrayStride: 32, packingStride: 32))), fragment));
+        Assert.Equal(TextShaderArtifactStatus.Invalid, malformedStride.Status);
+
+        var storage = CanonicalGlyphStorage();
+        var malformedMembers = ReplaceMember(storage.Members, 1,
+            new ShaderAbiMember { Name = "PixelMax", GlslType = "vec2", Offset = 12, Size = 8, ArrayStride = 8 });
+        var malformedMember = TextShaderArtifactContract.Validate(new GraphicsShaderProgram(
+            new ShaderArtifact(bytes, CanonicalVertexManifest(CopyStorage(storage, malformedMembers))), fragment));
+        Assert.Equal(TextShaderArtifactStatus.Invalid, malformedMember.Status);
+
+        var push = CanonicalPushConstants();
+        var malformedPushMembers = ReplaceMember(push.Members, 3,
+            new ShaderAbiMember { Name = "OutlineWidth", GlslType = "float", Offset = 48, Size = 8, ArrayStride = 8 });
+        var malformedPush = CopyPush(push, malformedPushMembers);
+        var malformedPushDiagnostic = TextShaderArtifactContract.Validate(new GraphicsShaderProgram(
+            new ShaderArtifact(bytes, CanonicalVertexManifest(push: malformedPush)),
+            new ShaderArtifact(bytes, CanonicalFragmentManifest(3, malformedPush))));
+        Assert.Equal(TextShaderArtifactStatus.Invalid, malformedPushDiagnostic.Status);
+    }
+
+    [Theory]
+    [InlineData("sdf", 3u)]
+    [InlineData("msdf", 4u)]
+    public void GeneratedDeltaShaderTextArtifactsMeetRenderContract(string mode, uint expectedBinding)
+    {
+        var vertexJson = mode == "sdf"
+            ? Delta.Shader.Text.SdfTextGraphicsShaderProgram.VertexManifestJson
+            : Delta.Shader.Text.MsdfTextGraphicsShaderProgram.VertexManifestJson;
+        var fragmentJson = mode == "sdf"
+            ? Delta.Shader.Text.SdfTextGraphicsShaderProgram.FragmentManifestJson
+            : Delta.Shader.Text.MsdfTextGraphicsShaderProgram.FragmentManifestJson;
+        var vertexManifest = JsonSerializer.Deserialize<ShaderAbiManifest>(vertexJson);
+        var fragmentManifest = JsonSerializer.Deserialize<ShaderAbiManifest>(fragmentJson);
+        if (vertexManifest is null || fragmentManifest is null)
+        {
+            throw new InvalidOperationException("Delta.Shader.Text generated manifest could not be deserialized.");
+        }
+
+        var program = new GraphicsShaderProgram(
+            new ShaderArtifact(new byte[20], vertexManifest),
+            new ShaderArtifact(new byte[20], fragmentManifest));
+        Assert.True(TextShaderArtifactContract.TryDescribe(program, out var layout, out var diagnostic));
+        Assert.Equal(TextShaderArtifactStatus.Ready, diagnostic.Status);
+        Assert.Equal(0u, layout.VertexStorageBinding);
+        Assert.Equal(expectedBinding, layout.TextureBinding);
+        Assert.Equal(64u, layout.PushConstantSize);
+    }
+
+    private static ShaderAbiManifest CanonicalVertexManifest(ShaderAbiResource? storage = null, ShaderAbiPushConstant? push = null) => new()
+    {
+        Version = ShaderAbiManifest.CurrentVersion,
+        Stage = ShaderStage.Vertex,
+        EntryPointName = "main",
+        Resources = new[] { storage ?? CanonicalGlyphStorage() },
+        PushConstants = new[] { push ?? CanonicalPushConstants() }
+    };
+
+    private static ShaderAbiManifest CanonicalFragmentManifest(uint binding, ShaderAbiPushConstant? push = null) => new()
+    {
+        Version = ShaderAbiManifest.CurrentVersion,
+        Stage = ShaderStage.Fragment,
+        EntryPointName = "main",
+        Resources = new[]
+        {
+            new ShaderAbiResource
+            {
+                Name = "atlas",
+                Category = "sampled-texture",
+                Stage = ShaderStage.Fragment,
+                Set = 0,
+                Binding = binding,
+                Access = ShaderResourceAccess.ReadOnly,
+                ReadOnly = true
+            }
+        },
+        PushConstants = new[] { push ?? CanonicalPushConstants() }
+    };
+
+    private static ShaderAbiResource CanonicalGlyphStorage(uint arrayStride = 48, uint packingStride = 48) => new()
+    {
+        Name = "glyphs",
+        Category = "storage-buffer",
+        Stage = ShaderStage.Vertex,
+        Set = 0,
+        Binding = 0,
+        Access = ShaderResourceAccess.ReadOnly,
+        Layout = "std430",
+        ReadOnly = true,
+        Size = 48,
+        ArrayStride = arrayStride,
+        Packing = new ShaderAbiPackingPlan { Scheme = "std430", Stride = packingStride },
+        Members =
+        [
+            new ShaderAbiMember { Name = "PixelMin", GlslType = "vec2", Offset = 0, Size = 8, ArrayStride = 8 },
+            new ShaderAbiMember { Name = "PixelMax", GlslType = "vec2", Offset = 8, Size = 8, ArrayStride = 8 },
+            new ShaderAbiMember { Name = "UvRect", GlslType = "vec4", Offset = 16, Size = 16, ArrayStride = 16 },
+            new ShaderAbiMember { Name = "Color", GlslType = "vec4", Offset = 32, Size = 16, ArrayStride = 16 }
+        ]
+    };
+
+    private static ShaderAbiPushConstant CanonicalPushConstants() => new()
+    {
+        Name = "TextParameters",
+        GlslType = "DeltaPushConstants",
+        Alignment = 16,
+        Size = 64,
+        ArrayStride = 64,
+        Members =
+        [
+            new ShaderAbiMember { Name = "Resolution", GlslType = "vec2", Offset = 0, Size = 8, ArrayStride = 8 },
+            new ShaderAbiMember { Name = "TextColor", GlslType = "vec4", Offset = 16, Size = 16, ArrayStride = 16 },
+            new ShaderAbiMember { Name = "OutlineColor", GlslType = "vec4", Offset = 32, Size = 16, ArrayStride = 16 },
+            new ShaderAbiMember { Name = "OutlineWidth", GlslType = "float", Offset = 48, Size = 4, ArrayStride = 4 }
+        ]
+    };
+
+    private static ShaderAbiResource CopyStorage(ShaderAbiResource source, IReadOnlyList<ShaderAbiMember> members) => new()
+    {
+        Name = source.Name,
+        Category = source.Category,
+        Stage = source.Stage,
+        Set = source.Set,
+        Binding = source.Binding,
+        Access = source.Access,
+        Layout = source.Layout,
+        ReadOnly = source.ReadOnly,
+        Size = source.Size,
+        ArrayStride = source.ArrayStride,
+        Packing = source.Packing,
+        Members = members
+    };
+
+    private static ShaderAbiPushConstant CopyPush(ShaderAbiPushConstant source, IReadOnlyList<ShaderAbiMember> members) => new()
+    {
+        Name = source.Name,
+        ParameterName = source.ParameterName,
+        GlslType = source.GlslType,
+        Alignment = source.Alignment,
+        Size = source.Size,
+        ArrayStride = source.ArrayStride,
+        Members = members
+    };
+
+    private static ShaderAbiMember[] ReplaceMember(IReadOnlyList<ShaderAbiMember> members, int index, ShaderAbiMember replacement)
+    {
+        var result = members.ToArray();
+        result[index] = replacement;
+        return result;
     }
 
     [Fact]

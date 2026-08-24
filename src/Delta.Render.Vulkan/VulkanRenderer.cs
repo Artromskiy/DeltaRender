@@ -2397,14 +2397,17 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
 
     private BufferAllocation _instanceBuffer;
     private TextGlyphInstance[] _orderedGlyphs = Array.Empty<TextGlyphInstance>();
+    private TextGlyphGpu[] _gpuGlyphs = Array.Empty<TextGlyphGpu>();
     private TextBatchRange[] _batchGlyphs = Array.Empty<TextBatchRange>();
 
     internal Span<TextGlyphInstance> OrderedGlyphs => _orderedGlyphs;
+    internal Span<TextGlyphGpu> PackedGlyphs => _gpuGlyphs;
     internal Span<TextBatchRange> BatchGlyphs => _batchGlyphs;
 
     internal bool EnsureInstanceCapacity(uint glyphCount)
     {
-        var requiredBytes = checked((ulong)Math.Max(1u, glyphCount) * (ulong)Unsafe.SizeOf<TextGlyphInstance>());
+        var requiredBytes = checked((ulong)Math.Max(1u, glyphCount) * (ulong)Unsafe.SizeOf<TextGlyphGpu>());
+        EnsureGlyphArrayCapacity(glyphCount);
         if (_instanceBuffer.Buffer.Handle != default && _instanceBuffer.AllocationSize >= requiredBytes)
         {
             return true;
@@ -2422,16 +2425,6 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
             MemoryPropertyFlags.HostVisibleBit,
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
 
-        if (_orderedGlyphs.Length < glyphCount)
-        {
-            Array.Resize(ref _orderedGlyphs, Math.Max(_orderedGlyphs.Length * 2, (int)glyphCount));
-        }
-
-        if (_batchGlyphs.Length < glyphCount)
-        {
-            Array.Resize(ref _batchGlyphs, Math.Max(_batchGlyphs.Length * 2, (int)glyphCount));
-        }
-
         return true;
     }
 
@@ -2442,7 +2435,13 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
             throw new InvalidOperationException("Text instance buffer was not initialized.");
         }
 
-        var bytes = MemoryMarshal.AsBytes(glyphs);
+        if (glyphs.Length > _gpuGlyphs.Length)
+        {
+            throw new InvalidOperationException("Text GPU instance storage was not sized for the upload.");
+        }
+
+        TextGlyphGpu.Pack(glyphs, _gpuGlyphs.AsSpan(0, glyphs.Length));
+        var bytes = MemoryMarshal.AsBytes(_gpuGlyphs.AsSpan(0, glyphs.Length));
         fixed (byte* source = bytes)
         {
             void* mapped = null;
@@ -2465,6 +2464,24 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
             {
                 Owner.Api.UnmapMemory(Owner.Device, _instanceBuffer.Memory);
             }
+        }
+    }
+
+    private void EnsureGlyphArrayCapacity(uint glyphCount)
+    {
+        if (_orderedGlyphs.Length < glyphCount)
+        {
+            Array.Resize(ref _orderedGlyphs, Math.Max(_orderedGlyphs.Length * 2, (int)glyphCount));
+        }
+
+        if (_gpuGlyphs.Length < glyphCount)
+        {
+            Array.Resize(ref _gpuGlyphs, Math.Max(_gpuGlyphs.Length * 2, (int)glyphCount));
+        }
+
+        if (_batchGlyphs.Length < glyphCount)
+        {
+            Array.Resize(ref _batchGlyphs, Math.Max(_batchGlyphs.Length * 2, (int)glyphCount));
         }
     }
 
@@ -2532,6 +2549,7 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
         DescriptorPool = default;
         DescriptorSet = default;
         _orderedGlyphs = Array.Empty<TextGlyphInstance>();
+        _gpuGlyphs = Array.Empty<TextGlyphGpu>();
         _batchGlyphs = Array.Empty<TextBatchRange>();
     }
 }
