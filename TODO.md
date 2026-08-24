@@ -5,9 +5,8 @@ Ordered cross-project ownership and gates are in
 
 ## P0 — shared graphics contract
 
-- Remove the local duplicate `GraphicsShaderProgram` after
-  `Delta.Shader.Abstractions` is the canonical owner; restore a clean
-  DeltaRender -> DeltaEngine build without adapter copies.
+- [x] Remove the local duplicate `GraphicsShaderProgram`; consume the canonical
+  `Delta.Shader.Abstractions` owner without adapter copies.
 
 ## P1 — canonical UI/text submission
 
@@ -27,5 +26,10 @@ Ordered cross-project ownership and gates are in
 - After consumer migration, keep one frame submission path and separate
   lifecycle, pipeline creation and uploads into small contracts. Name copying
   adapters and borrowed views distinctly.
+- Make `VulkanWindowSession` construction transactional: if any native
+  allocation fails before the session object is returned, release every
+  render-pass, swapchain, image-view/framebuffer, synchronization and command
+  resource already created. Cover the cleanup ordering through a headless
+  fault-injection seam before relying on a native smoke.
 
 Shared acceptance lives in [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md).

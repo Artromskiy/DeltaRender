@@ -22,14 +22,17 @@ Text contracts describe atlas pages, positioned glyph instances and batches.
 The renderer owns images, views, samplers, descriptors, staging and disposal;
 callers own strings, shaping, controls and reusable instance storage. The
 submission contract is designed for batches by pipeline, atlas page and clip,
-never one draw per glyph; completion is tracked in `TODO.md`.
+never one draw per glyph. Text-instance buffer growth is failure-atomic: the
+previous allocation is released exactly once, a failed replacement leaves no
+dangling owned handle, and retry/final disposal remain safe. Completion of the
+larger text handoff is tracked in `TODO.md`.
 
 The canonical renderer-facing UI boundary is
 `DeltaXAML IUiDrawList -> UiRenderBatchAdapter -> borrowed UiRenderBatch`.
-The editor app has not completed that migration and still passes through
-`EngineUiQuad`/direct `UiQuad` conversions. Those paths are migration-only.
-A local `GraphicsShaderProgram` duplicate remains a P0 migration blocker; the
-canonical type is owned by `Delta.Shader.Abstractions`.
+Legacy `EngineUiQuad`/direct `UiQuad` conversions are migration/test-only, not
+the production contract. `GraphicsShaderProgram` is owned only by
+`Delta.Shader.Abstractions`; DeltaRender validates and consumes that canonical
+artifact rather than defining a local duplicate.
 
 Desktop targets are Windows/Linux Vulkan and macOS arm64/x64 through MoltenVK
 portability enumeration. Native macOS runs require an explicit RID.
