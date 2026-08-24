@@ -31,11 +31,11 @@ public sealed class TextAtlasCacheTests
     public async Task PageRolloverAndEvictionRejectStaleHandle()
     {
         var device = new FakeAtlasDevice();
-        await using var cache = new TextAtlasCache(device, new TextAtlasCacheOptions(32, 32, 1, 1));
-        var first = Glyph(1, GlyphAtlasMode.Grayscale);
+        await using var cache = new TextAtlasCache(device, new TextAtlasCacheOptions(8, 8, 1, 1));
+        var first = Glyph(0, GlyphAtlasMode.Grayscale);
 
         var stale = cache.GetOrAdd(in first, out _);
-        for (uint id = 2; id < 20; id++)
+        for (uint id = 1; id < 20; id++)
         {
             var glyph = Glyph(id, GlyphAtlasMode.Grayscale);
             _ = cache.GetOrAdd(in glyph, out _);
@@ -43,7 +43,22 @@ public sealed class TextAtlasCacheTests
 
         Assert.Equal(1, cache.PageCount);
         Assert.False(cache.TryGet(stale, out _));
-        Assert.Equal(19, device.UploadCount);
+        Assert.Equal(20, device.UploadCount);
+    }
+
+    [Fact]
+    public async Task GrayscaleAndMsdfUseSeparateAtlasPageFormats()
+    {
+        var device = new FakeAtlasDevice();
+        await using var cache = new TextAtlasCache(device, new TextAtlasCacheOptions(16, 16, 2, 4));
+        var grayscale = Glyph(0, GlyphAtlasMode.Grayscale);
+        var msdf = Glyph(0, GlyphAtlasMode.Msdf, padding: 2);
+
+        _ = cache.GetOrAdd(in grayscale, out _);
+        _ = cache.GetOrAdd(in msdf, out _);
+
+        Assert.Contains(device.Pages, page => page.Description.Format == TextAtlasFormat.R8Unorm);
+        Assert.Contains(device.Pages, page => page.Description.Format == TextAtlasFormat.Rgba8Unorm);
     }
 
     [Fact]
@@ -61,22 +76,27 @@ public sealed class TextAtlasCacheTests
         Assert.True(device.Pages[0].IsDisposed);
     }
 
-    private static PositionedGlyphBitmap Glyph(uint id, GlyphAtlasMode mode)
+    private static PositionedGlyphBitmap Glyph(uint id, GlyphAtlasMode mode, int padding = 1)
     {
-        var font = new FontKey("Noto Sans", "Regular", "fixture-noto-sans");
-        var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "NotoSans-Regular.ttf");
-        using var face = FontFace.LoadFile(font, path);
-        var codepoint = (uint)('A' + id % 20);
-        var glyphId = face.GetGlyphId(codepoint);
-        var request = new GlyphAtlasRequest(font, new[] { glyphId }, 16, 1, 4, mode);
-        var result = new GlyphAtlasGenerator().TryGenerateGlyph(face, request, glyphId);
-        if (!result.Succeeded || result.Bitmap is null)
+        var font = new FontKey("Test", "Regular", "fixture-font");
+        var request = new GlyphAtlasRequest(font, new[] { id }, 16, padding, 4, mode);
+        var channels = mode switch
         {
-            throw new InvalidOperationException("Delta.Text fixture glyph generation failed.");
+            GlyphAtlasMode.Grayscale => 1,
+            GlyphAtlasMode.Msdf => 3,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode))
+        };
+        const int width = 3;
+        const int height = 4;
+        var pixels = new byte[width * height * channels];
+        for (var index = 0; index < pixels.Length; index++)
+        {
+            pixels[index] = (byte)(index + 1);
         }
 
-        var positioned = new PositionedGlyph(glyphId, 0, 1.25f, 2.5f, result.Bitmap.AdvanceX, 0, 0.5f, -0.25f);
-        return new PositionedGlyphBitmap(positioned, result.Bitmap);
+        var bitmap = GlyphBitmap.Create(request, id, width, height, width * channels, 1.25f, 2f, 3f, pixels);
+        var positioned = new PositionedGlyph(id, 0, 1.25f, 2.5f, bitmap.AdvanceX, 0, 0.5f, -0.25f);
+        return new PositionedGlyphBitmap(positioned, bitmap);
     }
 
     private sealed class FakeAtlasDevice : ITextAtlasDevice
