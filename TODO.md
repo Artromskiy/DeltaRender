@@ -1,25 +1,31 @@
 # DeltaRender TODO
 
+Ordered cross-project ownership and gates are in
+[../HIGH_PRIORITY_TODO.md](../HIGH_PRIORITY_TODO.md).
+
 ## P0 — shared graphics contract
 
 - Remove the local duplicate `GraphicsShaderProgram` after
   `Delta.Shader.Abstractions` is the canonical owner; restore a clean
   DeltaRender -> DeltaEngine build without adapter copies.
 
-## P1 — text submission
+## P1 — canonical UI/text submission
 
-- Consume generated SDF/MSDF manifests and submit compact glyph instances from
-  the shared atlas service.
+- Keep `UiRenderBatchAdapter -> borrowed UiRenderBatch` as the production
+  renderer handoff; migrate remaining Engine/Editor consumers and then remove
+  `UiQuad` compatibility paths.
+- Consume DeltaText positioned glyph/bitmap data, own atlas packing/upload,
+  UVs, GPU pages and compact glyph instances.
 - Group draws by pipeline, atlas page and clip; never draw or allocate per glyph.
 - Verify grayscale SDF and MSDF, atlas growth, partial clips, page disposal and
   two DPI scales through contract tests and a bounded MoltenVK smoke.
-- Add the ECS/XAML-neutral submission seam: owner kind + generation, screen/world
-  anchor, positioned glyph run, clip/order and dirty generation. The current
-  core slice resolves anchors and feeds the existing allocation-free batching;
-  producer adapters remain outside Render.
-- Renderer-facing handoff is now `UiRenderBatchAdapter` -> borrowed
-  `UiRenderBatch`: rectangles, positioned text submissions and dirty records are
-  copied into reusable neutral storage; no XAML/ECS/Vulkan types or raw storage
-  handles cross the boundary.
+- Preserve owner/generation, anchor, clip/order and dirty generation without
+  importing XAML/ECS types or raw storage handles.
+
+## P2 — frame surface cleanup
+
+- After consumer migration, keep one frame submission path and separate
+  lifecycle, pipeline creation and uploads into small contracts. Name copying
+  adapters and borrowed views distinctly.
 
 Shared acceptance lives in [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md).

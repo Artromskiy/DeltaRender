@@ -24,6 +24,13 @@ callers own strings, shaping, controls and reusable instance storage. The
 submission contract is designed for batches by pipeline, atlas page and clip,
 never one draw per glyph; completion is tracked in `TODO.md`.
 
+The canonical renderer-facing UI boundary is
+`DeltaXAML IUiDrawList -> UiRenderBatchAdapter -> borrowed UiRenderBatch`.
+The editor app has not completed that migration and still passes through
+`EngineUiQuad`/direct `UiQuad` conversions. Those paths are migration-only.
+A local `GraphicsShaderProgram` duplicate remains a P0 migration blocker; the
+canonical type is owned by `Delta.Shader.Abstractions`.
+
 Desktop targets are Windows/Linux Vulkan and macOS arm64/x64 through MoltenVK
 portability enumeration. Native macOS runs require an explicit RID.
 

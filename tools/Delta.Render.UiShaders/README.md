@@ -15,6 +15,7 @@ dotnet run --project ../DeltaShader/src/Delta.Shader.Tool/Delta.Shader.Tool.cspr
 ```
 
 Copy `Vertex.*` and `Fragment.*` to the sample's `shaders/ui-panel.*` names
-when refreshing checked-in artifacts. A future DeltaXAML retained renderer can
-emit the same `UiDrawList`/`UiQuad` value contract without depending on this
-shader source project or on Vulkan types.
+when refreshing checked-in artifacts. This project supplies checked-in renderer
+shader source; it does not define the production UI handoff. The current path
+is DeltaXAML `IUiDrawList` -> `UiRenderBatchAdapter` -> borrowed
+`UiRenderBatch`, with no Vulkan dependency in DeltaXAML.

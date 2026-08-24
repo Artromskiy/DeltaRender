@@ -10,6 +10,8 @@ SDL3 surface/window integration. Engine owns event polling and frame policy.
 - Read [docs/adr/0001-vulkan-sdl3-moltenvk-stack.md](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md)
   for platform decisions and tool-local READMEs only when changing those tools.
 - Read [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md) for shared UI/text gates and
+  [../HIGH_PRIORITY_TODO.md](../HIGH_PRIORITY_TODO.md) for canonical contract
+  migration order, and
   [../DeltaShader/AGENTS.md](../DeltaShader/AGENTS.md) before changing artifact
   consumption.
 
