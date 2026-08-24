@@ -20,11 +20,15 @@ public readonly ref struct UiRenderBatch
         ReadOnlySpan<UiQuad> rectangles,
         ReadOnlySpan<TextSubmissionRecord> textSubmissions,
         ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        ReadOnlySpan<UiRenderClipEntry> clips,
+        in UiRenderDrawDelta delta,
         UiRenderFrameToken frame)
     {
         Rectangles = rectangles;
         TextSubmissions = textSubmissions;
         DirtyRecords = dirtyRecords;
+        Clips = clips;
+        Delta = delta;
         Frame = frame;
     }
 
@@ -34,9 +38,14 @@ public readonly ref struct UiRenderBatch
 
     public ReadOnlySpan<RenderRecordChange> DirtyRecords { get; }
 
+    public ReadOnlySpan<UiRenderClipEntry> Clips { get; }
+
+    public UiRenderDrawDelta Delta { get; }
+
     public UiRenderFrameToken Frame { get; }
 
-    public bool IsEmpty => Rectangles.IsEmpty && TextSubmissions.IsEmpty && DirtyRecords.IsEmpty;
+    public bool IsEmpty => Rectangles.IsEmpty && TextSubmissions.IsEmpty &&
+                           DirtyRecords.IsEmpty && Clips.IsEmpty && Delta.IsEmpty;
 }
 
 /// <summary>
@@ -77,9 +86,12 @@ public sealed class UiRenderBatchAdapter : IDisposable
     private UiQuad[] _rectangles = [];
     private TextSubmissionRecord[] _textSubmissions = [];
     private RenderRecordChange[] _dirtyRecords = [];
+    private UiRenderClipEntry[] _clips = [];
     private int _rectangleCount;
     private int _textSubmissionCount;
     private int _dirtyRecordCount;
+    private int _clipCount;
+    private UiRenderDrawDelta _delta;
     private uint _generation;
     private bool _disposed;
 
@@ -89,6 +101,8 @@ public sealed class UiRenderBatchAdapter : IDisposable
 
     public int DirtyRecordCount => _dirtyRecordCount;
 
+    public int ClipCount => _clipCount;
+
     /// <summary>
     /// Replaces the borrowed frame contents and returns its lifetime token.
     /// Any previously borrowed batch is invalid after this method returns.
@@ -97,21 +111,43 @@ public sealed class UiRenderBatchAdapter : IDisposable
         ReadOnlySpan<UiQuad> rectangles,
         ReadOnlySpan<TextSubmissionRecord> textSubmissions,
         ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        => Replace(
+            rectangles,
+            textSubmissions,
+            dirtyRecords,
+            ReadOnlySpan<UiRenderClipEntry>.Empty,
+            default);
+
+    /// <summary>
+    /// Replaces the complete canonical UI frame, including retained clip
+    /// identity and producer dirty ranges.
+    /// </summary>
+    public UiRenderFrameToken Replace(
+        ReadOnlySpan<UiQuad> rectangles,
+        ReadOnlySpan<TextSubmissionRecord> textSubmissions,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        ReadOnlySpan<UiRenderClipEntry> clips,
+        in UiRenderDrawDelta delta)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _rectangles = EnsureCapacity(_rectangles, rectangles.Length);
         _textSubmissions = EnsureCapacity(_textSubmissions, textSubmissions.Length);
         _dirtyRecords = EnsureCapacity(_dirtyRecords, dirtyRecords.Length);
+        _clips = EnsureCapacity(_clips, clips.Length);
 
         ClearTail(_rectangles, rectangles.Length, _rectangleCount);
         ClearTail(_textSubmissions, textSubmissions.Length, _textSubmissionCount);
         ClearTail(_dirtyRecords, dirtyRecords.Length, _dirtyRecordCount);
+        ClearTail(_clips, clips.Length, _clipCount);
         rectangles.CopyTo(_rectangles);
         textSubmissions.CopyTo(_textSubmissions);
         dirtyRecords.CopyTo(_dirtyRecords);
+        clips.CopyTo(_clips);
         _rectangleCount = rectangles.Length;
         _textSubmissionCount = textSubmissions.Length;
         _dirtyRecordCount = dirtyRecords.Length;
+        _clipCount = clips.Length;
+        _delta = delta;
         _generation = _generation == uint.MaxValue ? 1 : _generation + 1;
         return new UiRenderFrameToken(_generation);
     }
@@ -131,6 +167,8 @@ public sealed class UiRenderBatchAdapter : IDisposable
             _rectangles.AsSpan(0, _rectangleCount),
             _textSubmissions.AsSpan(0, _textSubmissionCount),
             _dirtyRecords.AsSpan(0, _dirtyRecordCount),
+            _clips.AsSpan(0, _clipCount),
+            in _delta,
             token);
     }
 
@@ -144,12 +182,16 @@ public sealed class UiRenderBatchAdapter : IDisposable
         Array.Clear(_rectangles);
         Array.Clear(_textSubmissions);
         Array.Clear(_dirtyRecords);
+        Array.Clear(_clips);
         _rectangles = [];
         _textSubmissions = [];
         _dirtyRecords = [];
+        _clips = [];
         _rectangleCount = 0;
         _textSubmissionCount = 0;
         _dirtyRecordCount = 0;
+        _clipCount = 0;
+        _delta = default;
         _disposed = true;
     }
 

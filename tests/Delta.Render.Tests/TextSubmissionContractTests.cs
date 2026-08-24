@@ -317,6 +317,61 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
+    public void UiRenderBatchAdapterPreservesResourceClipIdentityAndDrawDelta()
+    {
+        using var adapter = new UiRenderBatchAdapter();
+        var rootClip = new UiRenderClipEntry(
+            new UiRenderClipId(1),
+            new UiClipRect(0, 0, 320, 180),
+            default);
+        var nestedClip = new UiRenderClipEntry(
+            new UiRenderClipId(2),
+            new UiClipRect(10, 20, 100, 80),
+            rootClip.Id);
+        var rectangle = new UiQuad(10, 20, 100, 80, 1, 1, 1, 1)
+        {
+            Clip = nestedClip.Bounds,
+            ClipId = nestedClip.Id,
+            Resource = new UiRenderResourceHandle(17, 3),
+            OwnerId = 42,
+            ZIndex = 5,
+            Order = 9
+        };
+        var delta = new UiRenderDrawDelta(
+            new UiRenderRange(1, 1),
+            new UiRenderRange(0, 2),
+            new UiRenderRange(3, 1),
+            7,
+            8);
+
+        var frame = adapter.Replace(
+            [rectangle],
+            ReadOnlySpan<TextSubmissionRecord>.Empty,
+            ReadOnlySpan<RenderRecordChange>.Empty,
+            [rootClip, nestedClip],
+            in delta);
+        var batch = adapter.Borrow(in frame);
+
+        Assert.Equal(rectangle, batch.Rectangles[0]);
+        Assert.Equal(new UiRenderResourceHandle(17, 3), batch.Rectangles[0].Resource);
+        Assert.Equal(nestedClip.Id, batch.Rectangles[0].ClipId);
+        Assert.Equal(rootClip, batch.Clips[0]);
+        Assert.Equal(nestedClip, batch.Clips[1]);
+        Assert.Equal(delta, batch.Delta);
+
+        var nextDelta = new UiRenderDrawDelta(default, default, default, 8, 8);
+        var nextFrame = adapter.Replace(
+            ReadOnlySpan<UiQuad>.Empty,
+            ReadOnlySpan<TextSubmissionRecord>.Empty,
+            ReadOnlySpan<RenderRecordChange>.Empty,
+            ReadOnlySpan<UiRenderClipEntry>.Empty,
+            in nextDelta);
+
+        Assert.Throws<InvalidOperationException>(() => adapter.Borrow(in frame));
+        Assert.True(adapter.Borrow(in nextFrame).IsEmpty);
+    }
+
+    [Fact]
     public void UiRenderBatchSubmissionUsesTheCombinedUiTextAndDirtySeam()
     {
         using var session = new RecordingSession();

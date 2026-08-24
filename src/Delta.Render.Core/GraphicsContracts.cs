@@ -48,6 +48,36 @@ public readonly record struct UiClipRect(float X, float Y, float Width, float He
 
 public readonly record struct UiScissorRect(int X, int Y, uint Width, uint Height);
 
+public readonly record struct UiRenderResourceHandle(ulong Value, uint Generation)
+{
+    public bool IsValid => Value != 0 && Generation != 0;
+}
+
+public readonly record struct UiRenderClipId(uint Value)
+{
+    public bool IsValid => Value != 0;
+}
+
+public readonly record struct UiRenderClipEntry(
+    UiRenderClipId Id,
+    UiClipRect Bounds,
+    UiRenderClipId Parent);
+
+public readonly record struct UiRenderRange(int Start, int Count)
+{
+    public bool IsValid => Start >= 0 && Count >= 0;
+}
+
+public readonly record struct UiRenderDrawDelta(
+    UiRenderRange Commands,
+    UiRenderRange Clips,
+    UiRenderRange TextRuns,
+    uint BaseVersion,
+    uint NextVersion)
+{
+    public bool IsEmpty => Commands.Count == 0 && Clips.Count == 0 && TextRuns.Count == 0;
+}
+
 public readonly record struct UiQuad(
     float X,
     float Y,
@@ -59,6 +89,16 @@ public readonly record struct UiQuad(
     float Alpha)
 {
     public UiClipRect Clip { get; init; } = UiClipRect.Unbounded;
+
+    public UiRenderClipId ClipId { get; init; }
+
+    public UiRenderResourceHandle Resource { get; init; }
+
+    public ulong OwnerId { get; init; }
+
+    public int ZIndex { get; init; }
+
+    public uint Order { get; init; }
 
     public bool IsValid => Width > 0 && Height > 0 &&
                            float.IsFinite(X) && float.IsFinite(Y) &&
