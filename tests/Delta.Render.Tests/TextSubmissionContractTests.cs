@@ -277,6 +277,46 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
+    public void UiRenderBatchAdapterPreservesCanonicalPayloadAndBorrowLifetime()
+    {
+        using var adapter = new UiRenderBatchAdapter();
+        var clip = new UiClipRect(3, 4, 20, 21);
+        var glyphs = new[] { Glyph(8, 11, 13) };
+        var text = new[]
+        {
+            new TextSubmissionRecord(
+                new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 42, 7),
+                TextAnchor.ScreenPixels(new TextScreenAnchor(17.5f, 23.25f)),
+                new TextRun(glyphs),
+                clip,
+                9,
+                4)
+        };
+        var rectangles = new[] { new UiQuad(1, 2, 3, 4, 0.1f, 0.2f, 0.3f, 0.4f) { Clip = clip } };
+        var payload = new byte[] { 2, 4, 8, 16 };
+        var dirty = new[] { RenderRecordChange.Upsert(42, 11, payload) };
+
+        var frame = adapter.Replace(rectangles, text, dirty);
+        var batch = adapter.Borrow(in frame);
+
+        Assert.Equal(rectangles[0], batch.Rectangles[0]);
+        Assert.Equal(text[0], batch.TextSubmissions[0]);
+        Assert.Equal(text[0].Glyphs, batch.TextSubmissions[0].Glyphs);
+        Assert.Equal(11, batch.TextSubmissions[0].Glyphs.Glyphs.Span[0].PixelBounds.X);
+        Assert.Equal(13, batch.TextSubmissions[0].Glyphs.Glyphs.Span[0].PixelBounds.Y);
+        Assert.Equal(dirty[0], batch.DirtyRecords[0]);
+        Assert.Equal(payload, batch.DirtyRecords[0].Payload.ToArray());
+
+        var nextFrame = adapter.Replace(
+            ReadOnlySpan<UiQuad>.Empty,
+            ReadOnlySpan<TextSubmissionRecord>.Empty,
+            ReadOnlySpan<RenderRecordChange>.Empty);
+
+        Assert.Throws<InvalidOperationException>(() => adapter.Borrow(in frame));
+        Assert.True(adapter.Borrow(in nextFrame).IsEmpty);
+    }
+
+    [Fact]
     public void UiRenderBatchSubmissionUsesTheCombinedUiTextAndDirtySeam()
     {
         using var session = new RecordingSession();

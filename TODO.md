@@ -20,6 +20,8 @@ Ordered cross-project ownership and gates are in
   two DPI scales through contract tests and a bounded MoltenVK smoke.
 - Preserve owner/generation, anchor, clip/order and dirty generation without
   importing XAML/ECS types or raw storage handles.
+- [x] Contract-test the canonical handoff's copied records, borrowed nested
+  glyph/payload memory, clip/order/version preservation and stale frame tokens.
 
 ## P2 — frame surface cleanup
 
