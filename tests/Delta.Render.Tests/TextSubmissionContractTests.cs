@@ -58,6 +58,33 @@ public sealed class TextSubmissionContractTests
     }
 
     [Fact]
+    public void SubmissionBatchingAcceptsLargerOrderedScratchThanBatchScratch()
+    {
+        var record = new TextSubmissionRecord(
+            new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 12, 1),
+            TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)),
+            new TextRun(new[] { Glyph(1, 0, 0) }),
+            UiClipRect.Unbounded,
+            1,
+            0);
+        Span<TextGlyphInstance> ordered = stackalloc TextGlyphInstance[256];
+        Span<TextBatchRange> batches = stackalloc TextBatchRange[1];
+
+        Assert.True(TextSubmissionBatching.TryBuild(
+            new TextSubmissionFrame(new[] { record }),
+            new TextProjectionContext(128, 128, 1),
+            null,
+            ordered,
+            batches,
+            out var orderedCount,
+            out var batchCount,
+            out var rejected));
+        Assert.Equal(1, orderedCount);
+        Assert.Equal(1, batchCount);
+        Assert.Equal(0, rejected);
+    }
+
+    [Fact]
     public void WorldRecordsRequireProjectionAndClipIsIntersected()
     {
         var glyph = Glyph(2, 0, 0, new UiClipRect(0, 0, 50, 50));
@@ -399,6 +426,7 @@ public sealed class TextSubmissionContractTests
 
         Assert.Equal(0, session.BeginFrameCount);
         Assert.Equal(1, session.EndFrameCount);
+        Assert.Equal(0, session.SubmitCount);
         Assert.Equal(rectangles, session.EndedQuads);
         Assert.Equal(dirty, session.EndedDirtyRecords);
     }
@@ -440,6 +468,7 @@ public sealed class TextSubmissionContractTests
 
         Assert.Equal(0, session.BeginFrameCount);
         Assert.Equal(1, session.EndFrameCount);
+        Assert.Equal(0, session.SubmitCount);
         Assert.Same(page, Assert.Single(session.EndedAtlasPages));
         var submittedGlyph = Assert.Single(session.EndedGlyphs);
         Assert.Equal(new TextAtlasPageId(13), submittedGlyph.AtlasPage);
@@ -488,6 +517,7 @@ public sealed class TextSubmissionContractTests
             Span<TextGlyphInstance>.Empty,
             Span<TextBatchRange>.Empty));
         Assert.Equal(0, session.EndFrameCount);
+        Assert.Equal(0, session.SubmitCount);
     }
 
     private static TextGlyphInstance Glyph(uint page, int x, int y, UiClipRect? clip = null) =>

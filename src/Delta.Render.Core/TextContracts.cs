@@ -216,7 +216,8 @@ public static class TextSubmissionBatching
         orderedCount = 0;
         batchCount = 0;
         rejectedCount = 0;
-        if (!projectionContext.IsValid || ordered.Length < CountGlyphs(frame.Records) || batches.Length < ordered.Length)
+        var requiredGlyphCount = CountGlyphs(frame.Records);
+        if (!projectionContext.IsValid || ordered.Length < requiredGlyphCount || batches.Length < requiredGlyphCount)
         {
             return false;
         }
