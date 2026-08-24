@@ -4,18 +4,17 @@ This project is the C# source of the minimal panel graphics artifacts consumed
 by `Delta.Render.Smoke`. It is compiled by the external `Delta.Shader` CLI; the
 renderer receives only the resulting `ShaderArtifact` SPIR-V bytes and manifest.
 
-From `DeltaRender`:
+From `DeltaRender`, refresh both smoke shader families with the canonical bounded preparation script:
 
 ```bash
-dotnet run --project ../DeltaShader/src/Delta.Shader.Tool/Delta.Shader.Tool.csproj \
-  -c Release --no-build -- build \
-  tools/Delta.Render.UiShaders/Delta.Render.UiShaders.csproj \
-  --profile vulkan1.2 --spirv 1.5 --glsl 460 \
-  --out /tmp/delta-render-ui-generated
+./tools/prepare-smoke-shaders.sh
 ```
 
-Copy `Vertex.*` and `Fragment.*` to the sample's `shaders/ui-panel.*` names
-when refreshing checked-in artifacts. This project supplies checked-in renderer
-shader source; it does not define the production UI handoff. The current path
-is DeltaXAML `IUiDrawList` -> `UiRenderBatchAdapter` -> borrowed
-`UiRenderBatch`, with no Vulkan dependency in DeltaXAML.
+The script builds `Delta.Shader.Tool`, this project, and the local fullscreen
+authoring project, then emits Vulkan 1.2 / SPIR-V 1.5 / GLSL 460 artifacts,
+validates them with `glslangValidator` and `spirv-val`, checks the current ABI
+manifest version, and atomically publishes only the four expected smoke pairs.
+These projects supply checked-in renderer shader source; they do not define the
+production UI handoff. The current path is DeltaXAML `IUiDrawList` ->
+`UiRenderBatchAdapter` -> borrowed `UiRenderBatch`, with no Vulkan dependency in
+DeltaXAML.

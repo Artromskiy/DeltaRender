@@ -130,29 +130,6 @@ internal static class Program
     {
         var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(File.ReadAllText(manifestPath))
             ?? throw new InvalidDataException($"Shader manifest was empty: {manifestPath}");
-        if (manifest.Version != DeltaShaderManifest.CurrentVersion)
-        {
-            manifest = new DeltaShaderManifest
-            {
-                Version = DeltaShaderManifest.CurrentVersion,
-                Stage = manifest.Stage,
-                SourceEntryPointName = manifest.SourceEntryPointName,
-                EntryPointName = manifest.EntryPointName,
-                TargetProfile = manifest.TargetProfile,
-                GlslVersion = manifest.GlslVersion,
-                SpirvVersion = manifest.SpirvVersion,
-                StorageLayout = manifest.StorageLayout,
-                LocalSizeX = manifest.LocalSizeX,
-                LocalSizeY = manifest.LocalSizeY,
-                LocalSizeZ = manifest.LocalSizeZ,
-                Resources = manifest.Resources,
-                Inputs = manifest.Inputs,
-                VertexInputs = manifest.VertexInputs,
-                VertexBufferBindings = manifest.VertexBufferBindings,
-                Outputs = manifest.Outputs,
-                PushConstants = manifest.PushConstants
-            };
-        }
         return new DeltaShaderArtifact(File.ReadAllBytes(spirvPath), manifest);
     }
 

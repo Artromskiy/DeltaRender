@@ -6,4 +6,5 @@
   <Project Path="src/Delta.Render.Vulkan/Delta.Render.Vulkan.csproj" />
   <Project Path="tests/Delta.Render.Tests/Delta.Render.Tests.csproj" />
   <Project Path="tools/Delta.Render.UiShaders/Delta.Render.UiShaders.csproj" />
+  <Project Path="tools/Delta.Render.FullscreenShaders/Delta.Render.FullscreenShaders.csproj" />
 </Solution>

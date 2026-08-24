@@ -1,5 +1,5 @@
 {
-  "Version": 2,
+  "Version": 4,
   "Stage": 2,
   "SourceEntryPointName": "Fragment",
   "EntryPointName": "main",
@@ -12,6 +12,8 @@
   "LocalSizeZ": 0,
   "Resources": [],
   "Inputs": [],
+  "VertexInputs": [],
+  "VertexBufferBindings": [],
   "Outputs": [
     {
       "Name": "color",

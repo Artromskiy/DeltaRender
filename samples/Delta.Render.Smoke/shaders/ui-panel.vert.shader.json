@@ -1,5 +1,5 @@
 {
-  "Version": 2,
+  "Version": 4,
   "Stage": 1,
   "SourceEntryPointName": "Vertex",
   "EntryPointName": "main",
@@ -21,6 +21,8 @@
       "Builtin": "VertexIndex"
     }
   ],
+  "VertexInputs": [],
+  "VertexBufferBindings": [],
   "Outputs": [
     {
       "Name": "position",

@@ -1,5 +1,5 @@
 {
-  "Version": 2,
+  "Version": 4,
   "Stage": 1,
   "SourceEntryPointName": "Vertex",
   "EntryPointName": "main",
@@ -12,11 +12,34 @@
   "LocalSizeZ": 0,
   "Resources": [],
   "Inputs": [
-    { "Name": "vertexIndex", "ParameterName": "vertexIndex", "GlslName": "gl_VertexIndex", "GlslType": "uint", "Location": 0, "Builtin": "VertexIndex" }
+    {
+      "Name": "vertexIndex",
+      "ParameterName": "vertexIndex",
+      "GlslName": "gl_VertexIndex",
+      "GlslType": "uint",
+      "Location": 0,
+      "Builtin": "VertexIndex"
+    }
   ],
+  "VertexInputs": [],
+  "VertexBufferBindings": [],
   "Outputs": [
-    { "Name": "position", "ParameterName": "position", "GlslName": "gl_Position", "GlslType": "vec4", "Location": 0, "Builtin": "Position" },
-    { "Name": "uv", "ParameterName": "uv", "GlslName": "varying_0", "GlslType": "vec2", "Location": 0, "Builtin": null }
+    {
+      "Name": "position",
+      "ParameterName": "position",
+      "GlslName": "gl_Position",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "Position"
+    },
+    {
+      "Name": "uv",
+      "ParameterName": "uv",
+      "GlslName": "varying_0",
+      "GlslType": "vec2",
+      "Location": 0,
+      "Builtin": null
+    }
   ],
   "PushConstants": []
 }

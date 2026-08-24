@@ -1,9 +1,9 @@
 #version 460
-layout(push_constant) uniform DeltaPushConstants
+layout(push_constant, std430) uniform DeltaPushConstants
 {
-    vec2 member_Resolution;
-    vec4 member_Rect;
-    vec4 member_Color;
+    layout(offset = 0) vec2 member_Resolution;
+    layout(offset = 16) vec4 member_Rect;
+    layout(offset = 32) vec4 member_Color;
 } pushConstants;
 
 layout(location = 0) out vec4 fragColor;
