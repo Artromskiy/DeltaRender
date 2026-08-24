@@ -27,6 +27,12 @@ previous allocation is released exactly once, a failed replacement leaves no
 dangling owned handle, and retry/final disposal remain safe. Completion of the
 larger text handoff is tracked in `TODO.md`.
 
+Window-session construction is failure-atomic. Session-local Vulkan handles
+remain in an acquisition ledger until every stage and the surface ownership
+transfer succeed; failures release acquired resources in reverse order. The
+surface is always released exactly once through the same platform source that
+created it, rather than through a second raw-handle destruction path.
+
 The canonical renderer-facing UI boundary is
 `DeltaXAML IUiDrawList -> UiRenderBatchAdapter -> borrowed UiRenderBatch`.
 Legacy `EngineUiQuad`/direct `UiQuad` conversions are migration/test-only, not

@@ -26,7 +26,7 @@ Ordered cross-project ownership and gates are in
 - After consumer migration, keep one frame submission path and separate
   lifecycle, pipeline creation and uploads into small contracts. Name copying
   adapters and borrowed views distinctly.
-- Make `VulkanWindowSession` construction transactional: if any native
+- [x] Make `VulkanWindowSession` construction transactional: if any native
   allocation fails before the session object is returned, release every
   render-pass, swapchain, image-view/framebuffer, synchronization and command
   resource already created. Cover the cleanup ordering through a headless

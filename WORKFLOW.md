@@ -26,6 +26,9 @@ The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The
 bounded rollback check is `./tools/test-prepare-smoke-shaders-rollback.sh`.
+`Delta.Render.Tests` also exercises window-session acquisition faults,
+reverse-order native-handle rollback, platform surface transfer and cleanup
+failures without loading Vulkan or opening a window.
 
 ## Code metrics
 
