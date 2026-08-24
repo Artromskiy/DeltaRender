@@ -124,7 +124,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 throw new InvalidOperationException("Failed to load VK_KHR_swapchain device extension.");
             }
 
-            return new VulkanWindowSession(this, surface, window.Id, window.Metrics);
+            return VulkanWindowSession.Create(this, surface, window.Id, window.Metrics);
         }
         catch
         {
@@ -725,7 +725,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private GraphicsFrameParameters _pendingFrameParameters;
     private PhysicalDeviceMemoryProperties _memoryProperties;
 
-    internal VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
+    internal static VulkanWindowSession Create(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
+    {
+        ArgumentNullException.ThrowIfNull(renderer);
+        return new VulkanWindowSession(renderer, surface, windowId, metrics);
+    }
+
+    private VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
         _renderer = renderer;
         _windowId = windowId;
@@ -739,60 +745,89 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         _khrSurface = renderer.GetKhrSurface();
         _khrSwapchain = renderer.GetKhrSwapchain();
 
-        _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
-        _metrics = metrics;
-        if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
+        var rollback = new VulkanSessionRollbackLedger();
+        try
         {
-            throw new InvalidOperationException("No swapchain support for selected surface.");
+            _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
+            _metrics = metrics;
+            if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
+            {
+                throw new InvalidOperationException("No swapchain support for selected surface.");
+            }
+
+            _imageFormat = ChooseSurfaceFormat(formats);
+            var renderPass = CreateRenderPass(renderer.Api, _device, _imageFormat);
+            _renderPass = renderPass;
+            rollback.Own(VulkanSessionResourceStage.RenderPass, () => renderer.Api.DestroyRenderPass(_device, renderPass, null));
+
+            var swapchain = CreateSwapchain(renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
+            _swapchain = swapchain;
+            rollback.Own(VulkanSessionResourceStage.Swapchain, () => _khrSwapchain.DestroySwapchain(_device, swapchain, null));
+
+            var swapchainImages = CreateSwapchainImageViews(renderer.Api, _khrSwapchain, _device, _extent, _renderPass, swapchain, _imageFormat);
+            _imageViews = swapchainImages.ImageViews;
+            _frameBuffers = swapchainImages.Framebuffers;
+            rollback.Own(VulkanSessionResourceStage.SwapchainImages, () => DestroySwapchainImageViews(renderer.Api, _device, swapchainImages.ImageViews, swapchainImages.Framebuffers));
+
+            var semaphoreCreate = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
+            EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var imageAvailable), "CreateSemaphore(imageAvailable)");
+            _imageAvailable = imageAvailable;
+            rollback.Own(VulkanSessionResourceStage.ImageAvailableSemaphore, () => renderer.Api.DestroySemaphore(_device, imageAvailable, null));
+            EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var renderComplete), "CreateSemaphore(renderComplete)");
+            _renderComplete = renderComplete;
+            rollback.Own(VulkanSessionResourceStage.RenderCompleteSemaphore, () => renderer.Api.DestroySemaphore(_device, renderComplete, null));
+
+            var fenceCreateInfo = new FenceCreateInfo
+            {
+                SType = StructureType.FenceCreateInfo,
+                Flags = FenceCreateFlags.SignaledBit,
+                PNext = null
+            };
+            EnsureSuccess(renderer.Api.CreateFence(_device, fenceCreateInfo, null, out var renderFence), "CreateFence");
+            _renderFence = renderFence;
+            rollback.Own(VulkanSessionResourceStage.Fence, () => renderer.Api.DestroyFence(_device, renderFence, null));
+
+            var commandPoolCreateInfo = new CommandPoolCreateInfo
+            {
+                SType = StructureType.CommandPoolCreateInfo,
+                QueueFamilyIndex = _graphicsFamily,
+                Flags = CommandPoolCreateFlags.ResetCommandBufferBit
+            };
+            EnsureSuccess(renderer.Api.CreateCommandPool(_device, commandPoolCreateInfo, null, out var commandPool), "CreateCommandPool");
+            _commandPool = commandPool;
+            rollback.Own(VulkanSessionResourceStage.CommandPool, () => renderer.Api.DestroyCommandPool(_device, commandPool, null));
+
+            var commandBufferAllocateInfo = new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandBufferCount = 1,
+                CommandPool = _commandPool,
+                Level = CommandBufferLevel.Primary
+            };
+            EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, commandBufferAllocateInfo, out var commandBuffer), "AllocateCommandBuffers");
+            _commandBuffer = commandBuffer;
+            rollback.Own(VulkanSessionResourceStage.CommandBuffer, () => FreeCommandBuffer(renderer.Api, _device, commandPool, commandBuffer));
+            _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+            _textAtlas = new VulkanTextAtlasService(this);
+            rollback.Commit();
         }
-
-        _imageFormat = ChooseSurfaceFormat(formats);
-        _renderPass = CreateRenderPass(renderer.Api, _device, _imageFormat);
-
-        _swapchain = CreateSwapchain(renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
-        (_imageViews, _frameBuffers) = CreateSwapchainImageViews(renderer.Api, _khrSwapchain, _device, _extent, _renderPass, _swapchain, _imageFormat);
-
-        var semaphoreCreate = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
-        EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var imageAvailable), "CreateSemaphore(imageAvailable)");
-        EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var renderComplete), "CreateSemaphore(renderComplete)");
-        _imageAvailable = imageAvailable;
-        _renderComplete = renderComplete;
-
-        var fenceCreateInfo = new FenceCreateInfo
+        catch (Exception exception)
         {
-            SType = StructureType.FenceCreateInfo,
-            Flags = FenceCreateFlags.SignaledBit,
-            PNext = null
-        };
-        EnsureSuccess(renderer.Api.CreateFence(_device, fenceCreateInfo, null, out var renderFence), "CreateFence");
-        _renderFence = renderFence;
-
-        var commandPoolCreateInfo = new CommandPoolCreateInfo
-        {
-            SType = StructureType.CommandPoolCreateInfo,
-            QueueFamilyIndex = _graphicsFamily,
-            Flags = CommandPoolCreateFlags.ResetCommandBufferBit
-        };
-        EnsureSuccess(renderer.Api.CreateCommandPool(_device, commandPoolCreateInfo, null, out var commandPool), "CreateCommandPool");
-        _commandPool = commandPool;
-
-        var commandBufferAllocateInfo = new CommandBufferAllocateInfo
-        {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandBufferCount = 1,
-            CommandPool = _commandPool,
-            Level = CommandBufferLevel.Primary
-        };
-        EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, commandBufferAllocateInfo, out var commandBuffer), "AllocateCommandBuffers");
-        _commandBuffer = commandBuffer;
-        _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
-        _textAtlas = new VulkanTextAtlasService(this);
+            rollback.RollbackPreserving(exception);
+            throw;
+        }
     }
 
     internal Vk Api => _renderer.Api;
     internal Device Device => _device;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
     internal CommandBuffer CommandBuffer => _commandBuffer;
+
+    private static unsafe void FreeCommandBuffer(Vk api, Device device, CommandPool commandPool, CommandBuffer commandBuffer)
+    {
+        var commandBufferValue = commandBuffer;
+        api.FreeCommandBuffers(device, commandPool, 1, &commandBufferValue);
+    }
 
     internal BufferAllocation CreateBuffer(ulong requestedSize, BufferUsageFlags usage, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
     {
@@ -2137,40 +2172,67 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             }
         }
 
-        for (uint i = 0; i < imageCount; i++)
+        try
         {
-            var imageViewCreateInfo = new ImageViewCreateInfo
+            for (uint i = 0; i < imageCount; i++)
             {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = images[i],
-                ViewType = ImageViewType.Type2D,
-                Format = imageFormat,
-                SubresourceRange = new ImageSubresourceRange
+                var imageViewCreateInfo = new ImageViewCreateInfo
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                }
-            };
-            EnsureSuccess(api.CreateImageView(device, imageViewCreateInfo, null, out imageViews[i]), $"CreateImageView[{i}]");
+                    SType = StructureType.ImageViewCreateInfo,
+                    Image = images[i],
+                    ViewType = ImageViewType.Type2D,
+                    Format = imageFormat,
+                    SubresourceRange = new ImageSubresourceRange
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        BaseMipLevel = 0,
+                        LevelCount = 1,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    }
+                };
+                EnsureSuccess(api.CreateImageView(device, imageViewCreateInfo, null, out imageViews[i]), $"CreateImageView[{i}]");
 
-            var imageView = imageViews[i];
-            var framebufferCreateInfo = new FramebufferCreateInfo
-            {
-                SType = StructureType.FramebufferCreateInfo,
-                RenderPass = renderPass,
-                AttachmentCount = 1,
-                PAttachments = &imageView,
-                Width = extent.Width,
-                Height = extent.Height,
-                Layers = 1
-            };
-            EnsureSuccess(api.CreateFramebuffer(device, framebufferCreateInfo, null, out frameBuffers[i]), $"CreateFramebuffer[{i}]");
+                var imageView = imageViews[i];
+                var framebufferCreateInfo = new FramebufferCreateInfo
+                {
+                    SType = StructureType.FramebufferCreateInfo,
+                    RenderPass = renderPass,
+                    AttachmentCount = 1,
+                    PAttachments = &imageView,
+                    Width = extent.Width,
+                    Height = extent.Height,
+                    Layers = 1
+                };
+                EnsureSuccess(api.CreateFramebuffer(device, framebufferCreateInfo, null, out frameBuffers[i]), $"CreateFramebuffer[{i}]");
+            }
+        }
+        catch
+        {
+            DestroySwapchainImageViews(api, device, imageViews, frameBuffers);
+            throw;
         }
 
         return (imageViews, frameBuffers);
+    }
+
+    private static void DestroySwapchainImageViews(Vk api, Device device, ImageView[] imageViews, Framebuffer[] frameBuffers)
+    {
+        for (var i = 0; i < frameBuffers.Length; i++)
+        {
+            if (frameBuffers[i].Handle != default)
+            {
+                api.DestroyFramebuffer(device, frameBuffers[i], null);
+            }
+        }
+
+        for (var i = 0; i < imageViews.Length; i++)
+        {
+            if (imageViews[i].Handle != default)
+            {
+                api.DestroyImageView(device, imageViews[i], null);
+            }
+        }
     }
 
     private static RenderPass CreateRenderPass(Vk api, Device device, Format format)
