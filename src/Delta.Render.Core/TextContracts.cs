@@ -40,6 +40,11 @@ public readonly record struct TextUvRect(float U, float V, float Width, float He
                            float.IsFinite(Width) && float.IsFinite(Height);
 }
 
+public readonly record struct GlyphAtlasRegion(TextAtlasPageId AtlasPage, TextUvRect Uv)
+{
+    public bool IsValid => AtlasPage.IsValid && Uv.IsValid;
+}
+
 public readonly record struct TextPixelBounds(int X, int Y, int Width, int Height)
 {
     public bool IsValid => Width > 0 && Height > 0;
@@ -61,7 +66,9 @@ public readonly record struct TextGlyphInstance(
     float Smoothing,
     uint PipelineId = 0)
 {
-    public bool IsValid => AtlasPage.IsValid && Uv.IsValid && PixelBounds.IsValid && Color.IsValid && Clip.IsValid &&
+    public GlyphAtlasRegion AtlasRegion => new(AtlasPage, Uv);
+
+    public bool IsValid => AtlasRegion.IsValid && PixelBounds.IsValid && Color.IsValid && Clip.IsValid &&
                            Mode is TextRenderMode.Sdf or TextRenderMode.Msdf && float.IsFinite(PxRange) && PxRange > 0 &&
                            float.IsFinite(Smoothing) && Smoothing >= 0;
 

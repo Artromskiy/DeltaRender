@@ -41,7 +41,7 @@ public readonly ref struct TextAtlasPageView
 
 public readonly record struct TextGlyphPlacement(
     TextGlyphCacheHandle Handle,
-    TextUvRect Uv,
+    GlyphAtlasRegion AtlasRegion,
     float BearingX,
     float BearingY,
     int Width,
@@ -54,10 +54,23 @@ public readonly record struct TextGlyphPlacement(
     public TextGlyphInstance ToInstance(in PositionedGlyph glyph, float originX, float originY,
         TextColor color, UiClipRect clip, uint pipelineId = 0)
     {
+        if (Handle.Page != AtlasRegion.AtlasPage)
+        {
+            throw new InvalidOperationException("Glyph placement atlas page does not match its cache handle.");
+        }
+
         var x = checked((int)MathF.Round(originX + glyph.X + glyph.OffsetX + BearingX));
         var y = checked((int)MathF.Round(originY + glyph.Y + glyph.OffsetY - BearingY));
-        return new TextGlyphInstance(Handle.Page, Uv, new TextPixelBounds(x, y, Width, Height),
-            color, clip, Mode, PxRange, Smoothing, pipelineId);
+        return new TextGlyphInstance(
+            AtlasRegion.AtlasPage,
+            AtlasRegion.Uv,
+            new TextPixelBounds(x, y, Width, Height),
+            color,
+            clip,
+            Mode,
+            PxRange,
+            Smoothing,
+            pipelineId);
     }
 }
 
@@ -178,8 +191,8 @@ public sealed class TextAtlasCache : IAsyncDisposable
 
         placement = new TextGlyphPlacement(
             new TextGlyphCacheHandle(page.Page.Description.Id, page.Generation, _nextSlot++),
-            new TextUvRect((float)x / page.Page.Description.Width, (float)y / page.Page.Description.Height,
-                (float)width / page.Page.Description.Width, (float)height / page.Page.Description.Height),
+            new GlyphAtlasRegion(page.Page.Description.Id, new TextUvRect((float)x / page.Page.Description.Width, (float)y / page.Page.Description.Height,
+                (float)width / page.Page.Description.Width, (float)height / page.Page.Description.Height)),
             bearingX, bearingY, checked((int)width), checked((int)height),
             advanceX, key.Mode, key.PxRange, key.Smoothing);
         page.LastUse = ++_clock;
