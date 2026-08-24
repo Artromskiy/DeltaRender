@@ -89,50 +89,39 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             throw new InvalidOperationException($"Failed to create Vulkan surface for {window.VulkanSurfaceSource.PlatformName}: {sessionDiagnostics}");
         }
 
-        var surface = new SurfaceKHR { Handle = surfaceHandle };
-
-        if (_physicalDevice.Handle == default)
-        {
-            if (!SelectPhysicalDevice(surface, sessionDiagnostics))
-            {
-                if (!window.VulkanSurfaceSource.TryDestroySurface((ulong)Instance.Handle, surfaceHandle, out var destroyDiagnostics))
-                {
-                    sessionDiagnostics.Merge(destroyDiagnostics);
-                }
-
-                throw new InvalidOperationException("Failed to find a Vulkan device/queue pair for this surface.");
-            }
-        }
-
-        if (Device.Handle == default)
-        {
-            if (!CreateLogicalDevice(surface, sessionDiagnostics))
-            {
-                if (!window.VulkanSurfaceSource.TryDestroySurface((ulong)Instance.Handle, surfaceHandle, out var destroyDiagnostics))
-                {
-                    sessionDiagnostics.Merge(destroyDiagnostics);
-                }
-
-                throw new InvalidOperationException("Failed to create Vulkan logical device.");
-            }
-        }
-
+        var surfaceLease = new VulkanSurfaceLease(window.VulkanSurfaceSource, (ulong)Instance.Handle, surfaceHandle);
         try
         {
+            var surface = new SurfaceKHR { Handle = surfaceLease.Handle };
+            if (_physicalDevice.Handle == default && !SelectPhysicalDevice(surface, sessionDiagnostics))
+            {
+                throw new InvalidOperationException("Failed to find a Vulkan device/queue pair for this surface.");
+            }
+
+            if (Device.Handle == default && !CreateLogicalDevice(surface, sessionDiagnostics))
+            {
+                throw new InvalidOperationException("Failed to create Vulkan logical device.");
+            }
+
             if (_khrSwapchain is null && !Api.TryGetDeviceExtension(Instance, Device, out _khrSwapchain, string.Empty))
             {
                 throw new InvalidOperationException("Failed to load VK_KHR_swapchain device extension.");
             }
 
-            return VulkanWindowSession.Create(this, surface, window.Id, window.Metrics);
+            return VulkanWindowSession.Create(this, surfaceLease, window.Id, window.Metrics);
         }
-        catch
+        catch (Exception exception)
         {
-            if (!window.VulkanSurfaceSource.TryDestroySurface((ulong)Instance.Handle, surfaceHandle, out var destroyDiagnostics))
+            if (!surfaceLease.TryRelease(out var destroyDiagnostics))
             {
                 sessionDiagnostics.Merge(destroyDiagnostics);
+                throw new AggregateException(
+                    $"Vulkan window session creation failed and surface cleanup also failed: {sessionDiagnostics}",
+                    exception,
+                    new InvalidOperationException(sessionDiagnostics.ToString()));
             }
 
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
             throw;
         }
     }
@@ -691,6 +680,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly VulkanRenderer _renderer;
     private readonly RenderWindowId _windowId;
     private readonly SurfaceKHR _surface;
+    private readonly VulkanSurfaceLease _surfaceLease;
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
     private readonly KhrSurface _khrSurface;
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
@@ -725,17 +715,20 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private GraphicsFrameParameters _pendingFrameParameters;
     private PhysicalDeviceMemoryProperties _memoryProperties;
 
-    internal static VulkanWindowSession Create(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
+    internal static VulkanWindowSession Create(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, RenderWindowId windowId, WindowMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(renderer);
-        return new VulkanWindowSession(renderer, surface, windowId, metrics);
+        ArgumentNullException.ThrowIfNull(surfaceLease);
+        var surface = new SurfaceKHR { Handle = surfaceLease.Handle };
+        return new VulkanWindowSession(renderer, surfaceLease, surface, windowId, metrics);
     }
 
-    private VulkanWindowSession(VulkanRenderer renderer, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
+    private VulkanWindowSession(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
         _renderer = renderer;
         _windowId = windowId;
         _surface = surface;
+        _surfaceLease = surfaceLease;
 
         _device = renderer.GetDevice();
         _graphicsQueue = renderer.GetGraphicsQueue();
@@ -745,78 +738,141 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         _khrSurface = renderer.GetKhrSurface();
         _khrSwapchain = renderer.GetKhrSwapchain();
 
-        var rollback = new VulkanSessionRollbackLedger();
+        var acquirer = new VulkanSessionResourceAcquirer();
+        RenderPass renderPass = default;
+        SwapchainKHR swapchain = default;
+        ImageView[] imageViews = [];
+        Framebuffer[] frameBuffers = [];
+        VulkanSemaphore imageAvailable = default;
+        VulkanSemaphore renderComplete = default;
+        Fence renderFence = default;
+        CommandPool commandPool = default;
+        CommandBuffer commandBuffer = default;
+        PhysicalDeviceMemoryProperties memoryProperties = default;
+        VulkanTextAtlasService? textAtlas = null;
+        SurfaceCapabilitiesKHR capabilities = default;
+        SurfaceFormatKHR[] formats = [];
+        PresentModeKHR[] modes = [];
         try
         {
             _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
             _metrics = metrics;
-            if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
+            if (!_renderer.QuerySwapchainSupport(_surface, out capabilities, out formats, out modes))
             {
                 throw new InvalidOperationException("No swapchain support for selected surface.");
             }
 
             _imageFormat = ChooseSurfaceFormat(formats);
-            var renderPass = CreateRenderPass(renderer.Api, _device, _imageFormat);
+            acquirer.Acquire(
+                stage => AcquireNativeResource(stage),
+                stage => CleanupNativeResource(stage));
+
             _renderPass = renderPass;
-            rollback.Own(VulkanSessionResourceStage.RenderPass, () => renderer.Api.DestroyRenderPass(_device, renderPass, null));
-
-            var swapchain = CreateSwapchain(renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
             _swapchain = swapchain;
-            rollback.Own(VulkanSessionResourceStage.Swapchain, () => _khrSwapchain.DestroySwapchain(_device, swapchain, null));
-
-            var swapchainImages = CreateSwapchainImageViews(renderer.Api, _khrSwapchain, _device, _extent, _renderPass, swapchain, _imageFormat);
-            _imageViews = swapchainImages.ImageViews;
-            _frameBuffers = swapchainImages.Framebuffers;
-            rollback.Own(VulkanSessionResourceStage.SwapchainImages, () => DestroySwapchainImageViews(renderer.Api, _device, swapchainImages.ImageViews, swapchainImages.Framebuffers));
-
-            var semaphoreCreate = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
-            EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var imageAvailable), "CreateSemaphore(imageAvailable)");
+            _imageViews = imageViews;
+            _frameBuffers = frameBuffers;
             _imageAvailable = imageAvailable;
-            rollback.Own(VulkanSessionResourceStage.ImageAvailableSemaphore, () => renderer.Api.DestroySemaphore(_device, imageAvailable, null));
-            EnsureSuccess(renderer.Api.CreateSemaphore(_device, semaphoreCreate, null, out var renderComplete), "CreateSemaphore(renderComplete)");
             _renderComplete = renderComplete;
-            rollback.Own(VulkanSessionResourceStage.RenderCompleteSemaphore, () => renderer.Api.DestroySemaphore(_device, renderComplete, null));
-
-            var fenceCreateInfo = new FenceCreateInfo
-            {
-                SType = StructureType.FenceCreateInfo,
-                Flags = FenceCreateFlags.SignaledBit,
-                PNext = null
-            };
-            EnsureSuccess(renderer.Api.CreateFence(_device, fenceCreateInfo, null, out var renderFence), "CreateFence");
             _renderFence = renderFence;
-            rollback.Own(VulkanSessionResourceStage.Fence, () => renderer.Api.DestroyFence(_device, renderFence, null));
-
-            var commandPoolCreateInfo = new CommandPoolCreateInfo
-            {
-                SType = StructureType.CommandPoolCreateInfo,
-                QueueFamilyIndex = _graphicsFamily,
-                Flags = CommandPoolCreateFlags.ResetCommandBufferBit
-            };
-            EnsureSuccess(renderer.Api.CreateCommandPool(_device, commandPoolCreateInfo, null, out var commandPool), "CreateCommandPool");
             _commandPool = commandPool;
-            rollback.Own(VulkanSessionResourceStage.CommandPool, () => renderer.Api.DestroyCommandPool(_device, commandPool, null));
-
-            var commandBufferAllocateInfo = new CommandBufferAllocateInfo
-            {
-                SType = StructureType.CommandBufferAllocateInfo,
-                CommandBufferCount = 1,
-                CommandPool = _commandPool,
-                Level = CommandBufferLevel.Primary
-            };
-            EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, commandBufferAllocateInfo, out var commandBuffer), "AllocateCommandBuffers");
             _commandBuffer = commandBuffer;
-            rollback.Own(VulkanSessionResourceStage.CommandBuffer, () => FreeCommandBuffer(renderer.Api, _device, commandPool, commandBuffer));
-            _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
-            var textAtlas = new VulkanTextAtlasService(this);
-            _textAtlas = textAtlas;
-            rollback.Own(VulkanSessionResourceStage.TextAtlas, textAtlas.Dispose);
-            rollback.Commit();
+            _memoryProperties = memoryProperties;
+            _textAtlas = textAtlas ?? throw new InvalidOperationException("Text atlas initialization did not complete.");
+            surfaceLease.TransferToSession();
         }
         catch (Exception exception)
         {
-            rollback.RollbackPreserving(exception);
+            acquirer.RollbackPreserving(exception);
             throw;
+        }
+
+        void AcquireNativeResource(VulkanSessionResourceStage stage)
+        {
+            switch (stage)
+            {
+                case VulkanSessionResourceStage.RenderPass:
+                    renderPass = CreateRenderPass(renderer.Api, _device, _imageFormat);
+                    break;
+                case VulkanSessionResourceStage.Swapchain:
+                    swapchain = CreateSwapchain(renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
+                    break;
+                case VulkanSessionResourceStage.SwapchainImages:
+                    (imageViews, frameBuffers) = CreateSwapchainImageViews(renderer.Api, _khrSwapchain, _device, _extent, renderPass, swapchain, _imageFormat);
+                    break;
+                case VulkanSessionResourceStage.ImageAvailableSemaphore:
+                    EnsureSuccess(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out imageAvailable), "CreateSemaphore(imageAvailable)");
+                    break;
+                case VulkanSessionResourceStage.RenderCompleteSemaphore:
+                    EnsureSuccess(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out renderComplete), "CreateSemaphore(renderComplete)");
+                    break;
+                case VulkanSessionResourceStage.Fence:
+                    EnsureSuccess(renderer.Api.CreateFence(_device, new FenceCreateInfo
+                    {
+                        SType = StructureType.FenceCreateInfo,
+                        Flags = FenceCreateFlags.SignaledBit,
+                        PNext = null
+                    }, null, out renderFence), "CreateFence");
+                    break;
+                case VulkanSessionResourceStage.CommandPool:
+                    EnsureSuccess(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo
+                    {
+                        SType = StructureType.CommandPoolCreateInfo,
+                        QueueFamilyIndex = _graphicsFamily,
+                        Flags = CommandPoolCreateFlags.ResetCommandBufferBit
+                    }, null, out commandPool), "CreateCommandPool");
+                    break;
+                case VulkanSessionResourceStage.CommandBuffer:
+                    EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo
+                    {
+                        SType = StructureType.CommandBufferAllocateInfo,
+                        CommandBufferCount = 1,
+                        CommandPool = commandPool,
+                        Level = CommandBufferLevel.Primary
+                    }, out commandBuffer), "AllocateCommandBuffers");
+                    break;
+                case VulkanSessionResourceStage.TextAtlas:
+                    memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+                    textAtlas = new VulkanTextAtlasService(this);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(stage), stage, "Unknown Vulkan session acquisition stage.");
+            }
+        }
+
+        void CleanupNativeResource(VulkanSessionResourceStage stage)
+        {
+            switch (stage)
+            {
+                case VulkanSessionResourceStage.RenderPass:
+                    renderer.Api.DestroyRenderPass(_device, renderPass, null);
+                    break;
+                case VulkanSessionResourceStage.Swapchain:
+                    _khrSwapchain.DestroySwapchain(_device, swapchain, null);
+                    break;
+                case VulkanSessionResourceStage.SwapchainImages:
+                    DestroySwapchainImageViews(renderer.Api, _device, imageViews, frameBuffers);
+                    break;
+                case VulkanSessionResourceStage.ImageAvailableSemaphore:
+                    renderer.Api.DestroySemaphore(_device, imageAvailable, null);
+                    break;
+                case VulkanSessionResourceStage.RenderCompleteSemaphore:
+                    renderer.Api.DestroySemaphore(_device, renderComplete, null);
+                    break;
+                case VulkanSessionResourceStage.Fence:
+                    renderer.Api.DestroyFence(_device, renderFence, null);
+                    break;
+                case VulkanSessionResourceStage.CommandPool:
+                    renderer.Api.DestroyCommandPool(_device, commandPool, null);
+                    break;
+                case VulkanSessionResourceStage.CommandBuffer:
+                    FreeCommandBuffer(renderer.Api, _device, commandPool, commandBuffer);
+                    break;
+                case VulkanSessionResourceStage.TextAtlas:
+                    textAtlas?.Dispose();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(stage), stage, "Unknown Vulkan session cleanup stage.");
+            }
         }
     }
 
@@ -2209,9 +2265,17 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
                 EnsureSuccess(api.CreateFramebuffer(device, framebufferCreateInfo, null, out frameBuffers[i]), $"CreateFramebuffer[{i}]");
             }
         }
-        catch
+        catch (Exception original)
         {
-            DestroySwapchainImageViews(api, device, imageViews, frameBuffers);
+            try
+            {
+                DestroySwapchainImageViews(api, device, imageViews, frameBuffers);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException("Swapchain image cleanup failed after creation failure.", original, cleanupFailure);
+            }
+
             throw;
         }
 
@@ -2220,20 +2284,40 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
     private static void DestroySwapchainImageViews(Vk api, Device device, ImageView[] imageViews, Framebuffer[] frameBuffers)
     {
-        for (var i = 0; i < frameBuffers.Length; i++)
+        List<Exception>? failures = null;
+        try
         {
-            if (frameBuffers[i].Handle != default)
+            VulkanResourceCleanup.CleanupInReverse(frameBuffers, frameBuffer =>
             {
-                api.DestroyFramebuffer(device, frameBuffers[i], null);
-            }
+                if (frameBuffer.Handle != default)
+                {
+                    api.DestroyFramebuffer(device, frameBuffer, null);
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            (failures ??= []).Add(exception);
         }
 
-        for (var i = 0; i < imageViews.Length; i++)
+        try
         {
-            if (imageViews[i].Handle != default)
+            VulkanResourceCleanup.CleanupInReverse(imageViews, imageView =>
             {
-                api.DestroyImageView(device, imageViews[i], null);
-            }
+                if (imageView.Handle != default)
+                {
+                    api.DestroyImageView(device, imageView, null);
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            (failures ??= []).Add(exception);
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException("One or more swapchain image resources failed during cleanup.", failures);
         }
     }
 
@@ -2357,7 +2441,10 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             api.DestroySemaphore(_device, _renderComplete, null);
             api.DestroyFence(_device, _renderFence, null);
             api.DestroyCommandPool(_device, _commandPool, null);
-            _khrSurface.DestroySurface(_renderer.Instance, _surface, null);
+            if (!_surfaceLease.TryRelease(out var surfaceDiagnostics))
+            {
+                throw new InvalidOperationException($"Failed to destroy Vulkan surface: {surfaceDiagnostics}");
+            }
         }
 
         return ValueTask.CompletedTask;

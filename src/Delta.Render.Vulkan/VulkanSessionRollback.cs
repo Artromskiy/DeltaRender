@@ -15,6 +15,22 @@ internal enum VulkanSessionResourceStage
     TextAtlas
 }
 
+internal static class VulkanSessionResourceStages
+{
+    internal static readonly VulkanSessionResourceStage[] All =
+    [
+        VulkanSessionResourceStage.RenderPass,
+        VulkanSessionResourceStage.Swapchain,
+        VulkanSessionResourceStage.SwapchainImages,
+        VulkanSessionResourceStage.ImageAvailableSemaphore,
+        VulkanSessionResourceStage.RenderCompleteSemaphore,
+        VulkanSessionResourceStage.Fence,
+        VulkanSessionResourceStage.CommandPool,
+        VulkanSessionResourceStage.CommandBuffer,
+        VulkanSessionResourceStage.TextAtlas
+    ];
+}
+
 internal sealed class VulkanSessionRollbackLedger
 {
     private readonly List<(VulkanSessionResourceStage Stage, Action Cleanup)> _owned = new();
@@ -78,4 +94,25 @@ internal sealed class VulkanSessionRollbackLedger
 
         ExceptionDispatchInfo.Capture(original).Throw();
     }
+}
+
+internal sealed class VulkanSessionResourceAcquirer
+{
+    private readonly VulkanSessionRollbackLedger _ledger = new();
+
+    internal void Acquire(Action<VulkanSessionResourceStage> acquire, Action<VulkanSessionResourceStage> cleanup)
+    {
+        ArgumentNullException.ThrowIfNull(acquire);
+        ArgumentNullException.ThrowIfNull(cleanup);
+
+        foreach (var stage in VulkanSessionResourceStages.All)
+        {
+            acquire(stage);
+            _ledger.Own(stage, () => cleanup(stage));
+        }
+
+        _ledger.Commit();
+    }
+
+    internal void RollbackPreserving(Exception original) => _ledger.RollbackPreserving(original);
 }

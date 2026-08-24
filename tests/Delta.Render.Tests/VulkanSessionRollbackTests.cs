@@ -5,29 +5,16 @@ namespace Delta.Render.Tests;
 
 public sealed class VulkanSessionRollbackTests
 {
-    private static readonly VulkanSessionResourceStage[] Stages =
-    [
-        VulkanSessionResourceStage.RenderPass,
-        VulkanSessionResourceStage.Swapchain,
-        VulkanSessionResourceStage.SwapchainImages,
-        VulkanSessionResourceStage.ImageAvailableSemaphore,
-        VulkanSessionResourceStage.RenderCompleteSemaphore,
-        VulkanSessionResourceStage.Fence,
-        VulkanSessionResourceStage.CommandPool,
-        VulkanSessionResourceStage.CommandBuffer,
-        VulkanSessionResourceStage.TextAtlas
-    ];
-
     [Fact]
     public void FaultAtEachAcquisitionStageRollsBackOnlyAcquiredResourcesInReverseOrder()
     {
-        foreach (var failedStage in Stages)
+        foreach (var failedStage in VulkanSessionResourceStages.All)
         {
             var order = new List<VulkanSessionResourceStage>();
             var exception = Assert.Throws<InvalidOperationException>(() => AcquireUntilFailure(failedStage, order));
 
             Assert.Equal(failedStage.ToString(), exception.Message);
-            var acquired = Stages.TakeWhile(stage => stage != failedStage).Reverse().ToArray();
+            var acquired = VulkanSessionResourceStages.All.TakeWhile(stage => stage != failedStage).Reverse().ToArray();
             Assert.Equal(acquired, order);
         }
     }
@@ -69,25 +56,22 @@ public sealed class VulkanSessionRollbackTests
 
     private static void AcquireUntilFailure(VulkanSessionResourceStage failedStage, List<VulkanSessionResourceStage> order)
     {
-        var ledger = new VulkanSessionRollbackLedger();
+        var acquirer = new VulkanSessionResourceAcquirer();
         try
         {
-            foreach (var stage in Stages)
-            {
-                if (stage == failedStage)
+            acquirer.Acquire(
+                stage =>
                 {
-                    throw new InvalidOperationException(stage.ToString());
-                }
-
-                var acquiredStage = stage;
-                ledger.Own(stage, () => order.Add(acquiredStage));
-            }
-
-            ledger.Commit();
+                    if (stage == failedStage)
+                    {
+                        throw new InvalidOperationException(stage.ToString());
+                    }
+                },
+                stage => order.Add(stage));
         }
         catch (Exception exception)
         {
-            ledger.RollbackPreserving(exception);
+            acquirer.RollbackPreserving(exception);
             throw;
         }
     }
