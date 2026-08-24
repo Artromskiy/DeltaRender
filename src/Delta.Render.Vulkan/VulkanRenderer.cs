@@ -2001,6 +2001,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         {
             api.DestroyDescriptorSetLayout(_device, pipeline.DescriptorSetLayout, null);
         }
+
+        var instanceBuffer = pipeline.ReleaseInstanceBuffer();
+        if (VulkanBufferAllocation.IsLive(in instanceBuffer))
+        {
+            DestroyAllocation(instanceBuffer);
+        }
+
         pipeline.MarkDestroyed();
     }
 
@@ -2395,7 +2402,7 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
     internal uint TextureBinding { get; }
     internal bool IsAlive => Pipeline.Handle != default && PipelineLayout.Handle != default && DescriptorSetLayout.Handle != default;
 
-    private BufferAllocation _instanceBuffer;
+    private readonly VulkanBufferLease _instanceBuffer = new();
     private TextGlyphInstance[] _orderedGlyphs = Array.Empty<TextGlyphInstance>();
     private TextGlyphGpu[] _gpuGlyphs = Array.Empty<TextGlyphGpu>();
     private TextBatchRange[] _batchGlyphs = Array.Empty<TextBatchRange>();
@@ -2408,29 +2415,31 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
     {
         var requiredBytes = checked((ulong)Math.Max(1u, glyphCount) * (ulong)Unsafe.SizeOf<TextGlyphGpu>());
         EnsureGlyphArrayCapacity(glyphCount);
-        if (_instanceBuffer.Buffer.Handle != default && _instanceBuffer.AllocationSize >= requiredBytes)
+        if (_instanceBuffer.IsLive && _instanceBuffer.Value.AllocationSize >= requiredBytes)
         {
             return true;
         }
 
-        if (_instanceBuffer.Buffer.Handle != default)
+        var previous = _instanceBuffer.Release();
+        if (VulkanBufferAllocation.IsLive(in previous))
         {
-            Owner.DestroyAllocation(_instanceBuffer);
+            Owner.DestroyAllocation(previous);
         }
 
         var capacity = NextCapacity(requiredBytes);
-        _instanceBuffer = Owner.CreateBuffer(
-            capacity,
-            BufferUsageFlags.StorageBufferBit,
-            MemoryPropertyFlags.HostVisibleBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+        var replacement = Owner.CreateBuffer(
+                capacity,
+                BufferUsageFlags.StorageBufferBit,
+                MemoryPropertyFlags.HostVisibleBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+        _instanceBuffer.Assign(replacement);
 
         return true;
     }
 
     internal void UploadGlyphs(ReadOnlySpan<TextGlyphInstance> glyphs)
     {
-        if (_instanceBuffer.Buffer.Handle == default)
+        if (!_instanceBuffer.IsLive)
         {
             throw new InvalidOperationException("Text instance buffer was not initialized.");
         }
@@ -2445,16 +2454,17 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
         fixed (byte* source = bytes)
         {
             void* mapped = null;
-            Owner.Api.MapMemory(Owner.Device, _instanceBuffer.Memory, 0, _instanceBuffer.AllocationSize, 0, &mapped);
+            var allocation = _instanceBuffer.Value;
+            Owner.Api.MapMemory(Owner.Device, allocation.Memory, 0, allocation.AllocationSize, 0, &mapped);
             try
             {
-                System.Buffer.MemoryCopy(source, mapped, _instanceBuffer.AllocationSize, (nuint)bytes.Length);
-                if (!_instanceBuffer.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+                System.Buffer.MemoryCopy(source, mapped, allocation.AllocationSize, (nuint)bytes.Length);
+                if (!allocation.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
                 {
                     var range = new MappedMemoryRange
                     {
                         SType = StructureType.MappedMemoryRange,
-                        Memory = _instanceBuffer.Memory,
+                        Memory = allocation.Memory,
                         Size = (nuint)bytes.Length
                     };
                     Owner.Api.FlushMappedMemoryRanges(Owner.Device, 1, &range);
@@ -2462,7 +2472,7 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
             }
             finally
             {
-                Owner.Api.UnmapMemory(Owner.Device, _instanceBuffer.Memory);
+                Owner.Api.UnmapMemory(Owner.Device, allocation.Memory);
             }
         }
     }
@@ -2491,9 +2501,9 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
         {
             var bufferInfo = new DescriptorBufferInfo
             {
-                Buffer = _instanceBuffer.Buffer,
+                Buffer = _instanceBuffer.Value.Buffer,
                 Offset = 0,
-                Range = _instanceBuffer.AllocationSize
+                Range = _instanceBuffer.Value.AllocationSize
             };
             var imageInfo = new DescriptorImageInfo
             {
@@ -2540,6 +2550,8 @@ public sealed unsafe class VulkanTextGraphicsPipeline : IGraphicsPipeline
         Owner.DestroyTextGraphicsPipeline(this);
         return ValueTask.CompletedTask;
     }
+
+    internal BufferAllocation ReleaseInstanceBuffer() => _instanceBuffer.Release();
 
     internal void MarkDestroyed()
     {
