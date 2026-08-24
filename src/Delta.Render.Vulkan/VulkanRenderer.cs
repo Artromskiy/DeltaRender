@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
+using Delta.Shader.Abstractions;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
@@ -886,6 +887,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     public IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(shaderProgram);
         var pipeline = CreateGraphicsPipelineCore(in shaderProgram);
         _graphicsPipelines.Add(pipeline);
         return pipeline;
@@ -894,6 +896,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     public IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(shaderProgram);
         var pipeline = CreateTextPipelineCore(in shaderProgram);
         _graphicsPipelines.Add(pipeline);
         return pipeline;

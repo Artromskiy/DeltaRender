@@ -1,7 +1,6 @@
 using Delta.Render.Core;
 using Delta.Shader.Abstractions;
 using Xunit;
-using CoreGraphicsShaderProgram = Delta.Render.Core.GraphicsShaderProgram;
 
 namespace Delta.Render.Tests;
 
@@ -11,7 +10,7 @@ public sealed class GraphicsContractTests
     public void GraphicsProgramRequiresPairedVertexAndFragmentStages()
     {
         var bytes = new byte[4];
-        var program = new CoreGraphicsShaderProgram(
+        var program = new GraphicsShaderProgram(
             Artifact(bytes, ShaderStage.Vertex),
             Artifact(bytes, ShaderStage.Fragment));
 
@@ -19,7 +18,7 @@ public sealed class GraphicsContractTests
         Assert.Equal(ShaderStage.Fragment, program.Fragment.Stage);
         Assert.Equal("main", program.Vertex.EntryPoint);
 
-        Assert.Throws<ArgumentException>(() => new CoreGraphicsShaderProgram(
+        Assert.Throws<ArgumentException>(() => new GraphicsShaderProgram(
             Artifact(bytes, ShaderStage.Fragment),
             Artifact(bytes, ShaderStage.Vertex)));
     }

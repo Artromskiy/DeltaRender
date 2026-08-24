@@ -1,4 +1,5 @@
 using Delta.Render.Core;
+using Delta.Shader.Abstractions;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -232,8 +233,8 @@ public sealed class TextSubmissionContractTests
         };
         var dirty = new[] { RenderRecordChange.Remove(3, 9) };
 
-        adapter.Replace(rectangles, text, dirty);
-        var batch = adapter.Borrow();
+        var frame = adapter.Replace(rectangles, text, dirty);
+        var batch = adapter.Borrow(in frame);
 
         Assert.Equal(1, batch.Rectangles.Length);
         Assert.Equal(rectangles[0], batch.Rectangles[0]);
@@ -241,8 +242,9 @@ public sealed class TextSubmissionContractTests
         Assert.Equal(1, batch.DirtyRecords.Length);
         Assert.Equal(dirty[0], batch.DirtyRecords[0]);
 
-        adapter.Replace(ReadOnlySpan<UiQuad>.Empty, ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty);
-        Assert.True(adapter.Borrow().IsEmpty);
+        var emptyFrame = adapter.Replace(ReadOnlySpan<UiQuad>.Empty, ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty);
+        Assert.True(adapter.Borrow(in emptyFrame).IsEmpty);
+        Assert.NotEqual(frame, emptyFrame);
     }
 
     [Fact]
@@ -252,7 +254,7 @@ public sealed class TextSubmissionContractTests
         using var uiPipeline = new FakePipeline();
         using var textPipeline = new FakePipeline();
         using var adapter = new UiRenderBatchAdapter();
-        adapter.Replace(
+        var frame = adapter.Replace(
             new[] { new UiQuad(1, 2, 3, 4, 1, 1, 1, 1) },
             new[]
             {
@@ -265,7 +267,7 @@ public sealed class TextSubmissionContractTests
                     0)
             },
             new[] { RenderRecordChange.Remove(4, 5) });
-        var batch = adapter.Borrow();
+        var batch = adapter.Borrow(in frame);
         var ordered = new TextGlyphInstance[1];
         var ranges = new TextBatchRange[1];
 
@@ -285,6 +287,26 @@ public sealed class TextSubmissionContractTests
         Assert.Single(session.SubmittedQuads);
         Assert.Single(session.SubmittedDirtyRecords);
         Assert.Single(session.SubmittedGlyphs);
+    }
+
+    [Fact]
+    public void UiRenderBatchRejectsStaleAndDisposedFrameTokens()
+    {
+        using var adapter = new UiRenderBatchAdapter();
+        var frame = adapter.Replace(
+            ReadOnlySpan<UiQuad>.Empty,
+            ReadOnlySpan<TextSubmissionRecord>.Empty,
+            ReadOnlySpan<RenderRecordChange>.Empty);
+
+        _ = adapter.Borrow(in frame);
+        _ = adapter.Replace(
+            ReadOnlySpan<UiQuad>.Empty,
+            ReadOnlySpan<TextSubmissionRecord>.Empty,
+            ReadOnlySpan<RenderRecordChange>.Empty);
+        Assert.Throws<InvalidOperationException>(() => adapter.Borrow(in frame));
+
+        adapter.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => adapter.Borrow(in frame));
     }
 
     private static TextGlyphInstance Glyph(uint page, int x, int y, UiClipRect? clip = null) =>

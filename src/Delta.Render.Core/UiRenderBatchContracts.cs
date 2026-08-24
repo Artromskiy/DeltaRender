@@ -1,18 +1,31 @@
 namespace Delta.Render.Core;
 
 /// <summary>
-/// A borrowed, frame-scoped view over the renderer-facing UI handoff.
+/// Identifies one borrowed UI frame owned by a <see cref="UiRenderBatchAdapter"/>.
+/// A token becomes stale when the adapter is replaced or disposed.
+/// </summary>
+public readonly record struct UiRenderFrameToken(uint Generation)
+{
+    public bool IsValid => Generation != 0;
+}
+
+/// <summary>
+/// A borrowed, frame-scoped view over the renderer-facing UI handoff. The view
+/// is valid only for the call/frame represented by <see cref="Frame"/> and must
+/// not be stored, returned, or used after the adapter is replaced or disposed.
 /// </summary>
 public readonly ref struct UiRenderBatch
 {
     public UiRenderBatch(
         ReadOnlySpan<UiQuad> rectangles,
         ReadOnlySpan<TextSubmissionRecord> textSubmissions,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        UiRenderFrameToken frame)
     {
         Rectangles = rectangles;
         TextSubmissions = textSubmissions;
         DirtyRecords = dirtyRecords;
+        Frame = frame;
     }
 
     public ReadOnlySpan<UiQuad> Rectangles { get; }
@@ -20,6 +33,8 @@ public readonly ref struct UiRenderBatch
     public ReadOnlySpan<TextSubmissionRecord> TextSubmissions { get; }
 
     public ReadOnlySpan<RenderRecordChange> DirtyRecords { get; }
+
+    public UiRenderFrameToken Frame { get; }
 
     public bool IsEmpty => Rectangles.IsEmpty && TextSubmissions.IsEmpty && DirtyRecords.IsEmpty;
 }
@@ -36,6 +51,7 @@ public sealed class UiRenderBatchAdapter : IDisposable
     private int _rectangleCount;
     private int _textSubmissionCount;
     private int _dirtyRecordCount;
+    private uint _generation;
     private bool _disposed;
 
     public int RectangleCount => _rectangleCount;
@@ -44,7 +60,11 @@ public sealed class UiRenderBatchAdapter : IDisposable
 
     public int DirtyRecordCount => _dirtyRecordCount;
 
-    public void Replace(
+    /// <summary>
+    /// Replaces the borrowed frame contents and returns its lifetime token.
+    /// Any previously borrowed batch is invalid after this method returns.
+    /// </summary>
+    public UiRenderFrameToken Replace(
         ReadOnlySpan<UiQuad> rectangles,
         ReadOnlySpan<TextSubmissionRecord> textSubmissions,
         ReadOnlySpan<RenderRecordChange> dirtyRecords)
@@ -63,15 +83,26 @@ public sealed class UiRenderBatchAdapter : IDisposable
         _rectangleCount = rectangles.Length;
         _textSubmissionCount = textSubmissions.Length;
         _dirtyRecordCount = dirtyRecords.Length;
+        _generation = _generation == uint.MaxValue ? 1 : _generation + 1;
+        return new UiRenderFrameToken(_generation);
     }
 
-    public UiRenderBatch Borrow()
+    /// <summary>
+    /// Borrows the current frame until the adapter is replaced or disposed.
+    /// </summary>
+    public UiRenderBatch Borrow(in UiRenderFrameToken token)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!token.IsValid || token.Generation != _generation)
+        {
+            throw new InvalidOperationException("The UI render frame token is stale or invalid.");
+        }
+
         return new UiRenderBatch(
             _rectangles.AsSpan(0, _rectangleCount),
             _textSubmissions.AsSpan(0, _textSubmissionCount),
-            _dirtyRecords.AsSpan(0, _dirtyRecordCount));
+            _dirtyRecords.AsSpan(0, _dirtyRecordCount),
+            token);
     }
 
     public void Dispose()

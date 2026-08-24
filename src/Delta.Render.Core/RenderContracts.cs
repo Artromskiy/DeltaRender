@@ -1,3 +1,5 @@
+using Delta.Shader.Abstractions;
+
 namespace Delta.Render.Core;
 
 public readonly record struct RenderWindowId(Guid Value)

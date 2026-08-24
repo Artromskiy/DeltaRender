@@ -1,4 +1,5 @@
 using Delta.Render.Core;
+using Delta.Shader.Abstractions;
 using Xunit;
 
 namespace Delta.Render.Tests;

@@ -412,6 +412,7 @@ public static class TextShaderArtifactContract
     // Resource semantics remain owned by Delta.Shader; Render introduces no second manifest.
     public static TextShaderArtifactDiagnostic Validate(GraphicsShaderProgram program)
     {
+        ArgumentNullException.ThrowIfNull(program);
         if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
             program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
         {
@@ -428,6 +429,7 @@ public static class TextShaderArtifactContract
 
     public static bool TryDescribe(GraphicsShaderProgram program, out TextGraphicsShaderLayout layout, out TextShaderArtifactDiagnostic diagnostic)
     {
+        ArgumentNullException.ThrowIfNull(program);
         layout = default;
         if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
             program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)

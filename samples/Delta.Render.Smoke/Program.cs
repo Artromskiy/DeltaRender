@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Delta.Render.Core;
+using Delta.Shader.Abstractions;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.Vulkan;
 using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
