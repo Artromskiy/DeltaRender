@@ -71,7 +71,7 @@ jobs:
           key: delta-render-nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
           restore-keys: delta-render-nuget-${{ runner.os }}-
       - name: Install software Vulkan
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+        run: sudo apt-get update && sudo apt-get install -y jq glslang-tools spirv-tools mesa-vulkan-drivers vulkan-tools
       - name: Restore and build
         working-directory: DeltaRender
         run: |
@@ -80,6 +80,12 @@ jobs:
       - name: Run tests
         working-directory: DeltaRender
         run: dotnet test tests/Delta.Render.Tests/Delta.Render.Tests.csproj -c Release --no-build --no-restore
+      - name: Check generated smoke shader artifacts
+        working-directory: DeltaRender
+        run: ./tools/prepare-smoke-shaders.sh --check
+      - name: Check shader publish rollback
+        working-directory: DeltaRender
+        run: ./tools/test-prepare-smoke-shaders-rollback.sh
       - name: Benchmark discovery smoke
         shell: bash
         working-directory: DeltaRender

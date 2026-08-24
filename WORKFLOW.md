@@ -22,6 +22,10 @@ copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
 Tool-specific shader regeneration is documented in
 [tools/Delta.Render.UiShaders/README.md](tools/Delta.Render.UiShaders/README.md).
+The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
+shader validation tools are installed; it generates into a temporary directory
+and reports every drifted checked-in artifact without mutating the tree. The
+bounded rollback check is `./tools/test-prepare-smoke-shaders-rollback.sh`.
 
 ## Code metrics
 
