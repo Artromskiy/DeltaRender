@@ -44,6 +44,54 @@ public readonly record struct RenderFrameState(bool IsValid, bool RequiresResize
     public static RenderFrameState Ready(uint imageIndex, WindowMetrics metrics) => new(true, false, imageIndex, metrics);
 }
 
+/// <summary>
+/// Borrowed contents for one already-begun frame. A null pipeline is valid only
+/// with the corresponding empty draw list; the default packet is clear-only.
+/// </summary>
+public readonly ref struct RenderFramePacket
+{
+    public RenderFramePacket(
+        IGraphicsPipeline? uiPipeline,
+        GraphicsFrameParameters uiParameters,
+        UiDrawList uiDrawList,
+        IGraphicsPipeline? textPipeline,
+        TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        TextDrawList textDrawList,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    {
+        UiPipeline = uiPipeline;
+        UiParameters = uiParameters;
+        UiDrawList = uiDrawList;
+        TextPipeline = textPipeline;
+        TextParameters = textParameters;
+        AtlasPages = atlasPages;
+        TextDrawList = textDrawList;
+        DirtyRecords = dirtyRecords;
+    }
+
+    public IGraphicsPipeline? UiPipeline { get; }
+
+    public GraphicsFrameParameters UiParameters { get; }
+
+    public UiDrawList UiDrawList { get; }
+
+    public IGraphicsPipeline? TextPipeline { get; }
+
+    public TextFrameParameters TextParameters { get; }
+
+    public ReadOnlySpan<ITextAtlasPage> AtlasPages { get; }
+
+    public TextDrawList TextDrawList { get; }
+
+    public ReadOnlySpan<RenderRecordChange> DirtyRecords { get; }
+
+    public bool IsValid => (UiPipeline is null ? UiDrawList.IsEmpty : UiParameters.IsValid) &&
+                           (TextPipeline is null
+                               ? TextDrawList.IsEmpty && AtlasPages.IsEmpty
+                               : UiPipeline is not null && TextParameters.IsValid);
+}
+
 public interface IRenderWindowFrameSession : IAsyncDisposable
 {
     RenderWindowId WindowId { get; }
@@ -121,6 +169,69 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
     bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters);
 
     bool Resize(WindowMetrics metrics);
+}
+
+public static class RenderFrameSessionExtensions
+{
+    /// <summary>
+    /// Ends an already-begun frame through the existing session contract.
+    /// This additive bridge lets callers adopt <see cref="RenderFramePacket"/>
+    /// without requiring current frame-session implementations to change.
+    /// </summary>
+    public static bool EndFrame(
+        this IRenderWindowFrameSession session,
+        in RenderFrameState frameState,
+        in RenderFramePacket packet)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!frameState.IsValid || !packet.IsValid)
+        {
+            return false;
+        }
+
+        if (packet.UiPipeline is null)
+        {
+            return session.EndFrame(in frameState, packet.DirtyRecords);
+        }
+
+        if (packet.TextPipeline is null)
+        {
+            var uiParameters = packet.UiParameters;
+            var uiDrawList = packet.UiDrawList;
+            return session.EndFrame(
+                in frameState,
+                packet.UiPipeline,
+                in uiParameters,
+                in uiDrawList,
+                packet.DirtyRecords);
+        }
+
+        var combinedUiParameters = packet.UiParameters;
+        var textParameters = packet.TextParameters;
+        var textDrawList = packet.TextDrawList;
+        return session.EndFrame(
+            in frameState,
+            packet.UiPipeline,
+            in combinedUiParameters,
+            packet.UiDrawList.Quads,
+            packet.TextPipeline,
+            in textParameters,
+            packet.AtlasPages,
+            in textDrawList,
+            packet.DirtyRecords);
+    }
+
+    public static bool SubmitFrame(this IRenderWindowFrameSession session, in RenderFramePacket packet)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!packet.IsValid)
+        {
+            return false;
+        }
+
+        var frameState = session.BeginFrame();
+        return frameState.IsValid && session.EndFrame(in frameState, in packet);
+    }
 }
 
 public interface IRenderWindow : IAsyncDisposable
