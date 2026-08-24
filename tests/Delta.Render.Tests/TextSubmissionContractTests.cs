@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Delta.Render.Core;
 using Delta.Shader.Abstractions;
 using Xunit;
@@ -309,6 +311,68 @@ public sealed class TextSubmissionContractTests
         Assert.Throws<ObjectDisposedException>(() => adapter.Borrow(in frame));
     }
 
+    [Fact]
+    public void UiRenderFrameSourcePreservesBatchAndAtlasBackingWithoutWarmFrameAllocations()
+    {
+        using var source = new TestFrameSource();
+        var rectangles = new[] { new UiQuad(1, 2, 3, 4, 1, 1, 1, 1) };
+        var pages = new ITextAtlasPage[]
+        {
+            new TestAtlasPage(new TextAtlasPageDescription(new TextAtlasPageId(7), 64, 64, TextAtlasFormat.R8Unorm))
+        };
+        source.Prepare(rectangles, ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty, pages);
+
+        var first = source.BorrowFrame();
+        Assert.Equal(rectangles[0], first.Batch.Rectangles[0]);
+        Assert.Same(pages[0], first.AtlasPages[0]);
+        var second = source.BorrowFrame();
+        Assert.True(Unsafe.AreSame(
+            ref MemoryMarshal.GetReference(first.Batch.Rectangles),
+            ref MemoryMarshal.GetReference(second.Batch.Rectangles)));
+        Assert.True(Unsafe.AreSame(
+            ref MemoryMarshal.GetReference(first.AtlasPages),
+            ref MemoryMarshal.GetReference(second.AtlasPages)));
+
+        _ = source.BorrowFrame().Batch.Rectangles.Length;
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var observedCount = 0;
+        for (var index = 0; index < 32; index++)
+        {
+            var view = source.BorrowFrame();
+            observedCount += view.Batch.Rectangles.Length + view.AtlasPages.Length;
+        }
+
+        var allocatedAfter = GC.GetAllocatedBytesForCurrentThread();
+        Assert.Equal(64, observedCount);
+        Assert.Equal(0, allocatedAfter - allocatedBefore);
+    }
+
+    [Fact]
+    public void UiRenderFrameSourceKeepsBatchAndPagesFromTheSamePreparedFrame()
+    {
+        using var source = new TestFrameSource();
+        var firstPages = new ITextAtlasPage[]
+        {
+            new TestAtlasPage(new TextAtlasPageDescription(new TextAtlasPageId(8), 64, 64, TextAtlasFormat.R8Unorm))
+        };
+        var secondPages = new ITextAtlasPage[]
+        {
+            new TestAtlasPage(new TextAtlasPageDescription(new TextAtlasPageId(9), 64, 64, TextAtlasFormat.Rgba8Unorm))
+        };
+        var firstToken = source.Prepare(new[] { new UiQuad(1, 1, 2, 2, 1, 0, 0, 1) },
+            ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty, firstPages);
+        var first = source.BorrowFrame();
+        Assert.Equal(firstToken, first.Batch.Frame);
+        Assert.Equal(new TextAtlasPageId(8), first.AtlasPages[0].Description.Id);
+
+        source.Prepare(new[] { new UiQuad(3, 3, 4, 4, 0, 1, 0, 1) },
+            ReadOnlySpan<TextSubmissionRecord>.Empty, ReadOnlySpan<RenderRecordChange>.Empty, secondPages);
+        var second = source.BorrowFrame();
+        Assert.NotEqual(first.Batch.Frame, second.Batch.Frame);
+        Assert.Equal(new TextAtlasPageId(9), second.AtlasPages[0].Description.Id);
+        Assert.Equal(3, second.Batch.Rectangles[0].X);
+    }
+
     private static TextGlyphInstance Glyph(uint page, int x, int y, UiClipRect? clip = null) =>
         new(new TextAtlasPageId(page), new TextUvRect(0, 0, 0.1f, 0.1f), new TextPixelBounds(x, y, 10, 10),
             new TextColor(1, 1, 1, 1), clip ?? UiClipRect.Unbounded, TextRenderMode.Sdf, 4, 0.01f, 11);
@@ -326,6 +390,44 @@ public sealed class TextSubmissionContractTests
     {
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestFrameSource : IUiRenderFrameSource, IDisposable
+    {
+        private readonly UiRenderBatchAdapter _adapter = new();
+        private UiRenderFrameToken _token;
+        private ITextAtlasPage[] _pages = [];
+
+        public UiRenderFrameToken Prepare(
+            ReadOnlySpan<UiQuad> rectangles,
+            ReadOnlySpan<TextSubmissionRecord> textSubmissions,
+            ReadOnlySpan<RenderRecordChange> dirtyRecords,
+            ITextAtlasPage[] pages)
+        {
+            _pages = pages;
+            _token = _adapter.Replace(rectangles, textSubmissions, dirtyRecords);
+            return _token;
+        }
+
+        public UiRenderFrameView BorrowFrame()
+        {
+            var batch = _adapter.Borrow(in _token);
+            return new UiRenderFrameView(batch, _pages);
+        }
+
+        public void Dispose() => _adapter.Dispose();
+    }
+
+    private sealed class TestAtlasPage(TextAtlasPageDescription description) : ITextAtlasPage
+    {
+        public TextAtlasPageDescription Description { get; } = description;
+        public bool IsDisposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class RecordingSession : IRenderWindowFrameSession, IDisposable

@@ -40,6 +40,35 @@ public readonly ref struct UiRenderBatch
 }
 
 /// <summary>
+/// One borrowed UI frame prepared by a producer. The batch and atlas pages refer
+/// to the same prepared frame and must not be retained after the source's next
+/// prepare/replace, atlas-cache mutation, or dispose operation.
+/// </summary>
+public readonly ref struct UiRenderFrameView
+{
+    public UiRenderFrameView(UiRenderBatch batch, ReadOnlySpan<ITextAtlasPage> atlasPages)
+    {
+        Batch = batch;
+        AtlasPages = atlasPages;
+    }
+
+    public UiRenderBatch Batch { get; }
+
+    public ReadOnlySpan<ITextAtlasPage> AtlasPages { get; }
+}
+
+/// <summary>
+/// Supplies one borrowed, already-prepared UI frame to the renderer. Render
+/// calls this once after the UI stage and immediately before submission; the
+/// returned view is valid only until the source is prepared/replaced, its atlas
+/// cache mutates, or the source is disposed.
+/// </summary>
+public interface IUiRenderFrameSource
+{
+    UiRenderFrameView BorrowFrame();
+}
+
+/// <summary>
 /// Owns reusable renderer-facing UI arrays while producer adapters retain ownership
 /// of their source models and payload memory.
 /// </summary>
