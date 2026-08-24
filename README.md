@@ -13,6 +13,11 @@ Project boundaries:
 - DeltaRender consumes `Delta.Shader.Abstractions.ShaderArtifact` and never
   parses C# or defines a second shader ABI.
 
+Renderer-facing frame contracts contain frame identity, views, surfaces and
+render data only. They never carry `DeltaTime` or define a clock. Simulation,
+fixed-step, scaled, unscaled and editor time domains belong to DeltaEngine and
+are converted into explicit feature or shader data before render submission.
+
 Compute supports validated artifacts, multiple SSBO bindings, upload, dispatch
 and readback. Graphics supports paired vertex/fragment artifacts, swapchain
 presentation, dynamic viewport/scissor, alpha blending, fullscreen and mesh
