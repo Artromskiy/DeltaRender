@@ -11,7 +11,8 @@ internal enum VulkanSessionResourceStage
     RenderCompleteSemaphore,
     Fence,
     CommandPool,
-    CommandBuffer
+    CommandBuffer,
+    TextAtlas
 }
 
 internal sealed class VulkanSessionRollbackLedger

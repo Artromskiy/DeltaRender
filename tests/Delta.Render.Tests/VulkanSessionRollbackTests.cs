@@ -14,7 +14,8 @@ public sealed class VulkanSessionRollbackTests
         VulkanSessionResourceStage.RenderCompleteSemaphore,
         VulkanSessionResourceStage.Fence,
         VulkanSessionResourceStage.CommandPool,
-        VulkanSessionResourceStage.CommandBuffer
+        VulkanSessionResourceStage.CommandBuffer,
+        VulkanSessionResourceStage.TextAtlas
     ];
 
     [Fact]

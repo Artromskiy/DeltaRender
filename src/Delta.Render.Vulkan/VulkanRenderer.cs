@@ -808,7 +808,9 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             _commandBuffer = commandBuffer;
             rollback.Own(VulkanSessionResourceStage.CommandBuffer, () => FreeCommandBuffer(renderer.Api, _device, commandPool, commandBuffer));
             _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
-            _textAtlas = new VulkanTextAtlasService(this);
+            var textAtlas = new VulkanTextAtlasService(this);
+            _textAtlas = textAtlas;
+            rollback.Own(VulkanSessionResourceStage.TextAtlas, textAtlas.Dispose);
             rollback.Commit();
         }
         catch (Exception exception)
