@@ -183,6 +183,69 @@ public sealed class UiRenderBatchAdapter : IDisposable
 /// </summary>
 public static class UiRenderBatchSubmission
 {
+    /// <summary>
+    /// Ends an already-begun frame from one borrowed UI view. This method never
+    /// calls <see cref="IRenderWindowFrameSession.BeginFrame"/> or a SubmitFrame
+    /// method. The source view must remain valid until this call returns.
+    /// </summary>
+    public static bool EndPreparedFrame(
+        this IRenderWindowFrameSession session,
+        in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        IGraphicsPipeline? textPipeline,
+        in TextFrameParameters textParameters,
+        in UiRenderFrameView frame,
+        in TextProjectionContext projectionContext,
+        ITextWorldProjection? worldProjection,
+        Span<TextGlyphInstance> orderedGlyphs,
+        Span<TextBatchRange> textBatches)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(uiPipeline);
+        if (!frameState.IsValid)
+        {
+            return false;
+        }
+
+        var batch = frame.Batch;
+        if (batch.TextSubmissions.IsEmpty)
+        {
+            return session.EndFrame(in frameState, uiPipeline, in uiParameters, batch.Rectangles, batch.DirtyRecords);
+        }
+
+        if (textPipeline is null)
+        {
+            return false;
+        }
+
+        var submission = new TextSubmissionFrame(batch.TextSubmissions);
+        if (!TextSubmissionBatching.TryBuild(
+                in submission,
+                in projectionContext,
+                worldProjection,
+                orderedGlyphs,
+                textBatches,
+                out var orderedCount,
+                out _,
+                out _))
+        {
+            return false;
+        }
+
+        var textDrawList = new TextDrawList(orderedGlyphs.Slice(0, orderedCount));
+        return session.EndFrame(
+            in frameState,
+            uiPipeline,
+            in uiParameters,
+            batch.Rectangles,
+            textPipeline,
+            in textParameters,
+            frame.AtlasPages,
+            in textDrawList,
+            batch.DirtyRecords);
+    }
+
     public static bool Submit(
         this IRenderWindowFrameSession session,
         IGraphicsPipeline uiPipeline,
