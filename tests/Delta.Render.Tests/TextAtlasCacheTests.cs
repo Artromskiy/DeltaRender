@@ -72,8 +72,54 @@ public sealed class TextAtlasCacheTests
         await cache.DisposeAsync();
         Assert.Throws<ObjectDisposedException>(() => cache.TryGet(handle, out _));
         Assert.Throws<ObjectDisposedException>(() => cache.GetOrAdd(in glyph, out _));
+        Assert.Throws<ObjectDisposedException>(() => cache.BorrowPages());
         Assert.Single(device.Pages);
         Assert.True(device.Pages[0].IsDisposed);
+    }
+
+    [Fact]
+    public async Task BorrowedPagesExposeLiveIdsAndFormatsWithoutRepeatedCopies()
+    {
+        var device = new FakeAtlasDevice();
+        await using var cache = new TextAtlasCache(device, new TextAtlasCacheOptions(16, 16, 2, 4));
+        var grayscale = Glyph(0, GlyphAtlasMode.Grayscale);
+        var msdf = Glyph(0, GlyphAtlasMode.Msdf, padding: 2);
+        _ = cache.GetOrAdd(in grayscale, out _);
+        _ = cache.GetOrAdd(in msdf, out _);
+
+        var first = cache.BorrowPages();
+        _ = cache.BorrowPages().Count;
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 32; index++)
+        {
+            var repeated = cache.BorrowPages();
+            _ = repeated.Count;
+        }
+        var after = GC.GetAllocatedBytesForCurrentThread();
+
+        Assert.Equal(2, first.Count);
+        Assert.Same(first.Pages[0], device.Pages[0]);
+        Assert.Same(first.Pages[1], device.Pages[1]);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public async Task RecentlyHitPageWinsOverOlderPageDuringRecycle()
+    {
+        var device = new FakeAtlasDevice();
+        await using var cache = new TextAtlasCache(device, new TextAtlasCacheOptions(4, 5, 2, 10));
+        var firstGlyph = Glyph(1, GlyphAtlasMode.Grayscale);
+        var secondGlyph = Glyph(2, GlyphAtlasMode.Grayscale);
+        var thirdGlyph = Glyph(3, GlyphAtlasMode.Grayscale);
+
+        var firstHandle = cache.GetOrAdd(in firstGlyph, out _);
+        var secondHandle = cache.GetOrAdd(in secondGlyph, out _);
+        Assert.True(cache.TryGet(firstHandle, out _));
+
+        _ = cache.GetOrAdd(in thirdGlyph, out _);
+
+        Assert.True(cache.TryGet(firstHandle, out _));
+        Assert.False(cache.TryGet(secondHandle, out _));
     }
 
     private static PositionedGlyphBitmap Glyph(uint id, GlyphAtlasMode mode, int padding = 1)

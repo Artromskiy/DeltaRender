@@ -24,6 +24,21 @@ public readonly record struct TextGlyphCacheHandle(TextAtlasPageId Page, uint Ge
     public bool IsValid => Page.IsValid && Generation != 0 && Slot != 0;
 }
 
+/// <summary>
+/// Borrowed read-only view of the cache's live atlas pages. The view is valid
+/// until the cache mutates or is disposed and must not be retained between frames.
+/// </summary>
+public readonly ref struct TextAtlasPageView
+{
+    private readonly ReadOnlySpan<ITextAtlasPage> _pages;
+
+    internal TextAtlasPageView(ITextAtlasPage[] pages, int count) => _pages = pages.AsSpan(0, count);
+
+    public ReadOnlySpan<ITextAtlasPage> Pages => _pages;
+    public int Count => _pages.Length;
+    public bool IsEmpty => _pages.IsEmpty;
+}
+
 public readonly record struct TextGlyphPlacement(
     TextGlyphCacheHandle Handle,
     TextUvRect Uv,
@@ -79,6 +94,7 @@ public sealed class TextAtlasCache : IAsyncDisposable
     private readonly TextAtlasCacheOptions _options;
     private readonly Dictionary<TextGlyphCacheKey, Entry> _entries = new();
     private readonly List<PageState> _pages = new();
+    private ITextAtlasPage[] _pageView = Array.Empty<ITextAtlasPage>();
     private uint _nextPageId = 1;
     private uint _nextSlot = 1;
     private long _clock;
@@ -103,6 +119,13 @@ public sealed class TextAtlasCache : IAsyncDisposable
 
     public int EntryCount => _entries.Count;
     public int PageCount => _pages.Count;
+
+    /// <summary>Gets a borrowed page view without copying. The view expires on cache mutation/disposal.</summary>
+    public TextAtlasPageView BorrowPages()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return new TextAtlasPageView(_pageView, _pages.Count);
+    }
 
     /// <summary>Consumes Delta.Text's positioned glyph handoff and copies pixels into owned storage.</summary>
     public TextGlyphCacheHandle GetOrAdd(in PositionedGlyphBitmap glyph, out TextGlyphPlacement placement)
@@ -139,6 +162,7 @@ public sealed class TextAtlasCache : IAsyncDisposable
         if (_entries.TryGetValue(key, out var existing))
         {
             existing.LastUse = ++_clock;
+            TouchPage(existing.Placement.Handle.Page, _clock);
             placement = existing.Placement;
             return new TextGlyphCacheHandle(placement.Handle.Page, existing.Generation, placement.Handle.Slot);
         }
@@ -171,6 +195,7 @@ public sealed class TextAtlasCache : IAsyncDisposable
             if (entry.Placement.Handle == handle && entry.Generation == handle.Generation)
             {
                 entry.LastUse = ++_clock;
+                TouchPage(entry.Placement.Handle.Page, _clock);
                 placement = entry.Placement;
                 return true;
             }
@@ -194,6 +219,7 @@ public sealed class TextAtlasCache : IAsyncDisposable
             await page.Page.DisposeAsync().ConfigureAwait(false);
         }
         _pages.Clear();
+        _pageView = Array.Empty<ITextAtlasPage>();
     }
 
     private PageState EnsurePlacement(uint width, uint height, TextAtlasFormat format, out uint x, out uint y)
@@ -223,6 +249,12 @@ public sealed class TextAtlasCache : IAsyncDisposable
             var description = new TextAtlasPageDescription(new TextAtlasPageId(_nextPageId++), _options.PageWidth, _options.PageHeight, format);
             var page = new PageState { Page = _device.CreateAtlasPage(description), Format = format };
             _pages.Add(page);
+            var pages = new ITextAtlasPage[_pages.Count];
+            for (var index = 0; index < _pages.Count; index++)
+            {
+                pages[index] = _pages[index].Page;
+            }
+            _pageView = pages;
             TryPlace(page, requiredWidth, requiredHeight, out x, out y);
             return page;
         }
@@ -244,6 +276,18 @@ public sealed class TextAtlasCache : IAsyncDisposable
         recyclable.RowHeight = 0;
         TryPlace(recyclable, requiredWidth, requiredHeight, out x, out y);
         return recyclable;
+    }
+
+    private void TouchPage(TextAtlasPageId pageId, long timestamp)
+    {
+        for (var index = 0; index < _pages.Count; index++)
+        {
+            if (_pages[index].Page.Description.Id == pageId)
+            {
+                _pages[index].LastUse = timestamp;
+                return;
+            }
+        }
     }
 
     private static bool TryPlace(PageState page, uint requiredWidth, uint requiredHeight, out uint x, out uint y)
