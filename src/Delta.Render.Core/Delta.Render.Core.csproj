@@ -6,7 +6,6 @@
     <PackageId>Delta.Render.Core</PackageId>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../DeltaText/Delta.Text.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
   </ItemGroup>
 </Project>

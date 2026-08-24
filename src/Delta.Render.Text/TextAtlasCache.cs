@@ -1,17 +1,20 @@
 using System.Diagnostics.CodeAnalysis;
+using Delta.Render.Core;
 using Delta.Text;
 
-namespace Delta.Render.Core;
+namespace Delta.Render.Text;
 
 public readonly record struct TextGlyphCacheKey(
-    string FontIdentity,
+    FontKey Font,
     uint GlyphId,
     uint PixelSize,
+    int Padding,
     TextRenderMode Mode,
     float PxRange,
     float Smoothing)
 {
-    public bool IsValid => !string.IsNullOrWhiteSpace(FontIdentity) && GlyphId != 0 && PixelSize > 0 &&
+    public bool IsValid => !string.IsNullOrWhiteSpace(Font.Family) && !string.IsNullOrWhiteSpace(Font.Style) &&
+                           !string.IsNullOrWhiteSpace(Font.SourceId) && PixelSize > 0 && Padding >= 0 &&
                            Mode is TextRenderMode.Sdf or TextRenderMode.Msdf &&
                            float.IsFinite(PxRange) && PxRange > 0 && float.IsFinite(Smoothing) && Smoothing >= 0;
 }
@@ -24,15 +27,23 @@ public readonly record struct TextGlyphCacheHandle(TextAtlasPageId Page, uint Ge
 public readonly record struct TextGlyphPlacement(
     TextGlyphCacheHandle Handle,
     TextUvRect Uv,
-    TextPixelBounds Bounds,
+    float BearingX,
+    float BearingY,
+    int Width,
+    int Height,
     float AdvanceX,
     TextRenderMode Mode,
     float PxRange,
     float Smoothing)
 {
-    public TextGlyphInstance ToInstance(int x, int y, TextColor color, UiClipRect clip, uint pipelineId = 0) =>
-        new(Handle.Page, Uv, Bounds with { X = checked(Bounds.X + x), Y = checked(Bounds.Y + y) },
+    public TextGlyphInstance ToInstance(in PositionedGlyph glyph, float originX, float originY,
+        TextColor color, UiClipRect clip, uint pipelineId = 0)
+    {
+        var x = checked((int)MathF.Round(originX + glyph.X + glyph.OffsetX + BearingX));
+        var y = checked((int)MathF.Round(originY + glyph.Y + glyph.OffsetY - BearingY));
+        return new TextGlyphInstance(Handle.Page, Uv, new TextPixelBounds(x, y, Width, Height),
             color, clip, Mode, PxRange, Smoothing, pipelineId);
+    }
 }
 
 public readonly record struct TextAtlasCacheOptions(uint PageWidth = 256, uint PageHeight = 256, int MaxPages = 8, int MaxEntries = 4096)
@@ -45,6 +56,17 @@ public readonly record struct TextAtlasCacheOptions(uint PageWidth = 256, uint P
 /// </summary>
 public sealed class TextAtlasCache : IAsyncDisposable
 {
+    private sealed class PageState
+    {
+        public required ITextAtlasPage Page { get; init; }
+        public required TextAtlasFormat Format { get; init; }
+        public uint CursorX { get; set; }
+        public uint CursorY { get; set; }
+        public uint RowHeight { get; set; }
+        public long LastUse { get; set; }
+        public uint Generation { get; set; } = 1;
+    }
+
     private sealed class Entry
     {
         public required TextGlyphCacheKey Key { get; init; }
@@ -56,14 +78,10 @@ public sealed class TextAtlasCache : IAsyncDisposable
     private readonly ITextAtlasDevice _device;
     private readonly TextAtlasCacheOptions _options;
     private readonly Dictionary<TextGlyphCacheKey, Entry> _entries = new();
-    private readonly List<ITextAtlasPage> _pages = new();
+    private readonly List<PageState> _pages = new();
     private uint _nextPageId = 1;
     private uint _nextSlot = 1;
-    private uint _generation = 1;
     private long _clock;
-    private uint _cursorX;
-    private uint _cursorY;
-    private uint _rowHeight;
     private bool _disposed;
 
     public TextAtlasCache(ITextAtlasDevice device, TextAtlasCacheOptions options = default)
@@ -86,23 +104,24 @@ public sealed class TextAtlasCache : IAsyncDisposable
     public int EntryCount => _entries.Count;
     public int PageCount => _pages.Count;
 
-    /// <summary>
-    /// Consumes Delta.Text's positioned glyph handoff and copies its pixels into
-    /// renderer-owned atlas storage. Delta.Text remains the owner of shaping and rasterization.
-    /// </summary>
-    public TextGlyphCacheHandle GetOrAdd(string fontIdentity, in PositionedGlyphBitmap glyph, out TextGlyphPlacement placement)
+    /// <summary>Consumes Delta.Text's positioned glyph handoff and copies pixels into owned storage.</summary>
+    public TextGlyphCacheHandle GetOrAdd(in PositionedGlyphBitmap glyph, out TextGlyphPlacement placement)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentException.ThrowIfNullOrWhiteSpace(fontIdentity);
         var bitmap = glyph.Bitmap;
+        if (bitmap is null)
+        {
+            throw new ArgumentException("The Delta.Text glyph bitmap is missing.", nameof(glyph));
+        }
+
         var mode = bitmap.Request.Mode switch
         {
             GlyphAtlasMode.Grayscale => TextRenderMode.Sdf,
             GlyphAtlasMode.Msdf => TextRenderMode.Msdf,
             _ => throw new ArgumentException("MTSDF glyphs are not supported by this renderer slice.", nameof(glyph))
         };
-        var key = new TextGlyphCacheKey(fontIdentity, bitmap.GlyphId, checked((uint)bitmap.Request.PixelSize), mode,
-            bitmap.Request.DistanceRange, 0);
+        var key = new TextGlyphCacheKey(bitmap.Request.Font, bitmap.GlyphId, checked((uint)bitmap.Request.PixelSize),
+            bitmap.Request.Padding, mode, bitmap.Request.DistanceRange, 0);
         if (!key.IsValid || bitmap.Width <= 0 || bitmap.Height <= 0 || bitmap.Stride <= 0 ||
             bitmap.Pixels.Length < checked(bitmap.Stride * bitmap.Height) || !float.IsFinite(bitmap.AdvanceX))
         {
@@ -111,11 +130,11 @@ public sealed class TextAtlasCache : IAsyncDisposable
 
         var pixels = NormalizePixels(bitmap, mode, out var rowPitch);
         return GetOrAdd(key, (uint)bitmap.Width, (uint)bitmap.Height, rowPitch, pixels,
-            checked((int)MathF.Round(bitmap.BearingX)), checked((int)MathF.Round(bitmap.BearingY)), bitmap.AdvanceX, out placement);
+            bitmap.BearingX, bitmap.BearingY, bitmap.AdvanceX, out placement);
     }
 
     private TextGlyphCacheHandle GetOrAdd(TextGlyphCacheKey key, uint width, uint height, uint rowPitch,
-        ReadOnlyMemory<byte> pixels, int bearingX, int bearingY, float advanceX, out TextGlyphPlacement placement)
+        ReadOnlyMemory<byte> pixels, float bearingX, float bearingY, float advanceX, out TextGlyphPlacement placement)
     {
         if (_entries.TryGetValue(key, out var existing))
         {
@@ -125,20 +144,22 @@ public sealed class TextAtlasCache : IAsyncDisposable
         }
 
         EvictIfNeeded();
-        var page = EnsurePlacement(width, height, key.Mode, out var x, out var y);
+        var format = key.Mode == TextRenderMode.Msdf ? TextAtlasFormat.Rgba8Unorm : TextAtlasFormat.R8Unorm;
+        var page = EnsurePlacement(width, height, format, out var x, out var y);
         var range = new TextAtlasDirtyRange(x, y, width, height, rowPitch, pixels);
-        if (!_device.UploadAtlasDirtyRanges(page, new[] { range }))
+        if (!_device.UploadAtlasDirtyRanges(page.Page, new[] { range }))
         {
             throw new InvalidOperationException("The atlas device rejected the glyph upload.");
         }
 
         placement = new TextGlyphPlacement(
-            new TextGlyphCacheHandle(page.Description.Id, _generation, _nextSlot++),
-            new TextUvRect((float)x / page.Description.Width, (float)y / page.Description.Height,
-                (float)width / page.Description.Width, (float)height / page.Description.Height),
-            new TextPixelBounds(bearingX, -bearingY, checked((int)width), checked((int)height)),
+            new TextGlyphCacheHandle(page.Page.Description.Id, page.Generation, _nextSlot++),
+            new TextUvRect((float)x / page.Page.Description.Width, (float)y / page.Page.Description.Height,
+                (float)width / page.Page.Description.Width, (float)height / page.Page.Description.Height),
+            bearingX, bearingY, checked((int)width), checked((int)height),
             advanceX, key.Mode, key.PxRange, key.Smoothing);
-        _entries.Add(key, new Entry { Key = key, Placement = placement, Generation = _generation, LastUse = ++_clock });
+        page.LastUse = ++_clock;
+        _entries.Add(key, new Entry { Key = key, Placement = placement, Generation = page.Generation, LastUse = _clock });
         return placement.Handle;
     }
 
@@ -170,12 +191,12 @@ public sealed class TextAtlasCache : IAsyncDisposable
         _entries.Clear();
         foreach (var page in _pages)
         {
-            await page.DisposeAsync().ConfigureAwait(false);
+            await page.Page.DisposeAsync().ConfigureAwait(false);
         }
         _pages.Clear();
     }
 
-    private ITextAtlasPage EnsurePlacement(uint width, uint height, TextRenderMode mode, out uint x, out uint y)
+    private PageState EnsurePlacement(uint width, uint height, TextAtlasFormat format, out uint x, out uint y)
     {
         var requiredWidth = checked(width + 1);
         var requiredHeight = checked(height + 1);
@@ -184,33 +205,68 @@ public sealed class TextAtlasCache : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(width), "Glyph bitmap does not fit in an atlas page.");
         }
 
-        if (_pages.Count == 0 || _cursorX + requiredWidth > _options.PageWidth)
+        foreach (var page in _pages)
         {
-            _cursorX = 0;
-            _cursorY = checked(_cursorY + _rowHeight);
-            _rowHeight = 0;
-        }
-
-        if (_pages.Count == 0 || _cursorY + requiredHeight > _options.PageHeight)
-        {
-            if (_pages.Count >= _options.MaxPages)
+            if (page.Format != format)
             {
-                throw new InvalidOperationException("The bounded atlas cache has no available page space.");
+                continue;
             }
 
-            var description = new TextAtlasPageDescription(new TextAtlasPageId(_nextPageId++), _options.PageWidth, _options.PageHeight,
-                mode == TextRenderMode.Msdf ? TextAtlasFormat.Rgba8Unorm : TextAtlasFormat.R8Unorm);
-            _pages.Add(_device.CreateAtlasPage(description));
-            _cursorX = 0;
-            _cursorY = 0;
-            _rowHeight = 0;
+            if (TryPlace(page, requiredWidth, requiredHeight, out x, out y))
+            {
+                return page;
+            }
         }
 
-        x = _cursorX;
-        y = _cursorY;
-        _cursorX = checked(_cursorX + requiredWidth);
-        _rowHeight = Math.Max(_rowHeight, requiredHeight);
-        return _pages[^1];
+        if (_pages.Count < _options.MaxPages)
+        {
+            var description = new TextAtlasPageDescription(new TextAtlasPageId(_nextPageId++), _options.PageWidth, _options.PageHeight, format);
+            var page = new PageState { Page = _device.CreateAtlasPage(description), Format = format };
+            _pages.Add(page);
+            TryPlace(page, requiredWidth, requiredHeight, out x, out y);
+            return page;
+        }
+
+        var recyclable = _pages.Where(page => page.Format == format).MinBy(page => page.LastUse);
+        if (recyclable is null)
+        {
+            throw new InvalidOperationException("The bounded atlas cache has no reusable page for this pixel format.");
+        }
+
+        foreach (var key in _entries.Where(pair => pair.Value.Placement.Handle.Page == recyclable.Page.Description.Id).Select(pair => pair.Key).ToArray())
+        {
+            _entries.Remove(key);
+        }
+
+        recyclable.Generation = recyclable.Generation == uint.MaxValue ? 1 : recyclable.Generation + 1;
+        recyclable.CursorX = 0;
+        recyclable.CursorY = 0;
+        recyclable.RowHeight = 0;
+        TryPlace(recyclable, requiredWidth, requiredHeight, out x, out y);
+        return recyclable;
+    }
+
+    private static bool TryPlace(PageState page, uint requiredWidth, uint requiredHeight, out uint x, out uint y)
+    {
+        if (page.CursorX + requiredWidth > page.Page.Description.Width)
+        {
+            page.CursorX = 0;
+            page.CursorY = checked(page.CursorY + page.RowHeight);
+            page.RowHeight = 0;
+        }
+
+        if (page.CursorY + requiredHeight > page.Page.Description.Height)
+        {
+            x = 0;
+            y = 0;
+            return false;
+        }
+
+        x = page.CursorX;
+        y = page.CursorY;
+        page.CursorX = checked(page.CursorX + requiredWidth);
+        page.RowHeight = Math.Max(page.RowHeight, requiredHeight);
+        return true;
     }
 
     private static byte[] NormalizePixels(GlyphBitmap bitmap, TextRenderMode mode, out uint rowPitch)
@@ -251,7 +307,6 @@ public sealed class TextAtlasCache : IAsyncDisposable
         if (oldest is not null)
         {
             _entries.Remove(oldest.Key);
-            _generation = _generation == uint.MaxValue ? 1 : _generation + 1;
         }
     }
 }
