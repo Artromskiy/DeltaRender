@@ -37,8 +37,24 @@ the canonical batch without loading Vulkan.
 
 ## Code metrics
 
-Run the manual GitHub Actions `Code metrics` workflow before committing a
-substantial change, then inspect its SARIF and summary artifacts. The rules
+Run the same analyzer/code-metrics build locally and in the manual GitHub
+Actions workflow through the repository wrapper:
+
+```bash
+./eng/code-metrics.sh -v:q
+```
+
+`eng/code-metrics.sh` converts `CODE_METRICS_ERROR_LOG` (default:
+`artifacts/code-metrics/diagnostics.sarif`) to an absolute path before
+MSBuild starts, so multi-project builds write one repository-level SARIF
+instead of resolving a missing directory relative to each project. An
+explicit destination is supported:
+
+```bash
+CODE_METRICS_ERROR_LOG=/tmp/code-metrics.sarif ./eng/code-metrics.sh -v:q
+```
+
+Inspect the SARIF and summary artifacts from the manual workflow. The rules
 CA1501/CA1502/CA1505/CA1506 are report-only signals; do not refactor a method
 for one isolated warning. Refactor when several metrics remain over their
 limits, the issue persists across runs, or profiling identifies a hot path.

@@ -19,17 +19,8 @@ jobs:
           dotnet-version: |
             8.x
             10.x
-      - name: Discover target
-        id: target
-        shell: bash
-        run: |
-          set -euo pipefail
-          target="$(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -print | sort | head -n 1)"
-          if [[ -z "$target" ]]; then target="$(find . -maxdepth 4 -name '*.csproj' -print | sort | head -n 1)"; fi
-          [[ -n "$target" ]] || { echo 'No .NET solution or project found.' >&2; exit 1; }
-          echo "path=$target" >> "$GITHUB_OUTPUT"
       - name: Restore
-        run: dotnet restore "${{ steps.target.outputs.path }}"
+        run: dotnet restore Delta.Render.slnx
       - name: Verify formatting
         continue-on-error: true
         run: |
@@ -37,12 +28,10 @@ jobs:
           dotnet format whitespace --folder . --exclude ./obj ./bin --verify-no-changes --verbosity minimal 2>&1 | tee artifacts/code-metrics/format.log
       - name: Build and collect analyzer metrics
         shell: bash
-        env:
-          TARGET: ${{ steps.target.outputs.path }}
         run: |
           set -uo pipefail
           mkdir -p artifacts/code-metrics; set +e
-          dotnet build "$TARGET" -c Release --no-restore --disable-build-servers -m:1 /p:UseSharedCompilation=false /p:AnalysisMode=AllEnabledByDefault /p:ErrorLog="$GITHUB_WORKSPACE/artifacts/code-metrics/diagnostics.sarif,version=2.1" 2>&1 | tee artifacts/code-metrics/build.log
+          ./eng/code-metrics.sh 2>&1 | tee artifacts/code-metrics/build.log
           status=${PIPESTATUS[0]}; set -e
           echo "Build exit code: $status" | tee artifacts/code-metrics/summary.txt; exit 0
       - name: Upload metrics
