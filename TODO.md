@@ -5,8 +5,13 @@ Ordered cross-project ownership and gates are in
 
 ## P0 — shared graphics contract
 
-- [x] Remove the local duplicate `GraphicsShaderProgram`; consume the canonical
-  `Delta.Shader.Abstractions` owner without adapter copies.
+- [x] Remove the local duplicate `GraphicsShaderProgram`; current renderer APIs
+  consume the shared `Delta.Shader.Abstractions` compatibility type without an
+  adapter copy.
+- [ ] Migrate compute and graphics pipeline contracts to
+  `Delta.Shader.Contract.IShaderArtifact` / `IGraphicsShaderProgram`, whose
+  final handoff is SPIR-V plus binary `ShaderAbi`, then remove the runtime
+  dependency on the older abstractions artifact model.
 - [x] Define the Vulkan-only render-graph contracts, explicit per-view surface,
   viewport and `PixelRect`, canonical DeltaShader pipeline descriptions and
   raster/compute/transfer command contexts.

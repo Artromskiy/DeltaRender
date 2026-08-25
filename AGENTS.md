@@ -19,6 +19,6 @@ Do not poll input, parse XAML/C#, shape strings or define a second shader ABI.
 
 Skills: `gpu-memory-model` for Vulkan synchronization/resources,
 `shader-dev` for pipeline/stage integration, `abi-and-calling-conventions` for
-manifest packing, `performance-speedup` and `memory-hierarchy-and-caches` for
-measured batching/upload work, `apple-silicon` for MoltenVK setup, and `lldb`
-for native macOS crashes.
+binary ABI validation and migration, `performance-speedup` and
+`memory-hierarchy-and-caches` for measured batching/upload work,
+`apple-silicon` for MoltenVK setup, and `lldb` for native macOS crashes.

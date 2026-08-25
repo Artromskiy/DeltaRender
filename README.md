@@ -10,8 +10,11 @@ Project boundaries:
 - `Delta.Render.Platform.SDL3` owns platform window/surface integration;
 - DeltaEngine owns frame timing, event polling and input translation;
 - DeltaXAML owns retained UI/layout; DeltaText owns shaping/glyph pixels;
-- DeltaRender consumes `Delta.Shader.Abstractions.ShaderArtifact` and never
-  parses C# or defines a second shader ABI.
+- The final shader boundary is `Delta.Shader.Contract.IShaderArtifact` /
+  `IGraphicsShaderProgram`: SPIR-V plus the resolved binary `ShaderAbi` only.
+  The current renderer APIs still accept the older
+  `Delta.Shader.Abstractions.ShaderArtifact` compatibility model while that
+  consumer migration is in progress.
 
 Renderer-facing frame contracts contain frame identity, views, surfaces and
 render data only. They never carry `DeltaTime` or define a clock. Simulation,
@@ -45,9 +48,12 @@ created it, rather than through a second raw-handle destruction path.
 The canonical renderer-facing UI boundary is
 `DeltaXAML IUiDrawList -> UiRenderBatchAdapter -> borrowed UiRenderBatch`.
 Legacy `EngineUiQuad`/direct `UiQuad` conversions are migration/test-only, not
-the production contract. `GraphicsShaderProgram` is owned only by
-`Delta.Shader.Abstractions`; DeltaRender validates and consumes that canonical
-artifact rather than defining a local duplicate.
+the production contract. DeltaRender no longer defines a local
+`GraphicsShaderProgram`, but its current public pipeline methods still use the
+shared `Delta.Shader.Abstractions.GraphicsShaderProgram` compatibility type.
+They have not yet migrated to the canonical `Delta.Shader.Contract`
+interfaces. GLSL, Roslyn/compiler state, live generic values and a content hash
+are not part of the runtime artifact; renderer cache keys are consumer-owned.
 
 `UiRenderBatchAdapter` copies draw, clip-node, text-submission and dirty-record
 structures into reusable adapter-owned backing storage. The canonical replace
