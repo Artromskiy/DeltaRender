@@ -14,9 +14,9 @@ contract assembly:
 src/Contract/*.cs
 ```
 
-There are no contract subfolders. The public namespace follows the project
-identity: general values use `DeltaRender`, and graph values use
-`DeltaRender.RenderGraph`.
+There are no contract subfolders. The project identity is `DeltaRender`; its
+public CLR namespaces are `Delta.Render.Core` for general values and
+`Delta.Render.Core.RenderGraph` for graph values.
 
 ## Producer and consumers
 
