@@ -1,5 +1,5 @@
 using System.Reflection;
-using Delta.Render.Core;
+using Delta.Render;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -21,17 +21,20 @@ public class RenderContractTests
     }
 
     [Fact]
-    public void IRenderWindowFrameSessionContractExposesLifecycleAndResize()
+    public void IRenderFrameSessionContractExposesGraphOwnershipAndResize()
     {
-        var methods = typeof(IRenderWindowFrameSession)
+        var methods = typeof(IRenderFrameSession)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .Select(static method => method.Name)
             .ToArray();
 
-        Assert.Contains(nameof(IRenderWindowFrameSession.BeginFrame), methods);
-        Assert.Contains(nameof(IRenderWindowFrameSession.EndFrame), methods);
-        Assert.Contains(nameof(IRenderWindowFrameSession.Resize), methods);
-        Assert.True(typeof(IAsyncDisposable).IsAssignableFrom(typeof(IRenderWindowFrameSession)));
+        Assert.Contains(nameof(IRenderFrameSession.CreateRenderGraph), methods);
+        Assert.Contains(nameof(IRenderFrameSession.CreateGraphicsPipeline), methods);
+        Assert.Contains(nameof(IRenderFrameSession.Resize), methods);
+        Assert.DoesNotContain("BeginFrame", methods);
+        Assert.DoesNotContain("EndFrame", methods);
+        Assert.DoesNotContain("SubmitFrame", methods);
+        Assert.True(typeof(IAsyncDisposable).IsAssignableFrom(typeof(IRenderFrameSession)));
     }
 
     [Fact]

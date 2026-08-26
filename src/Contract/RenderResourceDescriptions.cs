@@ -1,4 +1,4 @@
-namespace Delta.Render.Core.RenderGraph;
+namespace Delta.Render.RenderGraph;
 
 public enum RenderTextureFormat
 {

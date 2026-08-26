@@ -1,4 +1,4 @@
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Shader.Contract;
 using Xunit;
 

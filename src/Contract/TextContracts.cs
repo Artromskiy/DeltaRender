@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Delta.Shader.Contract;
 
-namespace Delta.Render.Core;
+namespace Delta.Render;
 
 public readonly record struct TextAtlasPageId(uint Value)
 {

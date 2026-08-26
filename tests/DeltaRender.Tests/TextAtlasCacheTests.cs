@@ -1,4 +1,4 @@
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Render.Text;
 using Delta.Text.Contract;
 using Xunit;

@@ -1,4 +1,4 @@
-namespace Delta.Render.Core.RenderGraph;
+namespace Delta.Render.RenderGraph;
 
 public readonly record struct RenderSurfaceHandle(ulong Value, uint Generation)
 {

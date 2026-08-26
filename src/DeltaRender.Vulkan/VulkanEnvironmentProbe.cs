@@ -1,4 +1,4 @@
-using Delta.Render.Core;
+using Delta.Render;
 using System.Diagnostics.CodeAnalysis;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;

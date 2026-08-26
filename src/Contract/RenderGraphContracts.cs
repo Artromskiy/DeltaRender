@@ -1,4 +1,4 @@
-namespace Delta.Render.Core.RenderGraph;
+namespace Delta.Render.RenderGraph;
 
 /// <summary>
 /// Builds and executes one Vulkan render graph. Implementations own resource
@@ -9,14 +9,6 @@ public interface IRenderGraph
     void Build(in RenderGraphFrame frame, ReadOnlySpan<IRenderFeature> features);
 
     void Execute();
-}
-
-/// <summary>
-/// Creates the graph owned by one render-window frame session.
-/// </summary>
-public interface IRenderGraphFactory
-{
-    IRenderGraph CreateRenderGraph();
 }
 
 /// <summary>

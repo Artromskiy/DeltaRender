@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 using Xunit;

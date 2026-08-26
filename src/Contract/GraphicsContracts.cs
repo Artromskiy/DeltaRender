@@ -1,4 +1,4 @@
-namespace Delta.Render.Core;
+namespace Delta.Render;
 
 // Host values for the initial fullscreen shader ABI: vec2 resolution at byte
 // 0, float time at byte 8, and four bytes of alignment padding at byte 12.

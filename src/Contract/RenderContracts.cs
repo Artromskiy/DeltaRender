@@ -1,7 +1,7 @@
 using Delta.Shader.Contract;
-using Delta.Render.Core.RenderGraph;
+using Delta.Render.RenderGraph;
 
-namespace Delta.Render.Core;
+namespace Delta.Render;
 
 public readonly record struct RenderWindowId(Guid Value)
 {
@@ -38,68 +38,16 @@ public readonly record struct RenderRecordChange(ulong EntityId, uint ComponentK
         => new(entityId, componentKindId, RenderRecordChangeKind.Removed, ReadOnlyMemory<byte>.Empty);
 }
 
-public readonly record struct RenderFrameState(bool IsValid, bool RequiresResize, uint ImageIndex, WindowMetrics Metrics)
-{
-    public static RenderFrameState NotReady(WindowMetrics metrics) => new(false, false, 0, metrics);
-    public static RenderFrameState ResizeRequested(WindowMetrics metrics) => new(false, true, 0, metrics);
-    public static RenderFrameState Ready(uint imageIndex, WindowMetrics metrics) => new(true, false, imageIndex, metrics);
-}
-
 /// <summary>
-/// Borrowed contents for one already-begun frame. A null pipeline is valid only
-/// with the corresponding empty draw list; the default packet is clear-only.
+/// Owns one window's graph execution lifetime. The graph created by this session
+/// owns acquire, command recording, submission and presentation; callers do not
+/// submit a packet or manipulate an acquired frame state directly.
 /// </summary>
-public readonly ref struct RenderFramePacket
-{
-    public RenderFramePacket(
-        IGraphicsPipeline? uiPipeline,
-        GraphicsFrameParameters uiParameters,
-        UiDrawList uiDrawList,
-        IGraphicsPipeline? textPipeline,
-        TextFrameParameters textParameters,
-        ReadOnlySpan<ITextAtlasPage> atlasPages,
-        TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-    {
-        UiPipeline = uiPipeline;
-        UiParameters = uiParameters;
-        UiDrawList = uiDrawList;
-        TextPipeline = textPipeline;
-        TextParameters = textParameters;
-        AtlasPages = atlasPages;
-        TextDrawList = textDrawList;
-        DirtyRecords = dirtyRecords;
-    }
-
-    public IGraphicsPipeline? UiPipeline { get; }
-
-    public GraphicsFrameParameters UiParameters { get; }
-
-    public UiDrawList UiDrawList { get; }
-
-    public IGraphicsPipeline? TextPipeline { get; }
-
-    public TextFrameParameters TextParameters { get; }
-
-    public ReadOnlySpan<ITextAtlasPage> AtlasPages { get; }
-
-    public TextDrawList TextDrawList { get; }
-
-    public ReadOnlySpan<RenderRecordChange> DirtyRecords { get; }
-
-    public bool IsValid => (UiPipeline is null ? UiDrawList.IsEmpty : UiParameters.IsValid) &&
-                           (TextPipeline is null
-                               ? TextDrawList.IsEmpty && AtlasPages.IsEmpty
-                               : UiPipeline is not null && TextParameters.IsValid);
-}
-
-public interface IRenderWindowFrameSession : IAsyncDisposable, IRenderGraphFactory
+public interface IRenderFrameSession : IAsyncDisposable
 {
     RenderWindowId WindowId { get; }
 
-    RenderFrameState BeginFrame();
-
-    bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet);
+    IRenderGraph CreateRenderGraph();
 
     IGraphicsPipeline CreateTextPipeline(in IGraphicsShaderProgram shaderProgram);
 
@@ -107,39 +55,7 @@ public interface IRenderWindowFrameSession : IAsyncDisposable, IRenderGraphFacto
 
     ITextAtlasDevice CreateTextAtlasDevice();
 
-    bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters);
-
     bool Resize(WindowMetrics metrics);
-}
-
-public static class RenderFrameSessionExtensions
-{
-    /// <summary>Ends an already-begun frame through the canonical packet contract.</summary>
-    public static bool EndFrame(
-        this IRenderWindowFrameSession session,
-        in RenderFrameState frameState,
-        in RenderFramePacket packet)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        if (!frameState.IsValid || !packet.IsValid)
-        {
-            return false;
-        }
-
-        return session.EndFrame(in frameState, in packet);
-    }
-
-    public static bool SubmitFrame(this IRenderWindowFrameSession session, in RenderFramePacket packet)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        if (!packet.IsValid)
-        {
-            return false;
-        }
-
-        var frameState = session.BeginFrame();
-        return frameState.IsValid && session.EndFrame(in frameState, in packet);
-    }
 }
 
 public interface IRenderWindow : IAsyncDisposable

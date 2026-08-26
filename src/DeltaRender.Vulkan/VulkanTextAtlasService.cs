@@ -1,6 +1,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
-using Delta.Render.Core;
+using Delta.Render;
 using Silk.NET.Vulkan;
 using VulkanImage = Silk.NET.Vulkan.Image;
 

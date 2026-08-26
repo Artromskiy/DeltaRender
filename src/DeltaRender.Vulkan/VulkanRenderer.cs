@@ -3,8 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Delta.Render.Core;
-using Delta.Render.Core.RenderGraph;
+using Delta.Render;
+using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
@@ -70,7 +70,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     public IComputeDevice CreateComputeDevice() => new VulkanComputeDevice(Options);
 
-    public IRenderWindowFrameSession CreateWindowSession(IRenderWindow window)
+    public IRenderFrameSession CreateWindowSession(IRenderWindow window)
     {
         var sessionDiagnostics = new RenderDiagnosticBag();
         ArgumentNullException.ThrowIfNull(window);
@@ -673,7 +673,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     }
 }
 
-public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVulkanTextAtlasCommandContext
+public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTextAtlasCommandContext
 {
     private bool _disposed;
     private bool _inFrame;
@@ -706,14 +706,10 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly VulkanGraphResourceRegistry _resourceRegistry = new();
     private readonly List<VulkanRenderGraph> _renderGraphs = new();
 
-    private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
-
     private Extent2D _extent;
     private readonly Format _imageFormat;
     private WindowMetrics _metrics;
     private uint _activeImageIndex;
-    private VulkanGraphicsPipeline? _pendingGraphicsPipeline;
-    private GraphicsFrameParameters _pendingFrameParameters;
     private PhysicalDeviceMemoryProperties _memoryProperties;
 
     internal static VulkanWindowSession Create(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, RenderWindowId windowId, WindowMetrics metrics)
@@ -898,13 +894,35 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return graph;
     }
 
-    internal bool BeginGraphFrame(out RenderFrameState frameState)
+    internal bool BeginGraphFrame()
     {
-        frameState = BeginFrame();
-        if (!frameState.IsValid)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_inFrame || _frameBuffers.Length == 0)
         {
             return false;
         }
+
+        uint imageIndex = 0;
+        var acquireResult = _khrSwapchain.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref imageIndex);
+        if (acquireResult != Result.Success)
+        {
+            return false;
+        }
+
+        if (imageIndex >= (uint)_frameBuffers.Length)
+        {
+            throw new InvalidOperationException($"Vulkan returned swapchain image index {imageIndex}, but only {_frameBuffers.Length} framebuffers exist.");
+        }
+
+        if (Api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success ||
+            Api.ResetFences(_device, 1, _renderFence) != Result.Success ||
+            Api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
+        {
+            return false;
+        }
+
+        _activeImageIndex = imageIndex;
+        _inFrame = true;
 
         var beginInfo = new CommandBufferBeginInfo
         {
@@ -1144,139 +1162,6 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return api.ResetFences(_device, 1, _renderFence) == Result.Success;
     }
 
-    public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFrame || pipeline is not VulkanGraphicsPipeline graphicsPipeline ||
-            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive || !parameters.IsValid)
-        {
-            return false;
-        }
-
-        _pendingGraphicsPipeline = graphicsPipeline;
-        _pendingFrameParameters = parameters;
-        return true;
-    }
-
-    public RenderFrameState BeginFrame()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_inFrame)
-        {
-            return RenderFrameState.ResizeRequested(_metrics);
-        }
-
-        if (_frameBuffers.Length == 0)
-        {
-            return RenderFrameState.NotReady(_metrics);
-        }
-
-        var api = _renderer.Api;
-
-        uint imageIndex = 0;
-        var acquireResult = _khrSwapchain.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref imageIndex);
-        if (acquireResult == Result.ErrorOutOfDateKhr || acquireResult == Result.SuboptimalKhr)
-        {
-            return RenderFrameState.ResizeRequested(_metrics);
-        }
-
-        if (acquireResult != Result.Success)
-        {
-            return RenderFrameState.NotReady(_metrics);
-        }
-
-        if (imageIndex >= (uint)_frameBuffers.Length)
-        {
-            throw new InvalidOperationException($"Vulkan returned swapchain image index {imageIndex}, but only {_frameBuffers.Length} framebuffers exist.");
-        }
-
-        if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success ||
-            api.ResetFences(_device, 1, _renderFence) != Result.Success ||
-            api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
-        {
-            return RenderFrameState.NotReady(_metrics);
-        }
-
-        _inFrame = true;
-        _activeImageIndex = imageIndex;
-        return RenderFrameState.Ready(imageIndex, _metrics);
-    }
-
-    public bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex || !packet.IsValid)
-        {
-            return false;
-        }
-
-        if (packet.UiPipeline is null && packet.TextPipeline is null)
-        {
-            return EndFrame(in frameState, in _clearColor, packet.DirtyRecords);
-        }
-
-        if (packet.UiPipeline is not VulkanGraphicsPipeline uiPipeline ||
-            !ReferenceEquals(uiPipeline.Owner, this) || !uiPipeline.IsAlive ||
-            uiPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants))
-        {
-            return false;
-        }
-
-        for (var i = 0; i < packet.UiDrawList.Quads.Length; i++)
-        {
-            if (!packet.UiDrawList.Quads[i].IsValid)
-            {
-                return false;
-            }
-        }
-
-        if (packet.TextPipeline is null)
-        {
-            var uiParameters = packet.UiParameters;
-            return EndFrame(
-                in frameState,
-                in _clearColor,
-                packet.DirtyRecords,
-                uiPipeline,
-                in uiParameters,
-                packet.UiDrawList.Quads);
-        }
-
-        if (packet.TextPipeline is not VulkanTextGraphicsPipeline textPipeline ||
-            !ReferenceEquals(textPipeline.Owner, this) || !textPipeline.IsAlive)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < packet.TextDrawList.Glyphs.Length; i++)
-        {
-            if (!packet.TextDrawList.Glyphs[i].IsValid)
-            {
-                return false;
-            }
-        }
-
-        var packetUiParameters = packet.UiParameters;
-        var packetTextParameters = packet.TextParameters;
-        return EndFrame(
-            in frameState,
-            in _clearColor,
-            packet.DirtyRecords,
-            uiPipeline,
-            in packetUiParameters,
-            packet.UiDrawList.Quads,
-            textPipeline,
-            in packetTextParameters,
-            packet.AtlasPages,
-            packet.TextDrawList.Glyphs);
-    }
-
-    public bool RenderClearFrame(float r, float g, float b, float a)
-    {
-        _clearColor = new ClearColorValue(r, g, b, a);
-        return this.SubmitFrame(default(RenderFramePacket));
-    }
-
     public bool Resize(WindowMetrics metrics)
     {
         if (_disposed)
@@ -1328,269 +1213,6 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         _swapchain = CreateSwapchain(_renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
         (_imageViews, _frameBuffers) = CreateSwapchainImageViews(_renderer.Api, _khrSwapchain, _device, _extent, _renderPass, _swapchain, _imageFormat);
         return _frameBuffers.Length > 0;
-    }
-
-    private bool EndFrame(
-        in RenderFrameState frameState,
-        in ClearColorValue clearColor,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords,
-        VulkanGraphicsPipeline? uiPipeline = null,
-        in GraphicsFrameParameters uiParameters = default,
-        ReadOnlySpan<UiQuad> uiQuads = default,
-        VulkanTextGraphicsPipeline? textPipeline = null,
-        in TextFrameParameters textParameters = default,
-        ReadOnlySpan<ITextAtlasPage> atlasPages = default,
-        ReadOnlySpan<TextGlyphInstance> textGlyphs = default)
-    {
-        _ = frameState;
-        _ = dirtyRecords;
-        var api = _renderer.Api;
-        var success = false;
-
-        try
-        {
-            var clearValue = new ClearValue(clearColor);
-            var renderPassInfo = new RenderPassBeginInfo
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = _renderPass,
-                Framebuffer = _frameBuffers[(int)_activeImageIndex],
-                RenderArea = new Rect2D
-                {
-                    Offset = new Offset2D(0, 0),
-                    Extent = _extent
-                },
-                ClearValueCount = 1,
-                PClearValues = &clearValue
-            };
-
-            var commandBufferBeginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            };
-            if (api.BeginCommandBuffer(_commandBuffer, commandBufferBeginInfo) != Result.Success)
-            {
-                return false;
-            }
-
-            api.CmdBeginRenderPass(_commandBuffer, &renderPassInfo, SubpassContents.Inline);
-            if (_pendingGraphicsPipeline is { IsAlive: true })
-            {
-                var pipeline = _pendingGraphicsPipeline;
-                api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, pipeline.Pipeline);
-
-                var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
-                var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = _extent };
-                api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
-                api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
-
-                var pushConstants = new GraphicsPushConstants
-                {
-                    ResolutionX = _pendingFrameParameters.ResolutionX,
-                    ResolutionY = _pendingFrameParameters.ResolutionY,
-                    TimeSeconds = _pendingFrameParameters.TimeSeconds,
-                    Reserved = 0
-                };
-                api.CmdPushConstants(
-                    _commandBuffer,
-                    pipeline.PipelineLayout,
-                    ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
-                    0,
-                    (uint)sizeof(GraphicsPushConstants),
-                    &pushConstants);
-                api.CmdDraw(_commandBuffer, 3, 1, 0, 0);
-            }
-            if (uiPipeline is { IsAlive: true } && !uiQuads.IsEmpty)
-            {
-                api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, uiPipeline.Pipeline);
-                var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
-                api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
-                for (var i = 0; i < uiQuads.Length; i++)
-                {
-                    var quad = uiQuads[i];
-                    if (!quad.Clip.TryGetScissor(new WindowMetrics(_extent.Width, _extent.Height, 1), out var uiScissor))
-                    {
-                        continue;
-                    }
-
-                    var scissor = new Rect2D
-                    {
-                        Offset = new Offset2D(uiScissor.X, uiScissor.Y),
-                        Extent = new Extent2D(uiScissor.Width, uiScissor.Height)
-                    };
-                    api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
-                    var pushConstants = new UiQuadPushConstants
-                    {
-                        ResolutionX = uiParameters.ResolutionX,
-                        ResolutionY = uiParameters.ResolutionY,
-                        X = quad.X,
-                        Y = quad.Y,
-                        Width = quad.Width,
-                        Height = quad.Height,
-                        Red = quad.Red,
-                        Green = quad.Green,
-                        Blue = quad.Blue,
-                        Alpha = quad.Alpha
-                    };
-                    api.CmdPushConstants(
-                        _commandBuffer,
-                        uiPipeline.PipelineLayout,
-                        ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
-                        0,
-                        (uint)sizeof(UiQuadPushConstants),
-                        &pushConstants);
-                    api.CmdDraw(_commandBuffer, 6, 1, 0, 0);
-                }
-            }
-            if (textPipeline is { IsAlive: true } && !textGlyphs.IsEmpty)
-            {
-                if (!RenderText(in textParameters, textGlyphs, atlasPages, textPipeline))
-                {
-                    return false;
-                }
-            }
-            api.CmdEndRenderPass(_commandBuffer);
-            if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
-            {
-                return false;
-            }
-
-            var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
-            var imageAvailable = _imageAvailable;
-            var renderComplete = _renderComplete;
-            var commandBuffer = _commandBuffer;
-            var imageIndex = _activeImageIndex;
-            var swapchain = _swapchain;
-            var submitInfo = new SubmitInfo
-            {
-                SType = StructureType.SubmitInfo,
-                WaitSemaphoreCount = 1,
-                PWaitSemaphores = &imageAvailable,
-                PWaitDstStageMask = waitStages,
-                CommandBufferCount = 1,
-                PCommandBuffers = &commandBuffer,
-                SignalSemaphoreCount = 1,
-                PSignalSemaphores = &renderComplete
-            };
-
-            if (api.QueueSubmit(_graphicsQueue, 1, &submitInfo, _renderFence) != Result.Success)
-            {
-                return false;
-            }
-
-            if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success)
-            {
-                return false;
-            }
-
-            var presentInfo = new PresentInfoKHR
-            {
-                SType = StructureType.PresentInfoKhr,
-                WaitSemaphoreCount = 1,
-                PWaitSemaphores = &renderComplete,
-                SwapchainCount = 1,
-                PSwapchains = &swapchain,
-                PImageIndices = &imageIndex
-            };
-
-            var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
-            success = (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
-                api.QueueWaitIdle(_presentQueue) == Result.Success;
-        }
-        finally
-        {
-            _inFrame = false;
-            _pendingGraphicsPipeline = null;
-        }
-
-        return success;
-    }
-
-    private bool RenderText(in TextFrameParameters parameters, ReadOnlySpan<TextGlyphInstance> glyphs, ReadOnlySpan<ITextAtlasPage> atlasPages, VulkanTextGraphicsPipeline pipeline)
-    {
-        if (!TextBatching.TryBuild(glyphs, pipeline.OrderedGlyphs, pipeline.BatchGlyphs, out var orderedCount, out var batchCount))
-        {
-            return false;
-        }
-
-        if (!pipeline.EnsureInstanceCapacity((uint)orderedCount))
-        {
-            return false;
-        }
-
-        pipeline.UploadGlyphs(pipeline.OrderedGlyphs.Slice(0, orderedCount));
-
-        var api = _renderer.Api;
-        var viewport = new Viewport(0, 0, _extent.Width, _extent.Height, 0, 1);
-        api.CmdSetViewport(_commandBuffer, 0, 1, &viewport);
-
-        for (var i = 0; i < batchCount; i++)
-        {
-            var batch = pipeline.BatchGlyphs[i];
-            if (!batch.Key.Clip.TryGetScissor(new WindowMetrics(_extent.Width, _extent.Height, 1), out var uiScissor))
-            {
-                continue;
-            }
-
-            var matchedPage = FindAtlasPage(atlasPages, batch.Key.AtlasPage);
-            if (matchedPage is not VulkanTextAtlasPage atlasPage)
-            {
-                return false;
-            }
-
-            pipeline.UpdateDescriptorSet(atlasPage);
-            var scissor = new Rect2D
-            {
-                Offset = new Offset2D(uiScissor.X, uiScissor.Y),
-                Extent = new Extent2D(uiScissor.Width, uiScissor.Height)
-            };
-            api.CmdSetScissor(_commandBuffer, 0, 1, &scissor);
-
-            var pushConstants = new TextPushConstants
-            {
-                ResolutionX = parameters.ResolutionX,
-                ResolutionY = parameters.ResolutionY,
-                TimeSeconds = parameters.TimeSeconds,
-                TextRed = parameters.TextColor.Red,
-                TextGreen = parameters.TextColor.Green,
-                TextBlue = parameters.TextColor.Blue,
-                TextAlpha = parameters.TextColor.Alpha,
-                OutlineRed = parameters.OutlineColor.Red,
-                OutlineGreen = parameters.OutlineColor.Green,
-                OutlineBlue = parameters.OutlineColor.Blue,
-                OutlineAlpha = parameters.OutlineColor.Alpha,
-                OutlineWidth = parameters.OutlineWidth,
-                Reserved = 0
-            };
-            api.CmdBindPipeline(_commandBuffer, PipelineBindPoint.Graphics, pipeline.Pipeline);
-            api.CmdPushConstants(
-                _commandBuffer,
-                pipeline.PipelineLayout,
-                ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
-                0,
-                (uint)sizeof(TextPushConstants),
-                &pushConstants);
-
-            var descriptorSet = pipeline.DescriptorSet;
-            api.CmdBindDescriptorSets(_commandBuffer, PipelineBindPoint.Graphics, pipeline.PipelineLayout, 0, 1, &descriptorSet, 0, null);
-            api.CmdDraw(_commandBuffer, 6, (uint)batch.Count, 0, (uint)batch.Start);
-        }
-
-        return true;
-    }
-
-    private static ITextAtlasPage? FindAtlasPage(ReadOnlySpan<ITextAtlasPage> atlasPages, TextAtlasPageId id)
-    {
-        for (var i = 0; i < atlasPages.Length; i++)
-        {
-            if (atlasPages[i].Description.Id == id)
-            {
-                return atlasPages[i];
-            }
-        }
-
-        return null;
     }
 
     private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in IGraphicsShaderProgram shaderProgram)

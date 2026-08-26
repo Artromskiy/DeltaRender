@@ -1,11 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using Delta.Render.Core;
-using Delta.Render.Core.RenderGraph;
+using Delta.Render;
+using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
-using RenderShaderBinding = Delta.Render.Core.RenderGraph.ShaderBinding;
+using RenderShaderBinding = Delta.Render.RenderGraph.ShaderBinding;
 
 namespace Delta.Render.Vulkan;
 
@@ -71,7 +71,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
             throw new InvalidOperationException("RenderGraph.Execute requires a successful Build first.");
         }
 
-        if (!_session.BeginGraphFrame(out _))
+        if (!_session.BeginGraphFrame())
         {
             return;
         }
@@ -1444,7 +1444,7 @@ internal sealed unsafe class VulkanGraphPipeline
         }
     }
     private static ShaderStageFlags ToStageFlags(ShaderStageMask stages) { var result = ShaderStageFlags.None; if (stages.HasFlag(ShaderStageMask.Vertex)) result |= ShaderStageFlags.VertexBit; if (stages.HasFlag(ShaderStageMask.Fragment)) result |= ShaderStageFlags.FragmentBit; if (stages.HasFlag(ShaderStageMask.Compute)) result |= ShaderStageFlags.ComputeBit; return result; }
-    private static Silk.NET.Vulkan.PrimitiveTopology ToTopology(Delta.Render.Core.RenderGraph.PrimitiveTopology topology) => topology switch { Delta.Render.Core.RenderGraph.PrimitiveTopology.TriangleStrip => Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, Delta.Render.Core.RenderGraph.PrimitiveTopology.LineList => Silk.NET.Vulkan.PrimitiveTopology.LineList, Delta.Render.Core.RenderGraph.PrimitiveTopology.PointList => Silk.NET.Vulkan.PrimitiveTopology.PointList, _ => Silk.NET.Vulkan.PrimitiveTopology.TriangleList };
+    private static Silk.NET.Vulkan.PrimitiveTopology ToTopology(Delta.Render.RenderGraph.PrimitiveTopology topology) => topology switch { Delta.Render.RenderGraph.PrimitiveTopology.TriangleStrip => Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, Delta.Render.RenderGraph.PrimitiveTopology.LineList => Silk.NET.Vulkan.PrimitiveTopology.LineList, Delta.Render.RenderGraph.PrimitiveTopology.PointList => Silk.NET.Vulkan.PrimitiveTopology.PointList, _ => Silk.NET.Vulkan.PrimitiveTopology.TriangleList };
     private static CullModeFlags ToCullMode(RasterCullMode mode) => mode switch { RasterCullMode.Front => CullModeFlags.FrontBit, RasterCullMode.Back => CullModeFlags.BackBit, _ => CullModeFlags.None };
     private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
 }

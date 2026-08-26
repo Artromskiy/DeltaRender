@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Render.Core;
+using Delta.Render;
 
 namespace Delta.Render.Platform.SDL3;
 

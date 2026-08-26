@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Delta.Render.Core;
+using Delta.Render;
 
 namespace Delta.Render.Tests;
 

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.Vulkan;
 using Delta.Render.FullscreenShaders;
@@ -54,58 +54,42 @@ internal static class Program
             var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var _ = renderer;
 
-            await using IRenderWindowFrameSession session = renderer.CreateWindowSession(window);
-            if (clearOnly)
+            await using IRenderFrameSession session = renderer.CreateWindowSession(window);
+            var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", panel ? "ui-panel.vert.spv" : "fullscreen-rounded-rectangle.vert.spv");
+            var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", panel ? "ui-panel.frag.spv" : "fullscreen-rounded-rectangle.frag.spv");
+            if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
             {
-                if (!session.SubmitFrame(default(RenderFramePacket)))
-                {
-                    await Console.Error.WriteLineAsync("Failed to render clear frame.");
-                    return 1;
-                }
+                await Console.Error.WriteLineAsync("Graphics fixtures were not found.");
+                return 1;
             }
-            else
+
+            var program = panel
+                ? UiPanelGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath))
+                : FullscreenUiGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath));
+            var graph = session.CreateRenderGraph();
+            var stopwatch = Stopwatch.StartNew();
+            var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
+                ? Math.Max(1, parsedFrames)
+                : 1;
+            var renderedFrames = 0;
+            var panelAdapter = new PanelUiAdapter();
+            while (interactive || renderedFrames < frames)
             {
-                var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.spv");
-                var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.spv");
-                if (panel)
-                {
-                    vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.vert.spv");
-                    fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.frag.spv");
-                }
-                if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
-                {
-                    await Console.Error.WriteLineAsync("Graphics fixtures were not found; use --clear for the swapchain-only path.");
-                    return 1;
-                }
-
-                var program = panel
-                    ? UiPanelGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath))
-                    : FullscreenUiGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath));
-                await using var pipeline = session.CreateGraphicsPipeline(in program);
-                var stopwatch = Stopwatch.StartNew();
-                var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
-                    ? Math.Max(1, parsedFrames)
-                    : 1;
-                var renderedFrames = 0;
-                var panelAdapter = new PanelUiAdapter();
-                while (interactive || renderedFrames < frames)
-                {
-                    Sdl3WindowFactory.PumpEvents();
-                    var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
-                    var drawList = new UiDrawList(panelAdapter.CurrentDrawList.Span);
-                    var rendered = panel
-                        ? SubmitPanelFrame(session, pipeline, in parameters, in drawList)
-                        : SubmitFullscreenFrame(session, pipeline, in parameters);
-                    if (!rendered)
-                    {
-                        await Console.Error.WriteLineAsync("Failed to render fullscreen graphics frame.");
-                        return 1;
-                    }
-
-                    renderedFrames++;
-                }
-                await Console.Out.WriteLineAsync($"graphics={(panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
+                Sdl3WindowFactory.PumpEvents();
+                var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                var drawList = panelAdapter.CurrentDrawList.Span;
+                var feature = new SmokeRasterFeature(program, in parameters, panel ? drawList : ReadOnlySpan<UiQuad>.Empty, panel);
+                var view = new RenderView(
+                    new RenderSurfaceHandle(1, 1),
+                    new RenderViewport(0, 0, window.Metrics.Width, window.Metrics.Height),
+                    new PixelRect(0, 0, (int)window.Metrics.Width, (int)window.Metrics.Height));
+                var frame = new RenderGraphFrame(renderedFrames, new[] { view });
+                graph.Build(in frame, new IRenderFeature[] { feature });
+                graph.Execute();
+                renderedFrames++;
             }
+            await graph.DisposeAsync().ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
         }
         catch (Exception ex)
         {
@@ -116,34 +100,6 @@ internal static class Program
 
         Sdl3WindowFactory.PumpEvents();
         return 0;
-    }
-
-    private static bool SubmitFullscreenFrame(
-        IRenderWindowFrameSession session,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters)
-    {
-        var frameState = session.BeginFrame();
-        return frameState.IsValid && session.DrawFullscreenTriangle(pipeline, in parameters) &&
-               session.EndFrame(in frameState, default(RenderFramePacket));
-    }
-
-    private static bool SubmitPanelFrame(
-        IRenderWindowFrameSession session,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        in UiDrawList drawList)
-    {
-        var packet = new RenderFramePacket(
-            pipeline,
-            parameters,
-            drawList,
-            null,
-            default,
-            ReadOnlySpan<ITextAtlasPage>.Empty,
-            default,
-            ReadOnlySpan<RenderRecordChange>.Empty);
-        return session.SubmitFrame(in packet);
     }
 
     private sealed class PanelUiAdapter
@@ -158,6 +114,91 @@ internal static class Program
         ];
 
         public ReadOnlyMemory<UiQuad> CurrentDrawList => _drawList;
+    }
+
+    private sealed class SmokeRasterFeature : IRenderFeature
+    {
+        private readonly IGraphicsShaderProgram _program;
+        private readonly GraphicsFrameParameters _parameters;
+        private readonly UiQuad[] _quads;
+        private readonly bool _panel;
+
+        public SmokeRasterFeature(
+            IGraphicsShaderProgram program,
+            in GraphicsFrameParameters parameters,
+            ReadOnlySpan<UiQuad> quads,
+            bool panel)
+        {
+            _program = program;
+            _parameters = parameters;
+            _quads = quads.ToArray();
+            _panel = panel;
+        }
+
+        public void AddPasses(IRenderGraphBuilder graph, IRenderFeatureContext context)
+        {
+            var surface = graph.ImportSurface(context.View.Surface);
+            var pass = graph.AddRasterPass(
+                new RasterPassDescription("smoke", new RasterPipelineDescription(_program, RasterCullMode.None)),
+                new SmokeRasterPass(context.View.Viewport, context.View.Scissor, _parameters, _quads, _panel));
+            graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(
+                surface,
+                AttachmentLoadOperation.Clear,
+                AttachmentStoreOperation.Store,
+                new ClearColor(0.1f, 0.12f, 0.2f, 1f)));
+        }
+    }
+
+    private sealed class SmokeRasterPass(
+        RenderViewport viewport,
+        PixelRect scissor,
+        GraphicsFrameParameters parameters,
+        UiQuad[] quads,
+        bool panel) : IRasterPass
+    {
+        public void Record(IRasterCommandContext commands)
+        {
+            commands.SetViewport(in viewport);
+            commands.SetScissor(in scissor);
+            if (!panel)
+            {
+                Span<byte> pushConstants = stackalloc byte[16];
+                WriteFloat(pushConstants, 0, parameters.ResolutionX);
+                WriteFloat(pushConstants, 4, parameters.ResolutionY);
+                WriteFloat(pushConstants, 8, parameters.TimeSeconds);
+                commands.PushConstants(pushConstants);
+                commands.Draw(3);
+                return;
+            }
+
+            Span<byte> panelConstants = stackalloc byte[40];
+            for (var index = 0; index < quads.Length; index++)
+            {
+                var quad = quads[index];
+                if (!quad.Clip.TryGetScissor(new WindowMetrics((uint)scissor.Width, (uint)scissor.Height, 1), out var quadScissor))
+                {
+                    continue;
+                }
+
+                var quadRect = new PixelRect(quadScissor.X, quadScissor.Y, (int)quadScissor.Width, (int)quadScissor.Height);
+                commands.SetScissor(in quadRect);
+                WriteFloat(panelConstants, 0, parameters.ResolutionX);
+                WriteFloat(panelConstants, 4, parameters.ResolutionY);
+                WriteFloat(panelConstants, 8, quad.X);
+                WriteFloat(panelConstants, 12, quad.Y);
+                WriteFloat(panelConstants, 16, quad.Width);
+                WriteFloat(panelConstants, 20, quad.Height);
+                WriteFloat(panelConstants, 24, quad.Red);
+                WriteFloat(panelConstants, 28, quad.Green);
+                WriteFloat(panelConstants, 32, quad.Blue);
+                WriteFloat(panelConstants, 36, quad.Alpha);
+                commands.PushConstants(panelConstants);
+                commands.Draw(6);
+            }
+        }
+
+        private static void WriteFloat(Span<byte> destination, int offset, float value)
+            => MemoryMarshal.Write(destination[offset..], in value);
     }
 
     private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath)

@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Delta.Render.Core;
-using Delta.Render.Core.RenderGraph;
+using Delta.Render;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -208,42 +207,6 @@ public sealed class TextSubmissionContractTests
         Assert.Equal(new TextAtlasPageId(4), batches[2].Key.AtlasPage);
     }
 
-    [Fact]
-    public void TextSubmissionExtensionReachesExistingUiTextSubmitSeam()
-    {
-        using var session = new RecordingSession();
-        using var uiPipeline = new FakePipeline();
-        using var textPipeline = new FakePipeline();
-        var uiQuads = Array.Empty<UiQuad>();
-        var uiDrawList = new UiDrawList(uiQuads);
-        var records = new[]
-        {
-            new TextSubmissionRecord(new TextSubmissionHandle(TextSubmissionOwnerKind.XamlElement, 1, 1),
-                TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)), new TextRun(new[] { Glyph(6, 0, 0) }),
-                UiClipRect.Unbounded, 1, 0)
-        };
-        var ordered = new TextGlyphInstance[1];
-        var batches = new TextBatchRange[1];
-
-        var submitted = session.SubmitTextSubmission(
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            in uiDrawList,
-            textPipeline,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            ReadOnlySpan<ITextAtlasPage>.Empty,
-            new TextSubmissionFrame(records),
-            new TextProjectionContext(64, 64, 1),
-            null,
-            ordered,
-            batches,
-            ReadOnlySpan<RenderRecordChange>.Empty);
-
-        Assert.True(submitted);
-        Assert.Equal(1, session.EndFrameCount);
-        Assert.Single(session.EndedGlyphs);
-        Assert.Equal(new TextAtlasPageId(6), session.EndedGlyphs[0].AtlasPage);
-    }
 
     [Fact]
     public void UiRenderBatchAdapterPreservesRectanglesTextAndDirtySelection()
@@ -373,47 +336,6 @@ public sealed class TextSubmissionContractTests
         Assert.True(adapter.Borrow(in nextFrame).IsEmpty);
     }
 
-    [Fact]
-    public void UiRenderBatchSubmissionUsesTheCombinedUiTextAndDirtySeam()
-    {
-        using var session = new RecordingSession();
-        using var uiPipeline = new FakePipeline();
-        using var textPipeline = new FakePipeline();
-        using var adapter = new UiRenderBatchAdapter();
-        var frame = adapter.Replace(
-            new[] { new UiQuad(1, 2, 3, 4, 1, 1, 1, 1) },
-            new[]
-            {
-                new TextSubmissionRecord(
-                    new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 3, 1),
-                    TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)),
-                    new TextRun(new[] { Glyph(9, 0, 0) }),
-                    UiClipRect.Unbounded,
-                    1,
-                    0)
-            },
-            new[] { RenderRecordChange.Remove(4, 5) });
-        var batch = adapter.Borrow(in frame);
-        var ordered = new TextGlyphInstance[1];
-        var ranges = new TextBatchRange[1];
-
-        Assert.True(session.Submit(
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            textPipeline,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            ReadOnlySpan<ITextAtlasPage>.Empty,
-            in batch,
-            new TextProjectionContext(64, 64, 1),
-            null,
-            ordered,
-            ranges));
-
-        Assert.Equal(1, session.EndFrameCount);
-        Assert.Single(session.EndedQuads);
-        Assert.Single(session.EndedDirtyRecords);
-        Assert.Single(session.EndedGlyphs);
-    }
 
     [Fact]
     public void UiRenderBatchRejectsStaleAndDisposedFrameTokens()
@@ -497,126 +419,6 @@ public sealed class TextSubmissionContractTests
         Assert.Equal(3, second.Batch.Rectangles[0].X);
     }
 
-    [Fact]
-    public void EndPreparedFrameEmptyPathEndsExactlyOnceWithoutBeginningFrame()
-    {
-        using var session = new RecordingSession();
-        using var uiPipeline = new FakePipeline();
-        using var source = new TestFrameSource();
-        var rectangles = new[] { new UiQuad(2, 3, 20, 10, 1, 0, 0, 1) };
-        var dirty = new[] { RenderRecordChange.Remove(11, 4) };
-        source.Prepare(rectangles, ReadOnlySpan<TextSubmissionRecord>.Empty, dirty, []);
-        var view = source.BorrowFrame();
-        var state = RenderFrameState.Ready(2, new WindowMetrics(64, 64, 1));
-
-        Assert.True(session.EndPreparedFrame(
-            in state,
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            null,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            in view,
-            new TextProjectionContext(64, 64, 1),
-            null,
-            Span<TextGlyphInstance>.Empty,
-            Span<TextBatchRange>.Empty));
-
-        Assert.Equal(0, session.BeginFrameCount);
-        Assert.Equal(1, session.EndFrameCount);
-        Assert.Equal(0, session.SubmitCount);
-        Assert.Equal(rectangles, session.EndedQuads);
-        Assert.Equal(dirty, session.EndedDirtyRecords);
-    }
-
-    [Fact]
-    public void EndPreparedFrameTextPathUsesOneCombinedEndFrameWithAtlasAndProjection()
-    {
-        using var session = new RecordingSession();
-        using var uiPipeline = new FakePipeline();
-        using var textPipeline = new FakePipeline();
-        using var source = new TestFrameSource();
-        var page = new TestAtlasPage(new TextAtlasPageDescription(new TextAtlasPageId(13), 64, 64, TextAtlasFormat.R8Unorm));
-        var pages = new ITextAtlasPage[] { page };
-        var glyph = Glyph(13, 1, 2, new UiClipRect(0, 0, 40, 40));
-        var record = new TextSubmissionRecord(
-            new TextSubmissionHandle(TextSubmissionOwnerKind.Entity, 5, 1),
-            TextAnchor.ScreenPixels(new TextScreenAnchor(2, 3)),
-            new TextRun(new[] { glyph }),
-            new UiClipRect(0, 0, 40, 40),
-            1,
-            0);
-        source.Prepare(ReadOnlySpan<UiQuad>.Empty, new[] { record }, ReadOnlySpan<RenderRecordChange>.Empty, pages);
-        var view = source.BorrowFrame();
-        var state = RenderFrameState.Ready(3, new WindowMetrics(64, 64, 1));
-        Span<TextGlyphInstance> ordered = stackalloc TextGlyphInstance[1];
-        Span<TextBatchRange> batches = stackalloc TextBatchRange[1];
-
-        Assert.True(session.EndPreparedFrame(
-            in state,
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            textPipeline,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            in view,
-            new TextProjectionContext(64, 64, 1),
-            null,
-            ordered,
-            batches));
-
-        Assert.Equal(0, session.BeginFrameCount);
-        Assert.Equal(1, session.EndFrameCount);
-        Assert.Equal(0, session.SubmitCount);
-        Assert.Same(page, Assert.Single(session.EndedAtlasPages));
-        var submittedGlyph = Assert.Single(session.EndedGlyphs);
-        Assert.Equal(new TextAtlasPageId(13), submittedGlyph.AtlasPage);
-        Assert.Equal(new TextPixelBounds(3, 5, 10, 10), submittedGlyph.PixelBounds);
-        Assert.Equal(new UiClipRect(0, 0, 40, 40), submittedGlyph.Clip);
-    }
-
-    [Fact]
-    public void EndPreparedFrameRejectsMissingPipelineAndInsufficientScratchWithoutEnding()
-    {
-        using var session = new RecordingSession();
-        using var uiPipeline = new FakePipeline();
-        using var textPipeline = new FakePipeline();
-        using var source = new TestFrameSource();
-        var record = new TextSubmissionRecord(
-            new TextSubmissionHandle(TextSubmissionOwnerKind.XamlElement, 6, 1),
-            TextAnchor.ScreenPixels(new TextScreenAnchor(0, 0)),
-            new TextRun(new[] { Glyph(14, 0, 0) }),
-            UiClipRect.Unbounded,
-            1,
-            0);
-        source.Prepare(ReadOnlySpan<UiQuad>.Empty, new[] { record }, ReadOnlySpan<RenderRecordChange>.Empty, []);
-        var view = source.BorrowFrame();
-        var state = RenderFrameState.Ready(0, new WindowMetrics(64, 64, 1));
-
-        Assert.False(session.EndPreparedFrame(
-            in state,
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            null,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            in view,
-            new TextProjectionContext(64, 64, 1),
-            null,
-            Span<TextGlyphInstance>.Empty,
-            Span<TextBatchRange>.Empty));
-        Assert.False(session.EndPreparedFrame(
-            in state,
-            uiPipeline,
-            new GraphicsFrameParameters(64, 64, 0),
-            textPipeline,
-            new TextFrameParameters(64, 64, 0, new TextColor(1, 1, 1, 1), new TextColor(0, 0, 0, 1), 0),
-            in view,
-            new TextProjectionContext(64, 64, 1),
-            null,
-            Span<TextGlyphInstance>.Empty,
-            Span<TextBatchRange>.Empty));
-        Assert.Equal(0, session.EndFrameCount);
-        Assert.Equal(0, session.SubmitCount);
-    }
-
     private static TextGlyphInstance Glyph(uint page, int x, int y, UiClipRect? clip = null) =>
         new(new TextAtlasPageId(page), new TextUvRect(0, 0, 0.1f, 0.1f), new TextPixelBounds(x, y, 10, 10),
             new TextColor(1, 1, 1, 1), clip ?? UiClipRect.Unbounded, TextRenderMode.Sdf, 4, 0.01f, 11);
@@ -674,41 +476,4 @@ public sealed class TextSubmissionContractTests
         }
     }
 
-    private sealed class RecordingSession : IRenderWindowFrameSession, IDisposable
-    {
-        public void Dispose() { }
-        public int SubmitCount { get; private set; }
-        public int BeginFrameCount { get; private set; }
-        public int EndFrameCount { get; private set; }
-        public UiQuad[] SubmittedQuads { get; private set; } = Array.Empty<UiQuad>();
-        public RenderRecordChange[] SubmittedDirtyRecords { get; private set; } = Array.Empty<RenderRecordChange>();
-        public TextGlyphInstance[] SubmittedGlyphs { get; private set; } = Array.Empty<TextGlyphInstance>();
-        public UiQuad[] EndedQuads { get; private set; } = Array.Empty<UiQuad>();
-        public RenderRecordChange[] EndedDirtyRecords { get; private set; } = Array.Empty<RenderRecordChange>();
-        public ITextAtlasPage[] EndedAtlasPages { get; private set; } = Array.Empty<ITextAtlasPage>();
-        public TextGlyphInstance[] EndedGlyphs { get; private set; } = Array.Empty<TextGlyphInstance>();
-        public RenderWindowId WindowId => new(Guid.Empty);
-
-        public RenderFrameState BeginFrame()
-        {
-            BeginFrameCount++;
-            return RenderFrameState.Ready(0, new WindowMetrics(64, 64, 1));
-        }
-        public bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet)
-        {
-            EndFrameCount++;
-            EndedQuads = packet.UiDrawList.Quads.ToArray();
-            EndedAtlasPages = packet.AtlasPages.ToArray();
-            EndedGlyphs = packet.TextDrawList.Glyphs.ToArray();
-            EndedDirtyRecords = packet.DirtyRecords.ToArray();
-            return true;
-        }
-        public IGraphicsPipeline CreateTextPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
-        public IGraphicsPipeline CreateGraphicsPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
-        public ITextAtlasDevice CreateTextAtlasDevice() => throw new NotSupportedException();
-        public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters) => false;
-        public bool Resize(WindowMetrics metrics) => false;
-        public IRenderGraph CreateRenderGraph() => throw new NotSupportedException();
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
 }

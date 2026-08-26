@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Render.Vulkan;
 using Xunit;
 

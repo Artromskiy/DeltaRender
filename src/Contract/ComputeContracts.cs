@@ -1,6 +1,6 @@
 using Delta.Shader.Contract;
 
-namespace Delta.Render.Core;
+namespace Delta.Render;
 
 public enum ComputeBufferAccess
 {

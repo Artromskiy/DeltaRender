@@ -1,4 +1,4 @@
-using Delta.Render.Core;
+using Delta.Render;
 using Delta.Shader.Contract;
 using Xunit;
 
@@ -93,14 +93,14 @@ public sealed class GraphicsContractTests
     [Fact]
     public void FrameSessionExposesGraphicsWithoutEventPumpOwnership()
     {
-        var members = typeof(IRenderWindowFrameSession).GetMethods()
+        var members = typeof(IRenderFrameSession).GetMethods()
             .Select(static method => method.Name)
             .ToArray();
 
-        Assert.Contains(nameof(IRenderWindowFrameSession.CreateGraphicsPipeline), members);
-        Assert.Contains(nameof(IRenderWindowFrameSession.DrawFullscreenTriangle), members);
-        Assert.Contains(nameof(IRenderWindowFrameSession.EndFrame), members);
-        Assert.Equal(1, members.Count(name => name == nameof(IRenderWindowFrameSession.EndFrame)));
+        Assert.Contains(nameof(IRenderFrameSession.CreateGraphicsPipeline), members);
+        Assert.Contains(nameof(IRenderFrameSession.CreateRenderGraph), members);
+        Assert.DoesNotContain("DrawFullscreenTriangle", members);
+        Assert.DoesNotContain("EndFrame", members);
         Assert.DoesNotContain("SubmitFrame", members);
         Assert.DoesNotContain("PollEvents", members);
     }

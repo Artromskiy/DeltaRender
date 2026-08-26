@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Delta.Render.Core;
+using Delta.Render;
 
 namespace Delta.Render.Vulkan;
 
