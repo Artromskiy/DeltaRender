@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.Core;
 
@@ -418,50 +418,54 @@ public readonly record struct TextGraphicsShaderLayout(
 public static class TextShaderArtifactContract
 {
     // Resource semantics remain owned by Delta.Shader; Render introduces no second manifest.
-    public static TextShaderArtifactDiagnostic Validate(GraphicsShaderProgram program)
+    public static TextShaderArtifactDiagnostic Validate(IGraphicsShaderProgram program)
     {
         ArgumentNullException.ThrowIfNull(program);
-        if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
-            program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
-        {
-            return new(TextShaderArtifactStatus.Invalid, "Unsupported ShaderArtifact format version.");
-        }
-
-        if (!TryDescribe(program, out _, out var diagnostic))
-        {
-            return diagnostic;
-        }
-
-        return new(TextShaderArtifactStatus.Ready, "Text shader artifact manifest is ready.");
+        TryDescribe(program, out _, out var diagnostic);
+        return diagnostic;
     }
 
-    public static bool TryDescribe(GraphicsShaderProgram program, out TextGraphicsShaderLayout layout, out TextShaderArtifactDiagnostic diagnostic)
+    public static bool TryDescribe(
+        IGraphicsShaderProgram program,
+        out TextGraphicsShaderLayout layout,
+        out TextShaderArtifactDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(program);
         layout = default;
-        if (program.Vertex.FormatVersion != ShaderArtifact.CurrentFormatVersion ||
-            program.Fragment.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+
+        if (!ValidateArtifact(program.Vertex, ShaderStage.Vertex, out var vertexArtifactMessage))
         {
-            diagnostic = new(TextShaderArtifactStatus.Invalid, "Unsupported ShaderArtifact format version.");
+            diagnostic = new(
+                TextShaderArtifactStatus.Invalid,
+                vertexArtifactMessage ?? "Invalid vertex shader artifact.");
             return false;
         }
 
-        if (!ValidateVertex(program.Vertex.Manifest, out var vertexMessage, out var vertexLayout))
+        if (!ValidateArtifact(program.Fragment, ShaderStage.Fragment, out var fragmentArtifactMessage))
+        {
+            diagnostic = new(
+                TextShaderArtifactStatus.Invalid,
+                fragmentArtifactMessage ?? "Invalid fragment shader artifact.");
+            return false;
+        }
+
+        if (!ValidateVertex(program.Vertex.Abi, out var vertexMessage, out var vertexLayout))
         {
             diagnostic = new(TextShaderArtifactStatus.Invalid, vertexMessage);
             return false;
         }
 
-        if (!ValidateFragment(program.Fragment.Manifest, out var fragmentMessage, out var fragmentLayout))
+        if (!ValidateFragment(program.Fragment.Abi, out var fragmentMessage, out var fragmentLayout))
         {
             diagnostic = new(TextShaderArtifactStatus.Invalid, fragmentMessage);
             return false;
         }
 
-        if (vertexLayout.PushConstantSize == 0 || fragmentLayout.PushConstantSize == 0 ||
-            vertexLayout.PushConstantSize != fragmentLayout.PushConstantSize)
+        if (vertexLayout.PushConstantSize != 64 || fragmentLayout.PushConstantSize != 64)
         {
-            diagnostic = new(TextShaderArtifactStatus.Invalid, "Text shader stages must declare the same non-zero push-constant size.");
+            diagnostic = new(
+                TextShaderArtifactStatus.Invalid,
+                "Text shader stages must declare the canonical 64-byte push-constant block.");
             return false;
         }
 
@@ -472,179 +476,168 @@ public static class TextShaderArtifactContract
             fragmentLayout.TextureSet,
             fragmentLayout.TextureBinding,
             fragmentLayout.TextureAccess,
-            vertexLayout.PushConstantSize);
+            64);
         diagnostic = new(TextShaderArtifactStatus.Ready, "Text shader artifact manifest is ready.");
         return true;
     }
 
-    private static bool ValidateVertex(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
+    private static bool ValidateArtifact(IShaderArtifact artifact, ShaderStage stage, out string? message)
+    {
+        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+        {
+            message = $"{stage} ShaderArtifact format version is unsupported.";
+            return false;
+        }
+
+        if (artifact.Abi.Version != ShaderAbi.CurrentVersion ||
+            artifact.Abi.Stage != stage ||
+            string.IsNullOrWhiteSpace(artifact.EntryPoint))
+        {
+            message = $"{stage} ShaderArtifact ABI or entry point is incomplete.";
+            return false;
+        }
+
+        if (artifact.Spirv.IsEmpty || (artifact.Spirv.Length & 3) != 0)
+        {
+            message = $"{stage} ShaderArtifact SPIR-V is empty or not word aligned.";
+            return false;
+        }
+
+        message = null;
+        return true;
+    }
+
+    private static bool ValidateVertex(
+        ShaderAbi abi,
+        out string message,
+        out TextGraphicsShaderLayout layout)
     {
         layout = default;
-        if (manifest.Version != ShaderAbiManifest.CurrentVersion || manifest.Stage != ShaderStage.Vertex || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        if (abi.Resources.Count != 1 ||
+            !TryGetResource(abi.Resources, ShaderResourceKind.StorageBuffer, out var storage) ||
+            storage.Binding != new ShaderBinding(0, 0) ||
+            storage.Access != ShaderResourceAccess.Read ||
+            storage.Stages != ShaderStageMask.Vertex ||
+            storage.DescriptorCount != 1 ||
+            !ValidateGlyphStorage(storage.Layout))
         {
-            message = "Vertex text artifact manifest is incomplete.";
+            message = "Vertex text artifact must declare readonly std430 storage at set 0 binding 0.";
             return false;
         }
 
-        if (manifest.Resources.Count != 1 || !TryGetStorageBuffer(manifest.Resources, out var storage))
-        {
-            message = "Vertex text artifact must declare exactly one storage buffer resource.";
-            return false;
-        }
-
-        if (!ValidateGlyphStorage(storage, out message) || !ValidatePushConstants(manifest, out message))
+        if (!ValidatePushConstants(abi, ShaderStageMask.Vertex, out message))
         {
             return false;
         }
 
         layout = new TextGraphicsShaderLayout(
-            storage.Set,
-            storage.Binding,
+            storage.Binding.Set,
+            storage.Binding.Binding,
             storage.Access,
             0,
             0,
-            ShaderResourceAccess.ReadOnly,
+            ShaderResourceAccess.Read,
             64);
         message = string.Empty;
         return true;
     }
 
-    private static bool ValidateFragment(ShaderAbiManifest manifest, out string message, out TextGraphicsShaderLayout layout)
+    private static bool ValidateFragment(
+        ShaderAbi abi,
+        out string message,
+        out TextGraphicsShaderLayout layout)
     {
         layout = default;
-        if (manifest.Version != ShaderAbiManifest.CurrentVersion || manifest.Stage != ShaderStage.Fragment || string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        if (abi.Resources.Count != 1 ||
+            !TryGetResource(abi.Resources, ShaderResourceKind.SampledTexture, out var texture) ||
+            texture.Binding.Set != 0 ||
+            (texture.Binding.Binding != 3 && texture.Binding.Binding != 4) ||
+            texture.Access != ShaderResourceAccess.Read ||
+            texture.Stages != ShaderStageMask.Fragment ||
+            texture.DescriptorCount != 1)
         {
-            message = "Fragment text artifact manifest is incomplete.";
+            message = "Fragment text artifact must declare one readonly sampled texture at set 0 binding 3 or 4.";
             return false;
         }
 
-        if (manifest.Resources.Count != 1 || !TryGetSampledTexture(manifest.Resources, out var texture))
+        if (!ValidatePushConstants(abi, ShaderStageMask.Fragment, out message))
         {
-            message = "Fragment text artifact must declare exactly one sampled texture resource.";
-            return false;
-        }
-
-        if (texture.Set != 0 || (texture.Binding != 3 && texture.Binding != 4) || !ValidatePushConstants(manifest, out message))
-        {
-            message = "Fragment text artifact has an incompatible sampler set/binding or push-constant contract.";
             return false;
         }
 
         layout = new TextGraphicsShaderLayout(
             0,
             0,
-            ShaderResourceAccess.ReadOnly,
-            texture.Set,
-            texture.Binding,
+            ShaderResourceAccess.Read,
+            texture.Binding.Set,
+            texture.Binding.Binding,
             texture.Access,
             64);
         message = string.Empty;
         return true;
     }
 
-    private static bool ValidatePushConstants(ShaderAbiManifest manifest, out string message)
+    private static bool ValidatePushConstants(
+        ShaderAbi abi,
+        ShaderStageMask stage,
+        out string message)
     {
-        if (manifest.PushConstants.Count != 1)
+        if (abi.PushConstants.Count != 1)
         {
             message = "Text shader stages require exactly one push-constant block.";
             return false;
         }
 
-        var block = manifest.PushConstants[0];
-        if (block.Size != 64 || block.Alignment != 16 || block.ArrayStride != 64 || block.Members.Count != 4)
+        var block = abi.PushConstants[0];
+        if (block.Offset != 0 ||
+            block.Size != 64 ||
+            (block.Stages & stage) != stage ||
+            block.Layout.Size != 64 ||
+            block.Layout.Alignment != 16 ||
+            block.Layout.Members.Count != 4)
         {
             message = "Text shader push constants must use the canonical 64-byte layout.";
             return false;
         }
 
-        var expected = new (string Name, string Type, uint Offset, uint Size)[]
+        var members = block.Layout.Members;
+        if (!IsMember(members[0], 0, 8, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 2)) ||
+            !IsMember(members[1], 16, 16, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 4)) ||
+            !IsMember(members[2], 32, 16, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 4)) ||
+            !IsMember(members[3], 48, 4, new ShaderValueType(ShaderValueKind.FloatingPoint, 32)))
         {
-            ("Resolution", "vec2", 0, 8),
-            ("TextColor", "vec4", 16, 16),
-            ("OutlineColor", "vec4", 32, 16),
-            ("OutlineWidth", "float", 48, 4)
-        };
-        for (var index = 0; index < expected.Length; index++)
-        {
-            var member = block.Members[index];
-            var required = expected[index];
-            if (member.Name != required.Name || member.GlslType != required.Type || member.Offset != required.Offset ||
-                member.Size != required.Size || member.ArrayStride != required.Size)
-            {
-                message = "Text shader push-constant members do not match the canonical layout.";
-                return false;
-            }
-        }
-
-        message = string.Empty;
-        return true;
-    }
-
-    private static bool ValidateGlyphStorage(ShaderAbiResource resource, out string message)
-    {
-        if (resource.Set != 0 || resource.Binding != 0 || resource.Stage != ShaderStage.Vertex ||
-            !resource.ReadOnly || resource.Access != ShaderResourceAccess.ReadOnly || resource.Layout != "std430" ||
-            resource.ArrayStride != 48 || resource.Size != 48 || resource.Packing.Scheme != "std430" || resource.Packing.Stride != 48 ||
-            resource.Members.Count != 4)
-        {
-            message = "Text glyph storage must be readonly std430 set 0 binding 0 with stride 48.";
+            message = "Text shader push-constant members do not match the canonical layout.";
             return false;
         }
 
-        var expected = new (string Name, string Type, uint Offset, uint Size)[]
-        {
-            ("PixelMin", "vec2", 0, 8),
-            ("PixelMax", "vec2", 8, 8),
-            ("UvRect", "vec4", 16, 16),
-            ("Color", "vec4", 32, 16)
-        };
-        for (var index = 0; index < expected.Length; index++)
-        {
-            var member = resource.Members[index];
-            var required = expected[index];
-            if (member.Name != required.Name || member.GlslType != required.Type || member.Offset != required.Offset ||
-                member.Size != required.Size || member.ArrayStride != required.Size)
-            {
-                message = "Text glyph storage members do not match the canonical std430 layout.";
-                return false;
-            }
-        }
-
         message = string.Empty;
         return true;
     }
 
-    private static bool TryGetStorageBuffer(IReadOnlyList<ShaderAbiResource> resources, [NotNullWhen(true)] out ShaderAbiResource? resource)
+    private static bool ValidateGlyphStorage(ShaderAbiLayout layout)
     {
-        resource = null;
-        var seen = new HashSet<(uint Set, uint Binding)>();
-        foreach (var candidate in resources)
+        if (layout.Size != 48 || layout.Alignment != 16 || layout.ArrayStride != 48 || layout.Members.Count != 4)
         {
-            if (!seen.Add((candidate.Set, candidate.Binding)))
-            {
-                return false;
-            }
-
-            if (candidate.Category == "storage-buffer")
-            {
-                if (candidate.ReadOnly && candidate.Access == ShaderResourceAccess.ReadOnly && candidate.Layout == "std430")
-                {
-                    resource = candidate;
-                    return true;
-                }
-            }
+            return false;
         }
 
-        return false;
+        var members = layout.Members;
+        return IsMember(members[0], 0, 8, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 2)) &&
+               IsMember(members[1], 8, 8, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 2)) &&
+               IsMember(members[2], 16, 16, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 4)) &&
+               IsMember(members[3], 32, 16, new ShaderValueType(ShaderValueKind.FloatingPoint, 32, 4));
     }
 
-    private static bool TryGetSampledTexture(IReadOnlyList<ShaderAbiResource> resources, [NotNullWhen(true)] out ShaderAbiResource? resource)
+    private static bool TryGetResource(
+        IReadOnlyList<ShaderResourceBinding> resources,
+        ShaderResourceKind kind,
+        [NotNullWhen(true)] out ShaderResourceBinding? resource)
     {
         resource = null;
-        foreach (var candidate in resources)
+        for (var i = 0; i < resources.Count; i++)
         {
-            if (candidate.Category == "sampled-texture" && candidate.Stage == ShaderStage.Fragment &&
-                candidate.ReadOnly && candidate.Access == ShaderResourceAccess.ReadOnly)
+            var candidate = resources[i];
+            if (candidate.Kind == kind)
             {
                 resource = candidate;
                 return true;
@@ -653,4 +646,7 @@ public static class TextShaderArtifactContract
 
         return false;
     }
+
+    private static bool IsMember(ShaderAbiMember member, uint offset, uint size, ShaderValueType type)
+        => member.Offset == offset && member.Size == size && member.Type == type;
 }

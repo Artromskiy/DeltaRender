@@ -1,13 +1,12 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Delta.Render.Core;
-using Delta.Shader.Abstractions;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.Vulkan;
-using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
-using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
+using Delta.Render.FullscreenShaders;
+using Delta.Render.UiShaders;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.Smoke;
 
@@ -23,7 +22,7 @@ internal static class Program
     {
         if (args.Any(a => string.Equals(a, "--compute", StringComparison.OrdinalIgnoreCase)))
         {
-            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader"), GetOption(args, "--compute-manifest")).ConfigureAwait(false);
+            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader")).ConfigureAwait(false);
         }
 
         var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
@@ -58,8 +57,7 @@ internal static class Program
             await using IRenderWindowFrameSession session = renderer.CreateWindowSession(window);
             if (clearOnly)
             {
-                var frameState = session.BeginFrame();
-                if (!frameState.IsValid || !session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty))
+                if (!session.SubmitFrame(default(RenderFramePacket)))
                 {
                     await Console.Error.WriteLineAsync("Failed to render clear frame.");
                     return 1;
@@ -69,39 +67,34 @@ internal static class Program
             {
                 var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.spv");
                 var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.spv");
-                var vertexManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.vert.shader.json");
-                var fragmentManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "fullscreen-rounded-rectangle.frag.shader.json");
                 if (panel)
                 {
                     vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.vert.spv");
                     fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.frag.spv");
-                    vertexManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.vert.shader.json");
-                    fragmentManifestPath = Path.Combine(AppContext.BaseDirectory, "shaders", "ui-panel.frag.shader.json");
                 }
-                if (!File.Exists(vertexPath) || !File.Exists(fragmentPath) ||
-                    !File.Exists(vertexManifestPath) || !File.Exists(fragmentManifestPath))
+                if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
                 {
                     await Console.Error.WriteLineAsync("Graphics fixtures were not found; use --clear for the swapchain-only path.");
                     return 1;
                 }
 
-                var program = new GraphicsShaderProgram(
-                    LoadShaderArtifact(vertexPath, vertexManifestPath),
-                    LoadShaderArtifact(fragmentPath, fragmentManifestPath));
+                var program = panel
+                    ? UiPanelGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath))
+                    : FullscreenUiGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath));
                 await using var pipeline = session.CreateGraphicsPipeline(in program);
                 var stopwatch = Stopwatch.StartNew();
                 var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
                     ? Math.Max(1, parsedFrames)
                     : 1;
                 var renderedFrames = 0;
-                IUiDrawListProvider panelAdapter = new PanelUiAdapter();
+                var panelAdapter = new PanelUiAdapter();
                 while (interactive || renderedFrames < frames)
                 {
                     Sdl3WindowFactory.PumpEvents();
                     var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
-                    var drawList = new UiDrawList(panelAdapter.CurrentDrawList);
+                    var drawList = new UiDrawList(panelAdapter.CurrentDrawList.Span);
                     var rendered = panel
-                        ? session.SubmitFrame(pipeline, in parameters, in drawList, ReadOnlySpan<RenderRecordChange>.Empty)
+                        ? SubmitPanelFrame(session, pipeline, in parameters, in drawList)
                         : SubmitFullscreenFrame(session, pipeline, in parameters);
                     if (!rendered)
                     {
@@ -125,14 +118,6 @@ internal static class Program
         return 0;
     }
 
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Graphics fixture loading occurs before SDL event pumping and must remain on the Cocoa main thread.")]
-    private static DeltaShaderArtifact LoadShaderArtifact(string spirvPath, string manifestPath)
-    {
-        var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(File.ReadAllText(manifestPath))
-            ?? throw new InvalidDataException($"Shader manifest was empty: {manifestPath}");
-        return new DeltaShaderArtifact(File.ReadAllBytes(spirvPath), manifest);
-    }
-
     private static bool SubmitFullscreenFrame(
         IRenderWindowFrameSession session,
         IGraphicsPipeline pipeline,
@@ -140,10 +125,28 @@ internal static class Program
     {
         var frameState = session.BeginFrame();
         return frameState.IsValid && session.DrawFullscreenTriangle(pipeline, in parameters) &&
-               session.EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+               session.EndFrame(in frameState, default(RenderFramePacket));
     }
 
-    private sealed class PanelUiAdapter : IUiDrawListProvider
+    private static bool SubmitPanelFrame(
+        IRenderWindowFrameSession session,
+        IGraphicsPipeline pipeline,
+        in GraphicsFrameParameters parameters,
+        in UiDrawList drawList)
+    {
+        var packet = new RenderFramePacket(
+            pipeline,
+            parameters,
+            drawList,
+            null,
+            default,
+            ReadOnlySpan<ITextAtlasPage>.Empty,
+            default,
+            ReadOnlySpan<RenderRecordChange>.Empty);
+        return session.SubmitFrame(in packet);
+    }
+
+    private sealed class PanelUiAdapter
     {
         private readonly UiQuad[] _drawList =
         [
@@ -157,7 +160,7 @@ internal static class Program
         public ReadOnlyMemory<UiQuad> CurrentDrawList => _drawList;
     }
 
-    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath, string? externalManifestPath)
+    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath)
     {
         var shaderPath = externalShaderPath ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
         if (!File.Exists(shaderPath))
@@ -168,36 +171,18 @@ internal static class Program
 
         await Console.Out.WriteLineAsync($"compute-shader={Path.GetFullPath(shaderPath)}");
         var shader = await File.ReadAllBytesAsync(shaderPath).ConfigureAwait(false);
-        var metadata = new ComputeShaderMetadata(
-            ComputeAbiLayout.Std430,
-            64,
-            1,
-            1,
-            new[] { new ComputeDescriptorBinding(0, 0, ComputeDescriptorKind.StorageBuffer, ComputeBufferAccess.ReadWrite) });
+        var artifact = new ShaderArtifact(shader, "main", new ShaderAbi(
+            ShaderStage.Compute,
+            resources: [new ShaderResourceBinding(
+                new ShaderBinding(0, 0),
+                ShaderResourceKind.StorageBuffer,
+                ShaderResourceAccess.ReadWrite,
+                ShaderStageMask.Compute,
+                new ShaderAbiLayout(4, 4, arrayStride: 4))],
+            workgroupSize: new ShaderWorkgroupSize(64, 1, 1)));
 
         await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
-        IComputePipeline pipeline;
-        if (externalShaderPath is not null)
-        {
-            if (string.IsNullOrWhiteSpace(externalManifestPath) || !File.Exists(externalManifestPath))
-            {
-                await Console.Error.WriteLineAsync("Generated compute smoke requires --compute-manifest alongside --compute-shader.");
-                return 1;
-            }
-
-            var manifest = JsonSerializer.Deserialize<DeltaShaderManifest>(await File.ReadAllTextAsync(externalManifestPath).ConfigureAwait(false));
-            if (manifest is null)
-            {
-                await Console.Error.WriteLineAsync($"Delta.Shader manifest was empty: {externalManifestPath}");
-                return 1;
-            }
-
-            pipeline = device.CreateComputePipeline(new DeltaShaderArtifact(shader, manifest));
-        }
-        else
-        {
-            pipeline = device.CreateComputePipeline(shader, in metadata);
-        }
+        IComputePipeline pipeline = device.CreateComputePipeline(artifact);
 
         await using (pipeline)
         {
@@ -207,12 +192,12 @@ internal static class Program
 
     private static async Task<int> RunComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
     {
-        if (pipeline.Metadata.Bindings.Length == 2)
+        if (pipeline.Abi.Resources.Count == 2)
         {
             return await RunMultiBufferComputeSizesAsync(device, pipeline).ConfigureAwait(false);
         }
 
-        var localSizeX = pipeline.Metadata.LocalSizeX;
+        var localSizeX = pipeline.Abi.WorkgroupSize.X;
 
         foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
         {
@@ -298,7 +283,7 @@ internal static class Program
 
     private static async Task<int> RunMultiBufferComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
     {
-        var localSizeX = pipeline.Metadata.LocalSizeX;
+        var localSizeX = pipeline.Abi.WorkgroupSize.X;
         foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
         {
             await using var input = device.CreateStorageBuffer((ulong)size * sizeof(uint), ComputeBufferAccess.ReadOnly);

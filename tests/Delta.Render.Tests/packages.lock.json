@@ -136,10 +136,13 @@
           "xunit.extensibility.core": "[2.9.2]"
         }
       },
+      "delta.maths": {
+        "type": "Project"
+      },
       "delta.render.core": {
         "type": "Project",
         "dependencies": {
-          "Delta.Shader.Abstractions": "[1.0.0, )"
+          "Delta.Shader.Contract": "[1.0.0, )"
         }
       },
       "delta.render.platform.sdl3": {
@@ -163,7 +166,7 @@
         "type": "Project",
         "dependencies": {
           "Delta.Render.Core": "[1.0.0, )",
-          "Delta.Shader.Abstractions": "[1.0.0, )",
+          "Delta.Shader.Contract": "[1.0.0, )",
           "Silk.NET.MoltenVK.Native": "[2.23.0, )",
           "Silk.NET.Vulkan": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.EXT": "[2.23.0, )",
@@ -172,6 +175,17 @@
       },
       "delta.shader.abstractions": {
         "type": "Project"
+      },
+      "delta.shader.contract": {
+        "type": "Project"
+      },
+      "delta.shader.text": {
+        "type": "Project",
+        "dependencies": {
+          "Delta.Maths": "[1.0.0, )",
+          "Delta.Shader.Abstractions": "[1.0.0, )",
+          "Delta.Shader.Contract": "[1.0.0, )"
+        }
       },
       "delta.text": {
         "type": "Project",

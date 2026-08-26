@@ -1,22 +1,20 @@
 using System.Diagnostics.CodeAnalysis;
 using Delta.Render.Core;
-using Delta.Text;
+using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
 
 public readonly record struct TextGlyphCacheKey(
-    FontKey Font,
+    FontInstanceId Font,
     uint GlyphId,
-    uint PixelSize,
-    int Padding,
+    float PixelsPerEm,
     TextRenderMode Mode,
-    float PxRange,
-    float Smoothing)
+    float DistanceRange)
 {
-    public bool IsValid => !string.IsNullOrWhiteSpace(Font.Family) && !string.IsNullOrWhiteSpace(Font.Style) &&
-                           !string.IsNullOrWhiteSpace(Font.SourceId) && PixelSize > 0 && Padding >= 0 &&
+    public bool IsValid => Font.IsValid &&
+                           float.IsFinite(PixelsPerEm) && PixelsPerEm > 0 &&
                            Mode is TextRenderMode.Sdf or TextRenderMode.Msdf &&
-                           float.IsFinite(PxRange) && PxRange > 0 && float.IsFinite(Smoothing) && Smoothing >= 0;
+                           float.IsFinite(DistanceRange) && DistanceRange > 0;
 }
 
 public readonly record struct TextGlyphCacheHandle(TextAtlasPageId Page, uint Generation, uint Slot)
@@ -51,7 +49,7 @@ public readonly record struct TextGlyphPlacement(
     float PxRange,
     float Smoothing)
 {
-    public TextGlyphInstance ToInstance(in PositionedGlyph glyph, float originX, float originY,
+    public TextGlyphInstance ToInstance(in ShapedGlyph glyph, float originX, float originY,
         TextColor color, UiClipRect clip, uint pipelineId = 0)
     {
         if (Handle.Page != AtlasRegion.AtlasPage)
@@ -59,8 +57,8 @@ public readonly record struct TextGlyphPlacement(
             throw new InvalidOperationException("Glyph placement atlas page does not match its cache handle.");
         }
 
-        var x = checked((int)MathF.Round(originX + glyph.X + glyph.OffsetX + BearingX));
-        var y = checked((int)MathF.Round(originY + glyph.Y + glyph.OffsetY - BearingY));
+        var x = checked((int)MathF.Round(originX + glyph.OffsetX + BearingX));
+        var y = checked((int)MathF.Round(originY + glyph.OffsetY - BearingY));
         return new TextGlyphInstance(
             AtlasRegion.AtlasPage,
             AtlasRegion.Uv,
@@ -69,7 +67,7 @@ public readonly record struct TextGlyphPlacement(
             clip,
             Mode,
             PxRange,
-            Smoothing,
+            0,
             pipelineId);
     }
 }
@@ -140,33 +138,27 @@ public sealed class TextAtlasCache : IAsyncDisposable
         return new TextAtlasPageView(_pageView, _pages.Count);
     }
 
-    /// <summary>Consumes Delta.Text's positioned glyph handoff and copies pixels into owned storage.</summary>
-    public TextGlyphCacheHandle GetOrAdd(in PositionedGlyphBitmap glyph, out TextGlyphPlacement placement)
+    /// <summary>Consumes Delta.Text's immutable glyph image and copies pixels into owned storage.</summary>
+    public TextGlyphCacheHandle GetOrAdd(GlyphImage image, out TextGlyphPlacement placement)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var bitmap = glyph.Bitmap;
-        if (bitmap is null)
-        {
-            throw new ArgumentException("The Delta.Text glyph bitmap is missing.", nameof(glyph));
-        }
+        ArgumentNullException.ThrowIfNull(image);
 
-        var mode = bitmap.Request.Mode switch
+        var mode = image.Encoding switch
         {
-            GlyphAtlasMode.Grayscale => TextRenderMode.Sdf,
-            GlyphAtlasMode.Msdf => TextRenderMode.Msdf,
-            _ => throw new ArgumentException("MTSDF glyphs are not supported by this renderer slice.", nameof(glyph))
+            GlyphImageEncoding.SdfR8 => TextRenderMode.Sdf,
+            GlyphImageEncoding.MsdfRgb8 => TextRenderMode.Msdf,
+            _ => throw new ArgumentException("Only SDF and MSDF glyph images are supported by this renderer slice.", nameof(image))
         };
-        var key = new TextGlyphCacheKey(bitmap.Request.Font, bitmap.GlyphId, checked((uint)bitmap.Request.PixelSize),
-            bitmap.Request.Padding, mode, bitmap.Request.DistanceRange, 0);
-        if (!key.IsValid || bitmap.Width <= 0 || bitmap.Height <= 0 || bitmap.Stride <= 0 ||
-            bitmap.Pixels.Length < checked(bitmap.Stride * bitmap.Height) || !float.IsFinite(bitmap.AdvanceX))
+        var key = new TextGlyphCacheKey(image.Font, image.GlyphId, image.PixelsPerEm, mode, image.DistanceRange);
+        if (!key.IsValid || image.Width <= 0 || image.Height <= 0 || image.Pixels.IsEmpty)
         {
-            throw new ArgumentException("Delta.Text glyph bitmap is invalid.", nameof(glyph));
+            throw new ArgumentException("Delta.Text glyph image is invalid.", nameof(image));
         }
 
-        var pixels = NormalizePixels(bitmap, mode, out var rowPitch);
-        return GetOrAdd(key, (uint)bitmap.Width, (uint)bitmap.Height, rowPitch, pixels,
-            bitmap.BearingX, bitmap.BearingY, bitmap.AdvanceX, out placement);
+        var pixels = NormalizePixels(image, mode, out var rowPitch);
+        return GetOrAdd(key, (uint)image.Width, (uint)image.Height, rowPitch, pixels,
+            image.PlaneBounds.Left, -image.PlaneBounds.Top, 0, out placement);
     }
 
     private TextGlyphCacheHandle GetOrAdd(TextGlyphCacheKey key, uint width, uint height, uint rowPitch,
@@ -194,7 +186,7 @@ public sealed class TextAtlasCache : IAsyncDisposable
             new GlyphAtlasRegion(page.Page.Description.Id, new TextUvRect((float)x / page.Page.Description.Width, (float)y / page.Page.Description.Height,
                 (float)width / page.Page.Description.Width, (float)height / page.Page.Description.Height)),
             bearingX, bearingY, checked((int)width), checked((int)height),
-            advanceX, key.Mode, key.PxRange, key.Smoothing);
+            advanceX, key.Mode, key.DistanceRange, 0);
         page.LastUse = ++_clock;
         _entries.Add(key, new Entry { Key = key, Placement = placement, Generation = page.Generation, LastUse = _clock });
         return placement.Handle;
@@ -326,25 +318,25 @@ public sealed class TextAtlasCache : IAsyncDisposable
         return true;
     }
 
-    private static byte[] NormalizePixels(GlyphBitmap bitmap, TextRenderMode mode, out uint rowPitch)
+    private static byte[] NormalizePixels(GlyphImage image, TextRenderMode mode, out uint rowPitch)
     {
         var bytesPerPixel = mode == TextRenderMode.Msdf ? 4 : 1;
-        rowPitch = checked((uint)(bitmap.Width * bytesPerPixel));
-        var normalized = new byte[checked((int)(rowPitch * (uint)bitmap.Height))];
+        rowPitch = checked((uint)(image.Width * bytesPerPixel));
+        var normalized = new byte[checked((int)(rowPitch * (uint)image.Height))];
         if (mode == TextRenderMode.Sdf)
         {
-            for (var row = 0; row < bitmap.Height; row++)
+            for (var row = 0; row < image.Height; row++)
             {
-                bitmap.Pixels.Span.Slice(row * bitmap.Stride, bitmap.Width).CopyTo(normalized.AsSpan(row * (int)rowPitch, bitmap.Width));
+                image.Pixels.Span.Slice(row * image.Width, image.Width).CopyTo(normalized.AsSpan(row * (int)rowPitch, image.Width));
             }
             return normalized;
         }
 
-        for (var row = 0; row < bitmap.Height; row++)
+        for (var row = 0; row < image.Height; row++)
         {
-            var source = bitmap.Pixels.Span.Slice(row * bitmap.Stride, checked(bitmap.Width * 3));
-            var target = normalized.AsSpan(row * (int)rowPitch, checked(bitmap.Width * 4));
-            for (var pixel = 0; pixel < bitmap.Width; pixel++)
+            var source = image.Pixels.Span.Slice(row * image.Width * 3, checked(image.Width * 3));
+            var target = normalized.AsSpan(row * (int)rowPitch, checked(image.Width * 4));
+            for (var pixel = 0; pixel < image.Width; pixel++)
             {
                 source.Slice(pixel * 3, 3).CopyTo(target.Slice(pixel * 4, 3));
                 target[pixel * 4 + 3] = byte.MaxValue;

@@ -59,10 +59,10 @@
       "delta.render.core": {
         "type": "Project",
         "dependencies": {
-          "Delta.Shader.Abstractions": "[1.0.0, )"
+          "Delta.Shader.Contract": "[1.0.0, )"
         }
       },
-      "delta.shader.abstractions": {
+      "delta.shader.contract": {
         "type": "Project"
       }
     }

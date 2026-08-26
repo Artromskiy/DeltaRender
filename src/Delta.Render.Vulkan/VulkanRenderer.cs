@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
@@ -975,7 +975,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
     public ITextAtlasDevice CreateTextAtlasDevice() => _textAtlas;
 
-    public IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram)
+    public IGraphicsPipeline CreateGraphicsPipeline(in IGraphicsShaderProgram shaderProgram)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(shaderProgram);
@@ -984,7 +984,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return pipeline;
     }
 
-    public IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram)
+    public IGraphicsPipeline CreateTextPipeline(in IGraphicsShaderProgram shaderProgram)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(shaderProgram);
@@ -1105,151 +1105,79 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return RenderFrameState.Ready(imageIndex, _metrics);
     }
 
-    public bool EndFrame(in RenderFrameState frameState, ReadOnlySpan<RenderRecordChange> dirtyRecords)
+    public bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex)
+        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex || !packet.IsValid)
         {
             return false;
         }
 
-        return EndFrame(in frameState, in _clearColor, dirtyRecords);
-    }
+        if (packet.UiPipeline is null && packet.TextPipeline is null)
+        {
+            return EndFrame(in frameState, in _clearColor, packet.DirtyRecords);
+        }
 
-    public bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex ||
-            pipeline is not VulkanGraphicsPipeline graphicsPipeline ||
-            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive ||
-            graphicsPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants) ||
-            !parameters.IsValid)
+        if (packet.UiPipeline is not VulkanGraphicsPipeline uiPipeline ||
+            !ReferenceEquals(uiPipeline.Owner, this) || !uiPipeline.IsAlive ||
+            uiPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants))
         {
             return false;
         }
 
-        for (var i = 0; i < uiQuads.Length; i++)
+        for (var i = 0; i < packet.UiDrawList.Quads.Length; i++)
         {
-            if (!uiQuads[i].IsValid)
+            if (!packet.UiDrawList.Quads[i].IsValid)
             {
                 return false;
             }
         }
 
-        return EndFrame(in frameState, in _clearColor, dirtyRecords, graphicsPipeline, in parameters, uiQuads);
-    }
+        if (packet.TextPipeline is null)
+        {
+            var uiParameters = packet.UiParameters;
+            return EndFrame(
+                in frameState,
+                in _clearColor,
+                packet.DirtyRecords,
+                uiPipeline,
+                in uiParameters,
+                packet.UiDrawList.Quads);
+        }
 
-    public bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<TextGlyphInstance> textGlyphs,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-        => EndFrame(in frameState, uiPipeline, in uiParameters, uiQuads, textPipeline, in textParameters, ReadOnlySpan<ITextAtlasPage>.Empty, new TextDrawList(textGlyphs), dirtyRecords);
-
-    public bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<ITextAtlasPage> atlasPages,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFrame || !frameState.IsValid || frameState.ImageIndex != _activeImageIndex ||
-            uiPipeline is not VulkanGraphicsPipeline graphicsPipeline ||
-            !ReferenceEquals(graphicsPipeline.Owner, this) || !graphicsPipeline.IsAlive ||
-            graphicsPipeline.PushConstantSize != (uint)sizeof(UiQuadPushConstants) ||
-            textPipeline is not VulkanTextGraphicsPipeline textGraphicsPipeline ||
-            !ReferenceEquals(textGraphicsPipeline.Owner, this) || !textGraphicsPipeline.IsAlive ||
-            !uiParameters.IsValid || !textParameters.IsValid)
+        if (packet.TextPipeline is not VulkanTextGraphicsPipeline textPipeline ||
+            !ReferenceEquals(textPipeline.Owner, this) || !textPipeline.IsAlive)
         {
             return false;
         }
 
-        for (var i = 0; i < uiQuads.Length; i++)
+        for (var i = 0; i < packet.TextDrawList.Glyphs.Length; i++)
         {
-            if (!uiQuads[i].IsValid)
+            if (!packet.TextDrawList.Glyphs[i].IsValid)
             {
                 return false;
             }
         }
 
-        for (var i = 0; i < textDrawList.Glyphs.Length; i++)
-        {
-            if (!textDrawList.Glyphs[i].IsValid)
-            {
-                return false;
-            }
-        }
-
-        return EndFrame(in frameState, in _clearColor, dirtyRecords, graphicsPipeline, in uiParameters, uiQuads, textGraphicsPipeline, in textParameters, atlasPages, textDrawList.Glyphs);
-    }
-
-    public bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        in UiDrawList drawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-        => EndFrame(in frameState, pipeline, in parameters, drawList.Quads, dirtyRecords);
-
-    public bool SubmitFrame(
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        in UiDrawList drawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-    {
-        var frameState = BeginFrame();
-        return frameState.IsValid && EndFrame(in frameState, pipeline, in parameters, in drawList, dirtyRecords);
-    }
-
-    public bool SubmitFrame(
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        in UiDrawList uiDrawList,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-        => SubmitFrame(uiPipeline, in uiParameters, in uiDrawList, textPipeline, in textParameters, ReadOnlySpan<ITextAtlasPage>.Empty, in textDrawList, dirtyRecords);
-
-    public bool SubmitFrame(
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        in UiDrawList uiDrawList,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<ITextAtlasPage> atlasPages,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords)
-    {
-        var frameState = BeginFrame();
-        var uiQuads = uiDrawList.Quads;
-        return frameState.IsValid && EndFrame(in frameState, uiPipeline, in uiParameters, uiQuads, textPipeline, in textParameters, atlasPages, in textDrawList, dirtyRecords);
+        var packetUiParameters = packet.UiParameters;
+        var packetTextParameters = packet.TextParameters;
+        return EndFrame(
+            in frameState,
+            in _clearColor,
+            packet.DirtyRecords,
+            uiPipeline,
+            in packetUiParameters,
+            packet.UiDrawList.Quads,
+            textPipeline,
+            in packetTextParameters,
+            packet.AtlasPages,
+            packet.TextDrawList.Glyphs);
     }
 
     public bool RenderClearFrame(float r, float g, float b, float a)
     {
         _clearColor = new ClearColorValue(r, g, b, a);
-        var frameState = BeginFrame();
-        if (!frameState.IsValid)
-        {
-            return false;
-        }
-
-        return EndFrame(in frameState, ReadOnlySpan<RenderRecordChange>.Empty);
+        return this.SubmitFrame(default(RenderFramePacket));
     }
 
     public bool Resize(WindowMetrics metrics)
@@ -1568,10 +1496,10 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         return null;
     }
 
-    private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in GraphicsShaderProgram shaderProgram)
+    private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in IGraphicsShaderProgram shaderProgram)
     {
-        if (shaderProgram.Vertex.Stage != Delta.Shader.Abstractions.ShaderStage.Vertex ||
-            shaderProgram.Fragment.Stage != Delta.Shader.Abstractions.ShaderStage.Fragment)
+        if (shaderProgram.Vertex.Abi.Stage != ShaderStage.Vertex ||
+            shaderProgram.Fragment.Abi.Stage != ShaderStage.Fragment)
         {
             throw new ArgumentException("Graphics shader programs must contain vertex and fragment stages.", nameof(shaderProgram));
         }
@@ -1755,10 +1683,10 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         }
     }
 
-    private VulkanTextGraphicsPipeline CreateTextPipelineCore(in GraphicsShaderProgram shaderProgram)
+    private VulkanTextGraphicsPipeline CreateTextPipelineCore(in IGraphicsShaderProgram shaderProgram)
     {
-        if (shaderProgram.Vertex.Stage != Delta.Shader.Abstractions.ShaderStage.Vertex ||
-            shaderProgram.Fragment.Stage != Delta.Shader.Abstractions.ShaderStage.Fragment)
+        if (shaderProgram.Vertex.Abi.Stage != ShaderStage.Vertex ||
+            shaderProgram.Fragment.Abi.Stage != ShaderStage.Fragment)
         {
             throw new ArgumentException("Graphics shader programs must contain vertex and fragment stages.", nameof(shaderProgram));
         }
@@ -2007,16 +1935,15 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         }
     }
 
-    private static void ValidateGraphicsArtifact(Delta.Shader.Abstractions.ShaderArtifact artifact, string parameterName)
+    private static void ValidateGraphicsArtifact(IShaderArtifact artifact, string parameterName)
     {
-        if (artifact.FormatVersion != Delta.Shader.Abstractions.ShaderArtifact.CurrentFormatVersion)
+        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
         {
             throw new ArgumentException("Unsupported Delta.Shader artifact format.", parameterName);
         }
 
-        var manifest = artifact.Manifest;
-        if (manifest.Version != Delta.Shader.Abstractions.ShaderAbiManifest.CurrentVersion ||
-            string.IsNullOrWhiteSpace(manifest.EntryPointName))
+        if (artifact.Abi.Version != ShaderAbi.CurrentVersion ||
+            string.IsNullOrWhiteSpace(artifact.EntryPoint))
         {
             throw new ArgumentException("Unsupported or incomplete Delta.Shader graphics ABI manifest.", parameterName);
         }
@@ -2026,16 +1953,16 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             throw new ArgumentException("Graphics SPIR-V must be non-empty and word aligned.", parameterName);
         }
 
-        if (manifest.Resources.Count != 0)
+        if (artifact.Abi.Resources.Count != 0)
         {
             throw new ArgumentException("The initial fullscreen graphics path does not support descriptor resources.", parameterName);
         }
     }
 
-    private static uint GetPushConstantSize(in GraphicsShaderProgram shaderProgram)
+    private static uint GetPushConstantSize(in IGraphicsShaderProgram shaderProgram)
     {
-        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.Count > 0 ? shaderProgram.Vertex.Manifest.PushConstants[0].Size : 0;
-        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.Count > 0 ? shaderProgram.Fragment.Manifest.PushConstants[0].Size : 0;
+        var vertexSize = shaderProgram.Vertex.Abi.PushConstants.Count > 0 ? shaderProgram.Vertex.Abi.PushConstants[0].Size : 0;
+        var fragmentSize = shaderProgram.Fragment.Abi.PushConstants.Count > 0 ? shaderProgram.Fragment.Abi.PushConstants[0].Size : 0;
         if (vertexSize != 0 && fragmentSize != 0 && vertexSize != fragmentSize)
         {
             throw new ArgumentException("Graphics shader stages must use the same push-constant size.", nameof(shaderProgram));
@@ -2110,10 +2037,10 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         }
     }
 
-    private static uint GetTextPushConstantSize(in GraphicsShaderProgram shaderProgram)
+    private static uint GetTextPushConstantSize(in IGraphicsShaderProgram shaderProgram)
     {
-        var vertexSize = shaderProgram.Vertex.Manifest.PushConstants.Count > 0 ? shaderProgram.Vertex.Manifest.PushConstants[0].Size : 0;
-        var fragmentSize = shaderProgram.Fragment.Manifest.PushConstants.Count > 0 ? shaderProgram.Fragment.Manifest.PushConstants[0].Size : 0;
+        var vertexSize = shaderProgram.Vertex.Abi.PushConstants.Count > 0 ? shaderProgram.Vertex.Abi.PushConstants[0].Size : 0;
+        var fragmentSize = shaderProgram.Fragment.Abi.PushConstants.Count > 0 ? shaderProgram.Fragment.Abi.PushConstants[0].Size : 0;
         var size = Math.Max(vertexSize, fragmentSize);
         if (size != (uint)sizeof(TextPushConstants))
         {

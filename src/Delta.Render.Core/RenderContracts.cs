@@ -1,4 +1,4 @@
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.Core;
 
@@ -98,71 +98,11 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
 
     RenderFrameState BeginFrame();
 
-    bool EndFrame(in RenderFrameState frameState, ReadOnlySpan<RenderRecordChange> dirtyRecords);
+    bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet);
 
-    bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
+    IGraphicsPipeline CreateTextPipeline(in IGraphicsShaderProgram shaderProgram);
 
-    bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<ITextAtlasPage> atlasPages,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        ReadOnlySpan<UiQuad> uiQuads,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<TextGlyphInstance> textGlyphs,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    bool EndFrame(
-        in RenderFrameState frameState,
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        in UiDrawList drawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    bool SubmitFrame(
-        IGraphicsPipeline pipeline,
-        in GraphicsFrameParameters parameters,
-        in UiDrawList drawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    bool SubmitFrame(
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        in UiDrawList uiDrawList,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        ReadOnlySpan<ITextAtlasPage> atlasPages,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    bool SubmitFrame(
-        IGraphicsPipeline uiPipeline,
-        in GraphicsFrameParameters uiParameters,
-        in UiDrawList uiDrawList,
-        IGraphicsPipeline textPipeline,
-        in TextFrameParameters textParameters,
-        in TextDrawList textDrawList,
-        ReadOnlySpan<RenderRecordChange> dirtyRecords);
-
-    IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram);
-
-    IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram);
+    IGraphicsPipeline CreateGraphicsPipeline(in IGraphicsShaderProgram shaderProgram);
 
     ITextAtlasDevice CreateTextAtlasDevice();
 
@@ -173,11 +113,7 @@ public interface IRenderWindowFrameSession : IAsyncDisposable
 
 public static class RenderFrameSessionExtensions
 {
-    /// <summary>
-    /// Ends an already-begun frame through the existing session contract.
-    /// This additive bridge lets callers adopt <see cref="RenderFramePacket"/>
-    /// without requiring current frame-session implementations to change.
-    /// </summary>
+    /// <summary>Ends an already-begun frame through the canonical packet contract.</summary>
     public static bool EndFrame(
         this IRenderWindowFrameSession session,
         in RenderFrameState frameState,
@@ -189,36 +125,7 @@ public static class RenderFrameSessionExtensions
             return false;
         }
 
-        if (packet.UiPipeline is null)
-        {
-            return session.EndFrame(in frameState, packet.DirtyRecords);
-        }
-
-        if (packet.TextPipeline is null)
-        {
-            var uiParameters = packet.UiParameters;
-            var uiDrawList = packet.UiDrawList;
-            return session.EndFrame(
-                in frameState,
-                packet.UiPipeline,
-                in uiParameters,
-                in uiDrawList,
-                packet.DirtyRecords);
-        }
-
-        var combinedUiParameters = packet.UiParameters;
-        var textParameters = packet.TextParameters;
-        var textDrawList = packet.TextDrawList;
-        return session.EndFrame(
-            in frameState,
-            packet.UiPipeline,
-            in combinedUiParameters,
-            packet.UiDrawList.Quads,
-            packet.TextPipeline,
-            in textParameters,
-            packet.AtlasPages,
-            in textDrawList,
-            packet.DirtyRecords);
+        return session.EndFrame(in frameState, in packet);
     }
 
     public static bool SubmitFrame(this IRenderWindowFrameSession session, in RenderFramePacket packet)

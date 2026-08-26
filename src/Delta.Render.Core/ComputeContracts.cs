@@ -1,16 +1,6 @@
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.Core;
-
-public enum ComputeAbiLayout
-{
-    Std430 = 0
-}
-
-public enum ComputeDescriptorKind
-{
-    StorageBuffer = 0
-}
 
 public enum ComputeBufferAccess
 {
@@ -18,20 +8,6 @@ public enum ComputeBufferAccess
     WriteOnly = 1,
     ReadWrite = 2
 }
-
-public readonly record struct ComputeDescriptorBinding(
-    uint Set,
-    uint Binding,
-    ComputeDescriptorKind Kind,
-    ComputeBufferAccess Access,
-    uint ArrayCount = 1);
-
-public readonly record struct ComputeShaderMetadata(
-    ComputeAbiLayout AbiLayout,
-    uint LocalSizeX,
-    uint LocalSizeY,
-    uint LocalSizeZ,
-    ReadOnlyMemory<ComputeDescriptorBinding> Bindings);
 
 public readonly record struct ComputeBufferBinding(
     uint Set,
@@ -92,7 +68,7 @@ public interface IComputeStorageBuffer : IAsyncDisposable
 
 public interface IComputePipeline : IAsyncDisposable
 {
-    ComputeShaderMetadata Metadata { get; }
+    ShaderAbi Abi { get; }
 }
 
 public interface IComputeDevice : IAsyncDisposable
@@ -107,11 +83,13 @@ public interface IComputeDevice : IAsyncDisposable
 
     bool Readback(IComputeStorageBuffer source, Span<byte> destination, ulong sourceOffset = 0);
 
-    IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata);
+    /// <summary>Low-level import for SPIR-V that is accompanied by its canonical ABI.</summary>
+    IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, ShaderAbi abi);
 
-    IComputePipeline CreateComputePipeline(ReadOnlySpan<byte> spirvBytes, in ComputeShaderMetadata metadata);
+    /// <summary>Low-level import for SPIR-V that is accompanied by its canonical ABI.</summary>
+    IComputePipeline CreateComputePipeline(ReadOnlySpan<byte> spirvBytes, ShaderAbi abi);
 
-    IComputePipeline CreateComputePipeline(ShaderArtifact artifact);
+    IComputePipeline CreateComputePipeline(IShaderArtifact artifact);
 
     ComputeDispatchResult Dispatch(
         IComputePipeline pipeline,

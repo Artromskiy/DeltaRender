@@ -127,11 +127,6 @@ public readonly ref struct UiDrawList
     public bool IsEmpty => Quads.IsEmpty;
 }
 
-public interface IUiDrawListProvider
-{
-    ReadOnlyMemory<UiQuad> CurrentDrawList { get; }
-}
-
 public interface IGraphicsPipeline : IAsyncDisposable
 {
 }

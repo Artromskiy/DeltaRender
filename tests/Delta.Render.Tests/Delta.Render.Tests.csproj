@@ -8,7 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Abstractions/Delta.Shader.Abstractions.csproj" />
+    <ProjectReference Include="../../tools/Delta.Render.FullscreenShaders/Delta.Render.FullscreenShaders.csproj" />
+    <ProjectReference Include="../../tools/Delta.Render.UiShaders/Delta.Render.UiShaders.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/Delta.Shader.Text/Delta.Shader.Text.csproj" />
     <ProjectReference Include="..\\..\\src\\Delta.Render.Core\\Delta.Render.Core.csproj" />
     <ProjectReference Include="..\\..\\src\\Delta.Render.Text\\Delta.Render.Text.csproj" />

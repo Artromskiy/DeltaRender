@@ -1,4 +1,4 @@
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.Core.RenderGraph;
 
@@ -34,7 +34,7 @@ public enum RenderBlendMode
 public sealed record RasterPipelineDescription
 {
     public RasterPipelineDescription(
-        GraphicsShaderProgram shaderProgram,
+        IGraphicsShaderProgram shaderProgram,
         PrimitiveTopology topology = PrimitiveTopology.TriangleList,
         RasterCullMode cullMode = RasterCullMode.Back,
         RasterFrontFace frontFace = RasterFrontFace.CounterClockwise,
@@ -52,7 +52,7 @@ public sealed record RasterPipelineDescription
         DepthWrite = depthWrite;
     }
 
-    public GraphicsShaderProgram ShaderProgram { get; }
+    public IGraphicsShaderProgram ShaderProgram { get; }
 
     public PrimitiveTopology Topology { get; }
 
@@ -69,7 +69,7 @@ public sealed record RasterPipelineDescription
 
 public sealed record ComputePipelineDescription
 {
-    public ComputePipelineDescription(ShaderArtifact shader)
+    public ComputePipelineDescription(IShaderArtifact shader)
     {
         ArgumentNullException.ThrowIfNull(shader);
         if (shader.Stage != ShaderStage.Compute)
@@ -80,7 +80,7 @@ public sealed record ComputePipelineDescription
         Shader = shader;
     }
 
-    public ShaderArtifact Shader { get; }
+    public IShaderArtifact Shader { get; }
 }
 
 public sealed record RasterPassDescription

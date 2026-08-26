@@ -31,10 +31,8 @@ Engine/extraction
 - Target raster and compute descriptions consume
   `Delta.Shader.Contract.IGraphicsShaderProgram` and `IShaderArtifact`.
   Each final artifact is SPIR-V plus its resolved binary `ShaderAbi`.
-  The current descriptions still accept the same-named concrete compatibility
-  types from `Delta.Shader.Abstractions`; migration to the contract interfaces
-  is pending. DeltaRender validates and caches Vulkan pipelines, but never
-  consumes GLSL, Roslyn state, live generic values or an artifact-owned hash.
+  DeltaRender validates and caches Vulkan pipelines, but never consumes GLSL,
+  Roslyn state, live generic values or an artifact-owned hash.
 - `IRasterCommandContext` is sufficient for fullscreen triangles, instanced
   text/UI and indexed meshes. Compute and transfer operations use their own
   narrow contexts.

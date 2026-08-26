@@ -1,5 +1,6 @@
-using System.Text.Json;
-using Delta.Shader.Abstractions;
+using Delta.Render.FullscreenShaders;
+using Delta.Render.UiShaders;
+using Delta.Shader.Contract;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -13,21 +14,27 @@ public sealed class SmokeShaderArtifactTests
     [InlineData("ui-panel.frag", ShaderStage.Fragment)]
     public void CheckedInSmokeArtifactUsesCurrentManifestContract(string stem, ShaderStage expectedStage)
     {
+        ArgumentNullException.ThrowIfNull(stem);
         var root = Path.Combine(AppContext.BaseDirectory, "fixtures", "graphics");
         var manifestPath = Path.Combine(root, stem + ".shader.json");
         var spirvPath = Path.Combine(root, stem + ".spv");
-        var manifest = JsonSerializer.Deserialize<ShaderAbiManifest>(File.ReadAllText(manifestPath));
+        Assert.True(File.Exists(manifestPath));
+        var pairStem = stem[..stem.LastIndexOf('.')];
+        var pairVertexPath = Path.Combine(root, pairStem + ".vert.spv");
+        var pairFragmentPath = Path.Combine(root, pairStem + ".frag.spv");
+        var program = pairStem switch
+        {
+            "fullscreen-rounded-rectangle" => FullscreenUiGraphicsShaderProgram.CreateProgram(
+                File.ReadAllBytes(pairVertexPath), File.ReadAllBytes(pairFragmentPath)),
+            "ui-panel" => UiPanelGraphicsShaderProgram.CreateProgram(
+                File.ReadAllBytes(pairVertexPath), File.ReadAllBytes(pairFragmentPath)),
+            _ => throw new InvalidOperationException($"Unknown graphics fixture pair: {pairStem}")
+        };
 
-        Assert.NotNull(manifest);
-        Assert.Equal(ShaderAbiManifest.CurrentVersion, manifest.Version);
-        Assert.Equal(expectedStage, manifest.Stage);
-        Assert.Equal("main", manifest.EntryPointName);
-        Assert.False(string.IsNullOrWhiteSpace(manifest.SourceEntryPointName));
-
-        var spirv = File.ReadAllBytes(spirvPath);
-        Assert.NotEmpty(spirv);
-        var artifact = new ShaderArtifact(spirv, manifest);
+        var artifact = expectedStage == ShaderStage.Vertex ? program.Vertex : program.Fragment;
+        Assert.NotEmpty(artifact.Spirv.ToArray());
         Assert.Equal(expectedStage, artifact.Stage);
         Assert.Equal("main", artifact.EntryPoint);
+        Assert.Equal(ShaderAbi.CurrentVersion, artifact.Abi.Version);
     }
 }

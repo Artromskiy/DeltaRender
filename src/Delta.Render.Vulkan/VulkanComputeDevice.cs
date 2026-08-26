@@ -6,10 +6,7 @@ using Delta.Render.Core;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
-using DeltaShaderAccess = Delta.Shader.Abstractions.ShaderResourceAccess;
-using DeltaShaderArtifact = Delta.Shader.Abstractions.ShaderArtifact;
-using DeltaShaderManifest = Delta.Shader.Abstractions.ShaderAbiManifest;
-using DeltaShaderStage = Delta.Shader.Abstractions.ShaderStage;
+using Delta.Shader.Contract;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Delta.Render.Vulkan;
@@ -359,20 +356,30 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         }
     }
 
-    public IComputePipeline CreateComputePipeline(ReadOnlySpan<byte> spirvBytes, in ComputeShaderMetadata metadata)
+    public IComputePipeline CreateComputePipeline(ReadOnlySpan<byte> spirvBytes, ShaderAbi abi)
     {
         if ((spirvBytes.Length & 3) != 0)
         {
             throw new ArgumentException("SPIR-V bytecode length must be a multiple of four.", nameof(spirvBytes));
         }
 
-        return CreateComputePipeline(MemoryMarshal.Cast<byte, uint>(spirvBytes), in metadata);
+        return CreateComputePipeline(MemoryMarshal.Cast<byte, uint>(spirvBytes), abi);
     }
 
-    public IComputePipeline CreateComputePipeline(DeltaShaderArtifact artifact)
+    public IComputePipeline CreateComputePipeline(IShaderArtifact artifact)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(artifact);
+        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+        {
+            throw new ArgumentException($"Unsupported Delta.Shader artifact format {artifact.FormatVersion}; expected {ShaderArtifact.CurrentFormatVersion}.", nameof(artifact));
+        }
+
+        if (string.IsNullOrWhiteSpace(artifact.EntryPoint))
+        {
+            throw new ArgumentException("Delta.Shader artifact must declare an entry point.", nameof(artifact));
+        }
+
         var actualEntryPoint = SpirvEntryPointReader.ReadComputeEntryPoint(artifact.Spirv);
         if (!string.Equals(actualEntryPoint, artifact.EntryPoint, StringComparison.Ordinal))
         {
@@ -381,38 +388,37 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 nameof(artifact));
         }
 
-        var metadata = CreateComputeMetadata(artifact, out var requirements);
-        return CreateComputePipelineCore(MemoryMarshal.Cast<byte, uint>(artifact.Spirv), in metadata, requirements, actualEntryPoint);
+        return CreateComputePipelineCore(MemoryMarshal.Cast<byte, uint>(artifact.Spirv), artifact.Abi, actualEntryPoint);
     }
 
-    public IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata)
+    public IComputePipeline CreateComputePipeline(ReadOnlySpan<uint> spirvWords, ShaderAbi abi)
     {
         ThrowIfDisposed();
-        return CreateComputePipelineCore(spirvWords, in metadata, Array.Empty<VulkanDescriptorRequirement>(), "main");
+        ArgumentNullException.ThrowIfNull(abi);
+        return CreateComputePipelineCore(spirvWords, abi, "main");
     }
 
-    private VulkanComputePipeline CreateComputePipelineCore(ReadOnlySpan<uint> spirvWords, in ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements, string entryPointName)
+    private VulkanComputePipeline CreateComputePipelineCore(ReadOnlySpan<uint> spirvWords, ShaderAbi abi, string entryPointName)
     {
-        ValidateShaderMetadata(spirvWords, in metadata);
-        var bindings = metadata.Bindings.ToArray();
-        var stableMetadata = new ComputeShaderMetadata(metadata.AbiLayout, metadata.LocalSizeX, metadata.LocalSizeY, metadata.LocalSizeZ, bindings);
+        var requirements = ValidateShaderAbi(spirvWords, abi);
+        var resources = abi.Resources;
         var maxSet = 0u;
-        for (var i = 0; i < bindings.Length; i++)
+        for (var i = 0; i < resources.Count; i++)
         {
-            maxSet = Math.Max(maxSet, bindings[i].Set);
+            maxSet = Math.Max(maxSet, resources[i].Binding.Set);
         }
 
         var setCount = checked((int)maxSet + 1);
-        var bindingsBySet = new List<ComputeDescriptorBinding>[setCount];
+        var bindingsBySet = new List<ShaderResourceBinding>[setCount];
         var layoutBindings = new DescriptorSetLayoutBinding[setCount][];
         for (var set = 0; set < setCount; set++)
         {
-            bindingsBySet[set] = new List<ComputeDescriptorBinding>();
+            bindingsBySet[set] = new List<ShaderResourceBinding>();
         }
 
-        for (var i = 0; i < bindings.Length; i++)
+        for (var i = 0; i < resources.Count; i++)
         {
-            bindingsBySet[(int)bindings[i].Set].Add(bindings[i]);
+            bindingsBySet[(int)resources[i].Binding.Set].Add(resources[i]);
         }
 
         for (var set = 0; set < setCount; set++)
@@ -423,7 +429,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             {
                 layoutBindings[set][i] = new DescriptorSetLayoutBinding
                 {
-                    Binding = setBindings[i].Binding,
+                    Binding = setBindings[i].Binding.Binding,
                     DescriptorType = DescriptorType.StorageBuffer,
                     DescriptorCount = 1,
                     StageFlags = ShaderStageFlags.ComputeBit
@@ -453,7 +459,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
                 }
             }
 
-            var poolSize = new DescriptorPoolSize { Type = DescriptorType.StorageBuffer, DescriptorCount = (uint)bindings.Length };
+            var poolSize = new DescriptorPoolSize { Type = DescriptorType.StorageBuffer, DescriptorCount = (uint)resources.Count };
             var poolInfo = new DescriptorPoolCreateInfo
             {
                 SType = StructureType.DescriptorPoolCreateInfo,
@@ -522,7 +528,7 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
 
             _api.DestroyShaderModule(_device, shaderModule, null);
             shaderModule = default;
-            var result = new VulkanComputePipeline(this, descriptorSetLayouts, descriptorPool, descriptorSets, pipelineLayout, pipeline, stableMetadata, requirements);
+            var result = new VulkanComputePipeline(this, descriptorSetLayouts, descriptorPool, descriptorSets, pipelineLayout, pipeline, abi, requirements);
             _pipelines.Add(result);
             return result;
         }
@@ -889,145 +895,73 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
         return ValueTask.CompletedTask;
     }
 
-    private void ValidateShaderMetadata(ReadOnlySpan<uint> words, in ComputeShaderMetadata metadata)
+    private VulkanDescriptorRequirement[] ValidateShaderAbi(ReadOnlySpan<uint> words, ShaderAbi abi)
     {
+        ArgumentNullException.ThrowIfNull(abi);
         if (words.Length < 5 || words[0] != SpirvMagic)
         {
             throw new ArgumentException("SPIR-V words are missing the SPIR-V magic header.", nameof(words));
         }
 
-        if (metadata.AbiLayout != ComputeAbiLayout.Std430 || metadata.LocalSizeX == 0 || metadata.LocalSizeY == 0 || metadata.LocalSizeZ == 0)
+        if (abi.Version != ShaderAbi.CurrentVersion || abi.Stage != ShaderStage.Compute || !abi.WorkgroupSize.IsValid)
         {
-            throw new ArgumentException("Compute metadata must declare std430 and non-zero local sizes.", nameof(metadata));
+            throw new ArgumentException("Compute ShaderAbi must declare the current version, compute stage and non-zero workgroup dimensions.", nameof(abi));
         }
 
-        if (metadata.LocalSizeX > Limits.MaxComputeWorkGroupSizeX)
+        if (abi.WorkgroupSize.X > Limits.MaxComputeWorkGroupSizeX)
         {
-            throw new ArgumentOutOfRangeException(nameof(metadata), "The declared local size exceeds the device limit.");
+            throw new ArgumentOutOfRangeException(nameof(abi), "The declared local size exceeds the device limit.");
         }
 
-        var bindings = metadata.Bindings.Span;
-        if (bindings.IsEmpty)
-        {
-            throw new ArgumentException("At least one descriptor binding is required.", nameof(metadata));
-        }
-
-        for (var i = 0; i < bindings.Length; i++)
-        {
-            var binding = bindings[i];
-            if (binding.Set >= Limits.MaxBoundDescriptorSets || binding.Kind != ComputeDescriptorKind.StorageBuffer || binding.ArrayCount != 1)
-            {
-                throw new ArgumentException($"Storage-buffer set {binding.Set} is outside the device MaxBoundDescriptorSets={Limits.MaxBoundDescriptorSets} or has unsupported kind/array count.", nameof(metadata));
-            }
-
-            for (var j = 0; j < i; j++)
-            {
-                if (bindings[j].Set == binding.Set && bindings[j].Binding == binding.Binding)
-                {
-                    throw new ArgumentException($"Descriptor bindings must be unique per set: ({binding.Set},{binding.Binding}).", nameof(metadata));
-                }
-            }
-        }
-    }
-
-    private static ComputeShaderMetadata CreateComputeMetadata(DeltaShaderArtifact artifact, out VulkanDescriptorRequirement[] requirements)
-    {
-        var manifest = artifact.Manifest;
-        if (artifact.FormatVersion != DeltaShaderArtifact.CurrentFormatVersion)
-        {
-            throw new ArgumentException($"Unsupported Delta.Shader artifact format {artifact.FormatVersion}; expected {DeltaShaderArtifact.CurrentFormatVersion}.", nameof(artifact));
-        }
-
-        if (manifest.Version != DeltaShaderManifest.CurrentVersion)
-        {
-            throw new ArgumentException($"Unsupported Delta.Shader ABI manifest version {manifest.Version}; expected {DeltaShaderManifest.CurrentVersion}.", nameof(artifact));
-        }
-
-        if (manifest.Stage != DeltaShaderStage.Compute)
-        {
-            throw new ArgumentException("Only compute ShaderArtifact instances are supported.", nameof(artifact));
-        }
-
-        if (string.IsNullOrWhiteSpace(manifest.EntryPointName))
-        {
-            throw new ArgumentException("Delta.Shader ABI manifest must declare an entry point.", nameof(artifact));
-        }
-
-        if (!string.Equals(manifest.StorageLayout, "std430", StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Only std430 Delta.Shader storage layout is supported.", nameof(artifact));
-        }
-
-        if (manifest.LocalSizeX == 0 || manifest.LocalSizeY == 0 || manifest.LocalSizeZ == 0)
-        {
-            throw new ArgumentException("Delta.Shader ABI manifest must declare non-zero local sizes.", nameof(artifact));
-        }
-
-        var resources = manifest.Resources ?? Array.Empty<Delta.Shader.Abstractions.ShaderAbiResource>();
+        var resources = abi.Resources;
         if (resources.Count == 0)
         {
-            throw new ArgumentException("Delta.Shader ABI manifest must declare at least one resource.", nameof(artifact));
+            throw new ArgumentException("Compute ShaderAbi must declare at least one resource.", nameof(abi));
         }
 
-        var bindings = new ComputeDescriptorBinding[resources.Count];
-        requirements = new VulkanDescriptorRequirement[resources.Count];
+        var requirements = new VulkanDescriptorRequirement[resources.Count];
         var seenBindings = new HashSet<(uint Set, uint Binding)>();
         for (var i = 0; i < resources.Count; i++)
         {
             var resource = resources[i];
-            if (!seenBindings.Add((resource.Set, resource.Binding)))
+            if (!seenBindings.Add((resource.Binding.Set, resource.Binding.Binding)))
             {
-                throw new ArgumentException($"Delta.Shader ABI manifest contains duplicate descriptor set/binding {resource.Set}/{resource.Binding}.", nameof(artifact));
+                throw new ArgumentException($"Compute ShaderAbi contains duplicate descriptor set/binding {resource.Binding.Set}/{resource.Binding.Binding}.", nameof(abi));
             }
 
-            if (string.IsNullOrWhiteSpace(resource.Name) || !string.Equals(resource.Category, "storage-buffer", StringComparison.Ordinal))
+            if (resource.Binding.Set >= Limits.MaxBoundDescriptorSets ||
+                resource.Kind != ShaderResourceKind.StorageBuffer ||
+                resource.Stages != ShaderStageMask.Compute ||
+                resource.DescriptorCount != 1)
             {
-                throw new ArgumentException($"Resource '{resource.Name}' is not a storage-buffer resource.", nameof(artifact));
-            }
-
-            if (!string.Equals(resource.Layout, "std430", StringComparison.Ordinal))
-            {
-                throw new ArgumentException($"Resource '{resource.Name}' does not declare std430 layout.", nameof(artifact));
-            }
-
-            if (resource.Alignment == 0 || resource.Alignment % 4 != 0 || resource.Offset % resource.Alignment != 0 || resource.ArrayStride == 0 || resource.ArrayStride % resource.Alignment != 0 || resource.Size == 0 || resource.ArrayStride < resource.Size)
-            {
-                throw new ArgumentException($"Resource '{resource.Name}' has invalid std430 offset/size/stride metadata.", nameof(artifact));
-            }
-
-            if (checked(resource.Offset + resource.Size) > resource.ArrayStride)
-            {
-                throw new ArgumentException($"Resource '{resource.Name}' member range exceeds its array stride.", nameof(artifact));
-            }
-
-            if (resource.MatrixStride is uint matrixStride && (matrixStride == 0 || matrixStride % 4 != 0))
-            {
-                throw new ArgumentException($"Resource '{resource.Name}' has invalid matrix stride metadata.", nameof(artifact));
+                throw new ArgumentException($"Resource {resource.Binding.Set}/{resource.Binding.Binding} is not a supported compute storage buffer or exceeds MaxBoundDescriptorSets={Limits.MaxBoundDescriptorSets}.", nameof(abi));
             }
 
             var access = resource.Access switch
             {
-                DeltaShaderAccess.ReadOnly => ComputeBufferAccess.ReadOnly,
-                DeltaShaderAccess.WriteOnly => ComputeBufferAccess.WriteOnly,
-                DeltaShaderAccess.ReadWrite => ComputeBufferAccess.ReadWrite,
-                _ => throw new ArgumentException($"Resource '{resource.Name}' has unsupported access metadata.", nameof(artifact))
+                ShaderResourceAccess.Read => ComputeBufferAccess.ReadOnly,
+                ShaderResourceAccess.Write => ComputeBufferAccess.WriteOnly,
+                ShaderResourceAccess.ReadWrite => ComputeBufferAccess.ReadWrite,
+                _ => throw new ArgumentException($"Resource {resource.Binding.Set}/{resource.Binding.Binding} has unsupported access metadata.", nameof(abi))
             };
-            bindings[i] = new ComputeDescriptorBinding(resource.Set, resource.Binding, ComputeDescriptorKind.StorageBuffer, access);
+            var layout = resource.Layout;
+            if (layout.Size == 0 || layout.Alignment == 0 || layout.Alignment % 4 != 0 ||
+                layout.Size % 4 != 0 || layout.ArrayStride == 0 || layout.ArrayStride % layout.Alignment != 0 ||
+                layout.ArrayStride < layout.Size)
+            {
+                throw new ArgumentException($"Resource {resource.Binding.Set}/{resource.Binding.Binding} has invalid std430 layout metadata.", nameof(abi));
+            }
+
             requirements[i] = new VulkanDescriptorRequirement(
-                resource.Set,
-                resource.Binding,
+                resource.Binding.Set,
+                resource.Binding.Binding,
                 access,
-                Math.Max(checked((ulong)resource.Offset + resource.Size), resource.ArrayStride),
-                resource.ArrayStride,
-                resource.Offset);
+                layout.ArrayStride,
+                layout.ArrayStride,
+                0);
         }
 
-        return new ComputeShaderMetadata(
-            ComputeAbiLayout.Std430,
-            manifest.LocalSizeX,
-            manifest.LocalSizeY,
-            manifest.LocalSizeZ,
-            bindings);
+        return requirements;
     }
 
     private bool TryGetBuffer(IComputeStorageBuffer buffer, [NotNullWhen(true)] out VulkanStorageBuffer? result)
@@ -1605,7 +1539,7 @@ public sealed unsafe class VulkanStorageBuffer : IComputeStorageBuffer
 
 public sealed unsafe class VulkanComputePipeline : IComputePipeline
 {
-    internal VulkanComputePipeline(VulkanComputeDevice owner, DescriptorSetLayout[] descriptorSetLayouts, DescriptorPool descriptorPool, DescriptorSet[] descriptorSets, PipelineLayout pipelineLayout, Pipeline pipeline, ComputeShaderMetadata metadata, VulkanDescriptorRequirement[] requirements)
+    internal VulkanComputePipeline(VulkanComputeDevice owner, DescriptorSetLayout[] descriptorSetLayouts, DescriptorPool descriptorPool, DescriptorSet[] descriptorSets, PipelineLayout pipelineLayout, Pipeline pipeline, ShaderAbi abi, VulkanDescriptorRequirement[] requirements)
     {
         Owner = owner;
         DescriptorSetLayouts = descriptorSetLayouts;
@@ -1613,7 +1547,7 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
         DescriptorSets = descriptorSets;
         PipelineLayout = pipelineLayout;
         Pipeline = pipeline;
-        Metadata = metadata;
+        Abi = abi;
         Requirements = requirements;
     }
 
@@ -1624,16 +1558,16 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
     internal PipelineLayout PipelineLayout { get; private set; }
     internal Pipeline Pipeline { get; private set; }
     internal VulkanDescriptorRequirement[] Requirements { get; }
-    public ComputeShaderMetadata Metadata { get; }
+    public ShaderAbi Abi { get; }
 
     internal ComputeBufferAccess GetExpectedAccess(uint set, uint binding)
     {
-        var expected = Metadata.Bindings.Span;
-        for (var i = 0; i < expected.Length; i++)
+        var resources = Abi.Resources;
+        for (var i = 0; i < resources.Count; i++)
         {
-            if (expected[i].Set == set && expected[i].Binding == binding)
+            if (resources[i].Binding.Set == set && resources[i].Binding.Binding == binding)
             {
-                return expected[i].Access;
+                return ToComputeAccess(resources[i].Access);
             }
         }
 
@@ -1642,23 +1576,23 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
 
     internal bool TryUpdateDescriptors(ReadOnlySpan<ComputeBufferBinding> bindings, out string? error)
     {
-        var expected = Metadata.Bindings.Span;
-        if (bindings.Length != expected.Length)
+        var expected = Abi.Resources;
+        if (bindings.Length != expected.Count)
         {
-            error = $"Expected {expected.Length} descriptor bindings, received {bindings.Length}.";
+            error = $"Expected {expected.Count} descriptor bindings, received {bindings.Length}.";
             return false;
         }
 
-        Span<bool> matched = stackalloc bool[expected.Length];
+        Span<bool> matched = stackalloc bool[expected.Count];
         var infos = stackalloc DescriptorBufferInfo[bindings.Length];
         var writes = stackalloc WriteDescriptorSet[bindings.Length];
         for (var i = 0; i < bindings.Length; i++)
         {
             var binding = bindings[i];
             var expectedIndex = -1;
-            for (var j = 0; j < expected.Length; j++)
+            for (var j = 0; j < expected.Count; j++)
             {
-                if (expected[j].Set == binding.Set && expected[j].Binding == binding.Binding)
+                if (expected[j].Binding.Set == binding.Set && expected[j].Binding.Binding == binding.Binding)
                 {
                     expectedIndex = j;
                     break;
@@ -1679,13 +1613,14 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
             }
 
             var expectedBinding = expected[expectedIndex];
-            if (!AccessCompatible(buffer.DeclaredAccess, expectedBinding.Access))
+            var expectedAccess = ToComputeAccess(expectedBinding.Access);
+            if (!AccessCompatible(buffer.DeclaredAccess, expectedAccess))
             {
-                error = $"Buffer {binding.Set}/{binding.Binding} declared access {buffer.DeclaredAccess} cannot satisfy {expectedBinding.Access}.";
+                error = $"Buffer {binding.Set}/{binding.Binding} declared access {buffer.DeclaredAccess} cannot satisfy {expectedAccess}.";
                 return false;
             }
 
-            if (Requirements.Length == expected.Length)
+            if (Requirements.Length == expected.Count)
             {
                 var requirement = Requirements[expectedIndex];
                 if (buffer.ByteLength < requirement.MinimumByteLength || (requirement.ArrayStride != 0 && buffer.ByteLength >= requirement.Offset && (buffer.ByteLength - requirement.Offset) % requirement.ArrayStride != 0))
@@ -1721,6 +1656,15 @@ public sealed unsafe class VulkanComputePipeline : IComputePipeline
     }
 
     private DescriptorSet OwnerSet(uint set) => DescriptorSets[(int)set];
+
+    private static ComputeBufferAccess ToComputeAccess(ShaderResourceAccess access)
+        => access switch
+        {
+            ShaderResourceAccess.Read => ComputeBufferAccess.ReadOnly,
+            ShaderResourceAccess.Write => ComputeBufferAccess.WriteOnly,
+            ShaderResourceAccess.ReadWrite => ComputeBufferAccess.ReadWrite,
+            _ => throw new InvalidOperationException("Shader resource access metadata is invalid.")
+        };
 
     private static bool AccessCompatible(ComputeBufferAccess declared, ComputeBufferAccess required)
         => required switch

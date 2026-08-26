@@ -34,14 +34,16 @@ public static class TextSubmissionRendering
             return false;
         }
 
-        return session.SubmitFrame(
+        var textDrawList = new TextDrawList(orderedGlyphs.Slice(0, orderedCount));
+        var packet = new RenderFramePacket(
             uiPipeline,
-            in uiParameters,
-            in uiDrawList,
+            uiParameters,
+            uiDrawList,
             textPipeline,
-            in textParameters,
+            textParameters,
             atlasPages,
-            new TextDrawList(orderedGlyphs.Slice(0, orderedCount)),
+            textDrawList,
             dirtyRecords);
+        return session.SubmitFrame(in packet);
     }
 }

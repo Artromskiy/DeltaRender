@@ -251,9 +251,20 @@ public static class UiRenderBatchSubmission
         }
 
         var batch = frame.Batch;
+        var uiDrawList = new UiDrawList(batch.Rectangles);
         if (batch.TextSubmissions.IsEmpty)
         {
-            return session.EndFrame(in frameState, uiPipeline, in uiParameters, batch.Rectangles, batch.DirtyRecords);
+            var emptyTextDrawList = default(TextDrawList);
+            var packet = new RenderFramePacket(
+                uiPipeline,
+                uiParameters,
+                uiDrawList,
+                null,
+                textParameters,
+                ReadOnlySpan<ITextAtlasPage>.Empty,
+                emptyTextDrawList,
+                batch.DirtyRecords);
+            return session.EndFrame(in frameState, in packet);
         }
 
         if (textPipeline is null)
@@ -276,16 +287,16 @@ public static class UiRenderBatchSubmission
         }
 
         var textDrawList = new TextDrawList(orderedGlyphs.Slice(0, orderedCount));
-        return session.EndFrame(
-            in frameState,
+        var textPacket = new RenderFramePacket(
             uiPipeline,
-            in uiParameters,
-            batch.Rectangles,
+            uiParameters,
+            uiDrawList,
             textPipeline,
-            in textParameters,
+            textParameters,
             frame.AtlasPages,
-            in textDrawList,
+            textDrawList,
             batch.DirtyRecords);
+        return session.EndFrame(in frameState, in textPacket);
     }
 
     public static bool Submit(
@@ -306,7 +317,17 @@ public static class UiRenderBatchSubmission
         var uiDrawList = new UiDrawList(batch.Rectangles);
         if (batch.TextSubmissions.IsEmpty)
         {
-            return session.SubmitFrame(uiPipeline, in uiParameters, in uiDrawList, batch.DirtyRecords);
+            var emptyTextDrawList = default(TextDrawList);
+            var packet = new RenderFramePacket(
+                uiPipeline,
+                uiParameters,
+                uiDrawList,
+                null,
+                textParameters,
+                ReadOnlySpan<ITextAtlasPage>.Empty,
+                emptyTextDrawList,
+                batch.DirtyRecords);
+            return session.SubmitFrame(in packet);
         }
 
         if (textPipeline is null)
@@ -318,7 +339,7 @@ public static class UiRenderBatchSubmission
         return session.SubmitTextSubmission(
             uiPipeline,
             in uiParameters,
-            in uiDrawList,
+            uiDrawList,
             textPipeline,
             in textParameters,
             atlasPages,

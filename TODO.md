@@ -3,48 +3,38 @@
 Ordered cross-project ownership and gates are in
 [../HIGH_PRIORITY_TODO.md](../HIGH_PRIORITY_TODO.md).
 
-## P0 — shared graphics contract
+## P0 - canonical contracts
 
-- [x] Remove the local duplicate `GraphicsShaderProgram`; current renderer APIs
-  consume the shared `Delta.Shader.Abstractions` compatibility type without an
-  adapter copy.
-- [ ] Migrate compute and graphics pipeline contracts to
-  `Delta.Shader.Contract.IShaderArtifact` / `IGraphicsShaderProgram`, whose
-  final handoff is SPIR-V plus binary `ShaderAbi`, then remove the runtime
-  dependency on the older abstractions artifact model.
-- [x] Define the Vulkan-only render-graph contracts, explicit per-view surface,
-  viewport and `PixelRect`, canonical DeltaShader pipeline descriptions and
-  raster/compute/transfer command contexts.
-- [ ] Implement the graph in `Delta.Render.Vulkan`, then migrate fullscreen,
-  UI/text and mesh submissions before removing specialized frame overloads.
+- [x] Consume `Delta.Shader.Contract.IShaderArtifact`, `ShaderAbi` and
+  `IGraphicsShaderProgram` directly in Core/Vulkan; do not duplicate ABI DTOs.
+- [x] Keep the Vulkan-only RenderGraph contract separate from allocation,
+  barriers and command recording.
+- [x] Keep the frame session to `BeginFrame` plus canonical packet `EndFrame`;
+  `SubmitFrame` is an extension that sequences that pair once.
+- [ ] Implement RenderGraph scheduling in `Delta.Render.Vulkan` and migrate
+  specialized fullscreen/UI/text/mesh submissions to graph passes.
 
-## P1 — canonical UI/text submission
+## P1 - canonical UI/text submission
 
-- Keep `UiRenderBatchAdapter -> borrowed UiRenderBatch` as the production
-  renderer handoff; migrate remaining Engine/Editor consumers and then remove
-  `UiQuad` compatibility paths.
-- Consume DeltaText positioned glyph/bitmap data, own atlas packing/upload,
-  UVs, GPU pages and compact glyph instances.
-- Group draws by pipeline, atlas page and clip; never draw or allocate per glyph.
-- Verify grayscale SDF and MSDF, atlas growth, partial clips, page disposal and
-  two DPI scales through contract tests and a bounded MoltenVK smoke.
-- Preserve owner/generation, anchor, clip/order and dirty generation without
-  importing XAML/ECS types or raw storage handles.
-- [x] Contract-test the canonical handoff's copied records, borrowed nested
-  glyph/payload memory, clip/order/version preservation and stale frame tokens.
-- [x] Preserve renderer-neutral draw kind/resource handles, clip identity and
-  hierarchy, plus command/clip/text version ranges in the canonical borrowed
-  batch. Sampled image consumption remains separate renderer work.
+- [x] Keep `UiRenderBatchAdapter` as the renderer-owned copying boundary and
+  preserve draw, clip, owner/order, generation and dirty-version data.
+- [x] Keep `RenderFramePacket` and `IUiRenderFrameSource` borrowed-lifetime
+  semantics explicit without ECS or retained-UI dependencies in Core.
+- [x] Adapt the canonical DeltaText `GlyphImage` and `ShapedGlyph` values in
+  `Delta.Render.Text`; cache identity includes font instance, glyph, size,
+  mode and distance range.
+- [ ] Add a public DeltaText image fixture/factory consumer test, then verify
+  atlas insertion, page rollover/recycle, dirty upload and disposal end to end.
+- [ ] Verify grayscale SDF and MSDF presentation, atlas growth, partial clips,
+  page disposal and two DPI scales through contract tests and bounded MoltenVK.
+- [ ] Coordinate `UiDisplayList` adapter integration in the editor consumer;
+  Render remains independent of Delta.XAML contract types.
 
-## P2 — frame surface cleanup
+## P2 - lifecycle and platform
 
-- After consumer migration, keep one frame submission path and separate
-  lifecycle, pipeline creation and uploads into small contracts. Name copying
-  adapters and borrowed views distinctly.
-- [x] Make `VulkanWindowSession` construction transactional: if any native
-  allocation fails before the session object is returned, release every
-  render-pass, swapchain, image-view/framebuffer, synchronization and command
-  resource already created. Cover the cleanup ordering through a headless
-  fault-injection seam before relying on a native smoke.
+- [x] Make `VulkanWindowSession` construction transactional with reverse-order
+  rollback, source-backed surface ownership and partial-view cleanup.
+- [ ] Implement the Vulkan RenderGraph runtime while preserving the current
+  surface/session contract.
 
 Shared acceptance lives in [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md).

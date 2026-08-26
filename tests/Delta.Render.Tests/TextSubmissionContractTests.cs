@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
-using Delta.Shader.Abstractions;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -240,9 +239,9 @@ public sealed class TextSubmissionContractTests
             ReadOnlySpan<RenderRecordChange>.Empty);
 
         Assert.True(submitted);
-        Assert.Equal(1, session.SubmitCount);
-        Assert.Single(session.SubmittedGlyphs);
-        Assert.Equal(new TextAtlasPageId(6), session.SubmittedGlyphs[0].AtlasPage);
+        Assert.Equal(1, session.EndFrameCount);
+        Assert.Single(session.EndedGlyphs);
+        Assert.Equal(new TextAtlasPageId(6), session.EndedGlyphs[0].AtlasPage);
     }
 
     [Fact]
@@ -409,10 +408,10 @@ public sealed class TextSubmissionContractTests
             ordered,
             ranges));
 
-        Assert.Equal(1, session.SubmitCount);
-        Assert.Single(session.SubmittedQuads);
-        Assert.Single(session.SubmittedDirtyRecords);
-        Assert.Single(session.SubmittedGlyphs);
+        Assert.Equal(1, session.EndFrameCount);
+        Assert.Single(session.EndedQuads);
+        Assert.Single(session.EndedDirtyRecords);
+        Assert.Single(session.EndedGlyphs);
     }
 
     [Fact]
@@ -694,39 +693,17 @@ public sealed class TextSubmissionContractTests
             BeginFrameCount++;
             return RenderFrameState.Ready(0, new WindowMetrics(64, 64, 1));
         }
-        public bool EndFrame(in RenderFrameState frameState, ReadOnlySpan<RenderRecordChange> dirtyRecords) => false;
-        public bool EndFrame(in RenderFrameState frameState, IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters, ReadOnlySpan<UiQuad> uiQuads, ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        public bool EndFrame(in RenderFrameState frameState, in RenderFramePacket packet)
         {
             EndFrameCount++;
-            EndedQuads = uiQuads.ToArray();
-            EndedDirtyRecords = dirtyRecords.ToArray();
+            EndedQuads = packet.UiDrawList.Quads.ToArray();
+            EndedAtlasPages = packet.AtlasPages.ToArray();
+            EndedGlyphs = packet.TextDrawList.Glyphs.ToArray();
+            EndedDirtyRecords = packet.DirtyRecords.ToArray();
             return true;
         }
-        public bool EndFrame(in RenderFrameState frameState, IGraphicsPipeline uiPipeline, in GraphicsFrameParameters uiParameters, ReadOnlySpan<UiQuad> uiQuads, IGraphicsPipeline textPipeline, in TextFrameParameters textParameters, ReadOnlySpan<ITextAtlasPage> atlasPages, in TextDrawList textDrawList, ReadOnlySpan<RenderRecordChange> dirtyRecords)
-        {
-            EndFrameCount++;
-            EndedQuads = uiQuads.ToArray();
-            EndedAtlasPages = atlasPages.ToArray();
-            EndedGlyphs = textDrawList.Glyphs.ToArray();
-            EndedDirtyRecords = dirtyRecords.ToArray();
-            return true;
-        }
-        public bool EndFrame(in RenderFrameState frameState, IGraphicsPipeline uiPipeline, in GraphicsFrameParameters uiParameters, ReadOnlySpan<UiQuad> uiQuads, IGraphicsPipeline textPipeline, in TextFrameParameters textParameters, ReadOnlySpan<TextGlyphInstance> textGlyphs, ReadOnlySpan<RenderRecordChange> dirtyRecords) => false;
-        public bool EndFrame(in RenderFrameState frameState, IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters, in UiDrawList drawList, ReadOnlySpan<RenderRecordChange> dirtyRecords) => false;
-        public bool SubmitFrame(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters, in UiDrawList drawList, ReadOnlySpan<RenderRecordChange> dirtyRecords) => false;
-
-        public bool SubmitFrame(IGraphicsPipeline uiPipeline, in GraphicsFrameParameters uiParameters, in UiDrawList uiDrawList, IGraphicsPipeline textPipeline, in TextFrameParameters textParameters, ReadOnlySpan<ITextAtlasPage> atlasPages, in TextDrawList textDrawList, ReadOnlySpan<RenderRecordChange> dirtyRecords)
-        {
-            SubmitCount++;
-            SubmittedQuads = uiDrawList.Quads.ToArray();
-            SubmittedDirtyRecords = dirtyRecords.ToArray();
-            SubmittedGlyphs = textDrawList.Glyphs.ToArray();
-            return true;
-        }
-
-        public bool SubmitFrame(IGraphicsPipeline uiPipeline, in GraphicsFrameParameters uiParameters, in UiDrawList uiDrawList, IGraphicsPipeline textPipeline, in TextFrameParameters textParameters, in TextDrawList textDrawList, ReadOnlySpan<RenderRecordChange> dirtyRecords) => false;
-        public IGraphicsPipeline CreateTextPipeline(in GraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
-        public IGraphicsPipeline CreateGraphicsPipeline(in GraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
+        public IGraphicsPipeline CreateTextPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
+        public IGraphicsPipeline CreateGraphicsPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
         public ITextAtlasDevice CreateTextAtlasDevice() => throw new NotSupportedException();
         public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters) => false;
         public bool Resize(WindowMetrics metrics) => false;

@@ -1,5 +1,5 @@
 using Delta.Render.Core;
-using Delta.Shader.Abstractions;
+using Delta.Shader.Contract;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -9,7 +9,7 @@ public sealed class GraphicsContractTests
     [Fact]
     public void GraphicsProgramRequiresPairedVertexAndFragmentStages()
     {
-        var bytes = new byte[4];
+        var bytes = ValidSpirv();
         var program = new GraphicsShaderProgram(
             Artifact(bytes, ShaderStage.Vertex),
             Artifact(bytes, ShaderStage.Fragment));
@@ -100,15 +100,13 @@ public sealed class GraphicsContractTests
         Assert.Contains(nameof(IRenderWindowFrameSession.CreateGraphicsPipeline), members);
         Assert.Contains(nameof(IRenderWindowFrameSession.DrawFullscreenTriangle), members);
         Assert.Contains(nameof(IRenderWindowFrameSession.EndFrame), members);
-        Assert.Contains(nameof(IRenderWindowFrameSession.SubmitFrame), members);
+        Assert.Equal(1, members.Count(name => name == nameof(IRenderWindowFrameSession.EndFrame)));
+        Assert.DoesNotContain("SubmitFrame", members);
         Assert.DoesNotContain("PollEvents", members);
-        Assert.NotNull(typeof(IUiDrawListProvider).GetProperty(nameof(IUiDrawListProvider.CurrentDrawList)));
     }
 
     private static ShaderArtifact Artifact(byte[] spirv, ShaderStage stage)
-        => new(spirv, new Delta.Shader.Abstractions.ShaderAbiManifest
-        {
-            Stage = stage,
-            EntryPointName = "main"
-        });
+        => new(spirv, "main", new ShaderAbi(stage));
+
+    private static byte[] ValidSpirv() => [0x03, 0x02, 0x23, 0x07];
 }
