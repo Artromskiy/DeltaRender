@@ -2428,7 +2428,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
             api.DeviceWaitIdle(_device);
             foreach (var graph in _renderGraphs)
             {
-                graph.DisposeAsync().GetAwaiter().GetResult();
+                graph.DisposeSynchronously();
             }
 
             _renderGraphs.Clear();

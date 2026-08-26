@@ -143,14 +143,18 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
 
     public ValueTask DisposeAsync()
     {
+        DisposeSynchronously();
+        return ValueTask.CompletedTask;
+    }
+
+    internal void DisposeSynchronously()
+    {
         if (!_disposed)
         {
             _disposed = true;
             ResetFrame();
             DisposeStaging();
         }
-
-        return ValueTask.CompletedTask;
     }
 
     public RenderGraphTextureHandle ImportSurface(RenderSurfaceHandle surface)
