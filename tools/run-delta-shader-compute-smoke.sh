@@ -25,13 +25,13 @@ run_bounded() {
     return 124
 }
 
-DELTA_SHADER_TOOL="$DELTA_SHADER_ROOT/src/Delta.Shader.Tool/Delta.Shader.Tool.csproj"
-SHADER_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.Authoring.csproj"
-RUNTIME_PROJECT="$ROOT/tools/Delta.Shader.Compute/Delta.Render.Shader.Compute.csproj"
+DELTA_SHADER_TOOL="$DELTA_SHADER_ROOT/src/DeltaShader.Tool/DeltaShader.Tool.csproj"
+SHADER_PROJECT="$ROOT/tools/DeltaShader.Compute/DeltaRender.Shader.Compute.Authoring.csproj"
+RUNTIME_PROJECT="$ROOT/tools/DeltaShader.Compute/DeltaRender.Shader.Compute.csproj"
 GLSL="$OUT/Compute.glsl"
 SPIRV="$OUT/Compute.spv"
 MANIFEST="$OUT/Compute.shader.json"
-SMOKE="$ROOT/tools/Delta.Shader.Compute/bin/Release/net10.0/osx-arm64/Delta.Render.Shader.Compute"
+SMOKE="$ROOT/tools/DeltaShader.Compute/bin/Release/net10.0/osx-arm64/DeltaRender.Shader.Compute"
 
 run_bounded 90 dotnet run --project "$DELTA_SHADER_TOOL" -c Release --no-build -- build "$SHADER_PROJECT" --profile vulkan1.2 --spirv 1.5 --glsl 460 --out "$OUT"
 test -s "$GLSL"

@@ -1,11 +1,12 @@
 # DeltaRender user API
 
-This file is the user-facing API summary. Implementation details belong in
+This file is the user-facing API summary. The complete cross-project contract
+is [CONTRACT.md](CONTRACT.md); implementation details belong in
 `INTERNAL.md`.
 
 ## Shader input
 
-Consumers provide `Delta.Shader.Contract.IShaderArtifact` and
+Consumers provide `DeltaShader.Contract.IShaderArtifact` and
 `IGraphicsShaderProgram`. An artifact owns validated SPIR-V bytes, its emitted
 entry point and the resolved `ShaderAbi`. DeltaRender consumes that contract; it
 does not compile C# or GLSL and does not define a second ABI.
@@ -49,7 +50,7 @@ into these records before the one frame submission.
 
 ## Text input
 
-`Delta.Render.Text.TextAtlasCache` consumes immutable DeltaText `GlyphImage`
+`DeltaRender.Text.TextAtlasCache` consumes immutable DeltaText `GlyphImage`
 values and copies their pixels into renderer-owned pages. Shaping is supplied
 as DeltaText `ShapedGlyph` values; Render does not accept strings or perform
 shaping. `TextGlyphPlacement.ToInstance` accepts the caller's fractional
@@ -66,7 +67,7 @@ pipeline, atlas page and clip, with one instanced draw per group.
 host-visible readback, canonical shader artifacts, dispatch dimensions and
 dirty record ranges. The normal pipeline entry point is
 `CreateComputePipeline(IShaderArtifact)`. The raw SPIR-V overload is an explicit
-low-level import and accepts only the producer-owned `Delta.Shader.Contract.ShaderAbi`;
+low-level import and accepts only the producer-owned `DeltaShader.Contract.ShaderAbi`;
 there is no Render-owned compute metadata model. `IComputePipeline.Abi` exposes
 that same canonical ABI. Storage layout is std430. Zero-sized dispatches are a
 successful no-op; invalid ranges, foreign handles and disposed resources are

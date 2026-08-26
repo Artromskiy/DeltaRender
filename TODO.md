@@ -5,13 +5,14 @@ Ordered cross-project ownership and gates are in
 
 ## P0 - canonical contracts
 
-- [x] Consume `Delta.Shader.Contract.IShaderArtifact`, `ShaderAbi` and
+- [x] Consume `DeltaShader.Contract.IShaderArtifact`, `ShaderAbi` and
   `IGraphicsShaderProgram` directly in Core/Vulkan; do not duplicate ABI DTOs.
-- [x] Keep the Vulkan-only RenderGraph contract separate from allocation,
-  barriers and command recording.
+- [x] Keep the complete Vulkan-only cross-project contract in `CONTRACT.md`
+  and its flat `src/Contract` declarations, separate from
+  allocation, barriers and command recording.
 - [x] Keep the frame session to `BeginFrame` plus canonical packet `EndFrame`;
   `SubmitFrame` is an extension that sequences that pair once.
-- [ ] Implement RenderGraph scheduling in `Delta.Render.Vulkan` and migrate
+- [ ] Implement RenderGraph scheduling in `DeltaRender.Vulkan` and migrate
   specialized fullscreen/UI/text/mesh submissions to graph passes.
 
 ## P1 - canonical UI/text submission
@@ -21,14 +22,14 @@ Ordered cross-project ownership and gates are in
 - [x] Keep `RenderFramePacket` and `IUiRenderFrameSource` borrowed-lifetime
   semantics explicit without ECS or retained-UI dependencies in Core.
 - [x] Adapt the canonical DeltaText `GlyphImage` and `ShapedGlyph` values in
-  `Delta.Render.Text`; cache identity includes font instance, glyph, size,
+  `DeltaRender.Text`; cache identity includes font instance, glyph, size,
   mode and distance range.
 - [ ] Add a public DeltaText image fixture/factory consumer test, then verify
   atlas insertion, page rollover/recycle, dirty upload and disposal end to end.
 - [ ] Verify grayscale SDF and MSDF presentation, atlas growth, partial clips,
   page disposal and two DPI scales through contract tests and bounded MoltenVK.
 - [ ] Coordinate `UiDisplayList` adapter integration in the editor consumer;
-  Render remains independent of Delta.XAML contract types.
+  Render remains independent of DeltaXAML contract types.
 
 ## P2 - lifecycle and platform
 

@@ -6,15 +6,15 @@ uses MoltenVK.
 
 ## Boundaries
 
-- `Delta.Render.Core` contains platform-neutral renderer contracts and borrowed
+- `DeltaRender` contains platform-neutral renderer contracts and borrowed
   frame packets.
-- `Delta.Render.Vulkan` owns Vulkan resources, pipelines and presentation.
-- `Delta.Render.Platform.SDL3` owns SDL window and surface integration.
-- `Delta.Render.Text` adapts DeltaText's immutable glyph-image and shaping
+- `DeltaRender.Vulkan` owns Vulkan resources, pipelines and presentation.
+- `DeltaRender.Platform.SDL3` owns SDL window and surface integration.
+- `DeltaRender.Text` adapts DeltaText's immutable glyph-image and shaping
   values to renderer-owned atlas storage.
 - DeltaEngine owns timing, event polling and input; DeltaXAML owns layout and
   produces `UiDisplayList`; DeltaText owns shaping and rasterization.
-- Shader artifacts come from `Delta.Shader.Contract` as SPIR-V plus resolved
+- Shader artifacts come from `DeltaShader.Contract` as SPIR-V plus resolved
   `ShaderAbi`; the renderer does not compile source or duplicate shader ABI.
 - Compute pipeline creation consumes that artifact directly; raw SPIR-V import
   is a low-level path that accepts the same canonical `ShaderAbi`.
@@ -25,8 +25,8 @@ uses MoltenVK.
 - [INTERNAL.md](INTERNAL.md): Render-owned implementation boundaries.
 - [WORKFLOW.md](WORKFLOW.md): bounded build, test, format and metrics commands.
 - [TODO.md](TODO.md): selected project work only.
-- [RenderGraph contract](src/Delta.Render.Core/RenderGraph/README.md): frozen
-  Vulkan-only graph boundary.
+- [CONTRACT.md](CONTRACT.md): the complete Vulkan-only cross-project renderer
+  contract, including RenderGraph, frame, resource, UI/text and compute APIs.
 - [Vulkan/SDL3/MoltenVK ADR](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md):
   platform and package decisions.
 

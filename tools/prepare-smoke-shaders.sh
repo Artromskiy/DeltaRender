@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DELTA_SHADER_ROOT="${DELTA_SHADER_ROOT:-"$ROOT/../DeltaShader"}"
-TOOL_PROJECT="$DELTA_SHADER_ROOT/src/Delta.Shader.Tool/Delta.Shader.Tool.csproj"
-UI_PROJECT="$ROOT/tools/Delta.Render.UiShaders/Delta.Render.UiShaders.csproj"
-FULLSCREEN_PROJECT="$ROOT/tools/Delta.Render.FullscreenShaders/Delta.Render.FullscreenShaders.csproj"
-SHADER_DIR="${DELTA_RENDER_SHADER_DIR:-"$ROOT/samples/Delta.Render.Smoke/shaders"}"
+TOOL_PROJECT="$DELTA_SHADER_ROOT/src/DeltaShader.Tool/DeltaShader.Tool.csproj"
+UI_PROJECT="$ROOT/tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj"
+FULLSCREEN_PROJECT="$ROOT/tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj"
+SHADER_DIR="${DELTA_RENDER_SHADER_DIR:-"$ROOT/samples/DeltaRender.Smoke/shaders"}"
 EXPECTED_VERSION=4
 MODE=generate
 if [[ $# -gt 1 ]]; then
@@ -91,7 +91,7 @@ command -v glslangValidator >/dev/null || { echo "glslangValidator is required" 
 command -v spirv-val >/dev/null || { echo "spirv-val is required" >&2; exit 1; }
 test -d "$SHADER_DIR" || { echo "shader directory does not exist: $SHADER_DIR" >&2; exit 1; }
 
-echo "Building Delta.Shader.Tool and local shader producers"
+echo "Building DeltaShader.Tool and local shader producers"
 run_bounded 180 dotnet build "$TOOL_PROJECT" -c Release --disable-build-servers -m:1 /p:UseSharedCompilation=false --nologo
 run_bounded 120 dotnet build "$UI_PROJECT" -c Release --disable-build-servers -m:1 /p:UseSharedCompilation=false --nologo
 run_bounded 120 dotnet build "$FULLSCREEN_PROJECT" -c Release --disable-build-servers -m:1 /p:UseSharedCompilation=false --nologo
@@ -235,4 +235,4 @@ if [[ "${DELTA_RENDER_PUBLISH_FAIL_AFTER_FIRST_RENAME:-0}" == "1" ]]; then
 fi
 mv "$PUBLISH_STAGE" "$SHADER_DIR"
 PUBLISH_INSTALLED=1
-echo "Published current Delta.Shader artifacts to $SHADER_DIR"
+echo "Published current DeltaShader artifacts to $SHADER_DIR"

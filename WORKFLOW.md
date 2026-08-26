@@ -1,10 +1,10 @@
 # DeltaRender workflow
 
 ```bash
-dotnet restore Delta.Render.slnx
-dotnet build Delta.Render.slnx -c Release --no-restore \
+dotnet restore DeltaRender.slnx
+dotnet build DeltaRender.slnx -c Release --no-restore \
   --disable-build-servers -m:1 /p:UseSharedCompilation=false -v:minimal
-dotnet test Delta.Render.slnx -c Release --no-build --no-restore \
+dotnet test DeltaRender.slnx -c Release --no-build --no-restore \
   --disable-build-servers -m:1
 ```
 
@@ -13,7 +13,7 @@ Bounded vertical slices:
 ```bash
 ./tools/run-delta-shader-compute-smoke.sh
 
-dotnet run --project samples/Delta.Render.Smoke/Delta.Render.Smoke.csproj \
+dotnet run --project samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj \
   -c Release -r osx-arm64 -- --interactive
 ```
 
@@ -21,12 +21,12 @@ On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
 Tool-specific shader regeneration is documented in
-[tools/Delta.Render.UiShaders/README.md](tools/Delta.Render.UiShaders/README.md).
+[tools/DeltaRender.UiShaders/README.md](tools/DeltaRender.UiShaders/README.md).
 The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The
 bounded rollback check is `./tools/test-prepare-smoke-shaders-rollback.sh`.
-`Delta.Render.Tests` also exercises window-session acquisition faults,
+`DeltaRender.Tests` also exercises window-session acquisition faults,
 reverse-order native-handle rollback, platform surface transfer and cleanup
 failures without loading Vulkan or opening a window.
 The headless UI handoff tests also cover adapter-owned record backing,

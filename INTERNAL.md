@@ -1,7 +1,8 @@
 # DeltaRender internal notes
 
 This file is internal to Render maintainers and is not a cross-project user
-contract.
+contract. The public boundary is [CONTRACT.md](CONTRACT.md); this document
+only records implementation ownership and migration notes.
 
 ## Ownership
 
@@ -19,7 +20,7 @@ replacement is failure-atomic and never leaves a destroyed handle published.
 
 ## Shader consumption
 
-The only shader ABI authority is `Delta.Shader.Contract`. Core and Vulkan read
+The only shader ABI authority is `DeltaShader.Contract`. Core and Vulkan read
 `IShaderArtifact`, `IGraphicsShaderProgram` and `ShaderAbi` directly. The
 renderer validates stage, entry point, descriptor set/binding, access, layout
 offsets/strides and push constants before native pipeline creation. It never

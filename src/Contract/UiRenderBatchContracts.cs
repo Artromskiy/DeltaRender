@@ -1,0 +1,353 @@
+namespace DeltaRender;
+
+/// <summary>
+/// Identifies one borrowed UI frame owned by a <see cref="UiRenderBatchAdapter"/>.
+/// A token becomes stale when the adapter is replaced or disposed.
+/// </summary>
+public readonly record struct UiRenderFrameToken(uint Generation)
+{
+    public bool IsValid => Generation != 0;
+}
+
+/// <summary>
+/// A borrowed, frame-scoped view over the renderer-facing UI handoff. The view
+/// is valid only for the call/frame represented by <see cref="Frame"/> and must
+/// not be stored, returned, or used after the adapter is replaced or disposed.
+/// </summary>
+public readonly ref struct UiRenderBatch
+{
+    public UiRenderBatch(
+        ReadOnlySpan<UiQuad> rectangles,
+        ReadOnlySpan<TextSubmissionRecord> textSubmissions,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        ReadOnlySpan<UiRenderClipEntry> clips,
+        in UiRenderDrawDelta delta,
+        UiRenderFrameToken frame)
+    {
+        Rectangles = rectangles;
+        TextSubmissions = textSubmissions;
+        DirtyRecords = dirtyRecords;
+        Clips = clips;
+        Delta = delta;
+        Frame = frame;
+    }
+
+    public ReadOnlySpan<UiQuad> Rectangles { get; }
+
+    public ReadOnlySpan<TextSubmissionRecord> TextSubmissions { get; }
+
+    public ReadOnlySpan<RenderRecordChange> DirtyRecords { get; }
+
+    public ReadOnlySpan<UiRenderClipEntry> Clips { get; }
+
+    public UiRenderDrawDelta Delta { get; }
+
+    public UiRenderFrameToken Frame { get; }
+
+    public bool IsEmpty => Rectangles.IsEmpty && TextSubmissions.IsEmpty &&
+                           DirtyRecords.IsEmpty && Clips.IsEmpty && Delta.IsEmpty;
+}
+
+/// <summary>
+/// One borrowed UI frame prepared by a producer. The batch and atlas pages refer
+/// to the same prepared frame and must not be retained after the source's next
+/// prepare/replace, atlas-cache mutation, or dispose operation.
+/// </summary>
+public readonly ref struct UiRenderFrameView
+{
+    public UiRenderFrameView(UiRenderBatch batch, ReadOnlySpan<ITextAtlasPage> atlasPages)
+    {
+        Batch = batch;
+        AtlasPages = atlasPages;
+    }
+
+    public UiRenderBatch Batch { get; }
+
+    public ReadOnlySpan<ITextAtlasPage> AtlasPages { get; }
+}
+
+/// <summary>
+/// Supplies one borrowed, already-prepared UI frame to the renderer. Render
+/// calls this once after the UI stage and immediately before submission; the
+/// returned view is valid only until the source is prepared/replaced, its atlas
+/// cache mutates, or the source is disposed.
+/// </summary>
+public interface IUiRenderFrameSource
+{
+    UiRenderFrameView BorrowFrame();
+}
+
+/// <summary>
+/// Owns reusable renderer-facing UI arrays while producer adapters retain ownership
+/// of their source models and payload memory.
+/// </summary>
+public sealed class UiRenderBatchAdapter : IDisposable
+{
+    private UiQuad[] _rectangles = [];
+    private TextSubmissionRecord[] _textSubmissions = [];
+    private RenderRecordChange[] _dirtyRecords = [];
+    private UiRenderClipEntry[] _clips = [];
+    private int _rectangleCount;
+    private int _textSubmissionCount;
+    private int _dirtyRecordCount;
+    private int _clipCount;
+    private UiRenderDrawDelta _delta;
+    private uint _generation;
+    private bool _disposed;
+
+    public int RectangleCount => _rectangleCount;
+
+    public int TextSubmissionCount => _textSubmissionCount;
+
+    public int DirtyRecordCount => _dirtyRecordCount;
+
+    public int ClipCount => _clipCount;
+
+    /// <summary>
+    /// Replaces the borrowed frame contents and returns its lifetime token.
+    /// Any previously borrowed batch is invalid after this method returns.
+    /// </summary>
+    public UiRenderFrameToken Replace(
+        ReadOnlySpan<UiQuad> rectangles,
+        ReadOnlySpan<TextSubmissionRecord> textSubmissions,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords)
+        => Replace(
+            rectangles,
+            textSubmissions,
+            dirtyRecords,
+            ReadOnlySpan<UiRenderClipEntry>.Empty,
+            default);
+
+    /// <summary>
+    /// Replaces the complete canonical UI frame, including retained clip
+    /// identity and producer dirty ranges.
+    /// </summary>
+    public UiRenderFrameToken Replace(
+        ReadOnlySpan<UiQuad> rectangles,
+        ReadOnlySpan<TextSubmissionRecord> textSubmissions,
+        ReadOnlySpan<RenderRecordChange> dirtyRecords,
+        ReadOnlySpan<UiRenderClipEntry> clips,
+        in UiRenderDrawDelta delta)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _rectangles = EnsureCapacity(_rectangles, rectangles.Length);
+        _textSubmissions = EnsureCapacity(_textSubmissions, textSubmissions.Length);
+        _dirtyRecords = EnsureCapacity(_dirtyRecords, dirtyRecords.Length);
+        _clips = EnsureCapacity(_clips, clips.Length);
+
+        ClearTail(_rectangles, rectangles.Length, _rectangleCount);
+        ClearTail(_textSubmissions, textSubmissions.Length, _textSubmissionCount);
+        ClearTail(_dirtyRecords, dirtyRecords.Length, _dirtyRecordCount);
+        ClearTail(_clips, clips.Length, _clipCount);
+        rectangles.CopyTo(_rectangles);
+        textSubmissions.CopyTo(_textSubmissions);
+        dirtyRecords.CopyTo(_dirtyRecords);
+        clips.CopyTo(_clips);
+        _rectangleCount = rectangles.Length;
+        _textSubmissionCount = textSubmissions.Length;
+        _dirtyRecordCount = dirtyRecords.Length;
+        _clipCount = clips.Length;
+        _delta = delta;
+        _generation = _generation == uint.MaxValue ? 1 : _generation + 1;
+        return new UiRenderFrameToken(_generation);
+    }
+
+    /// <summary>
+    /// Borrows the current frame until the adapter is replaced or disposed.
+    /// </summary>
+    public UiRenderBatch Borrow(in UiRenderFrameToken token)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!token.IsValid || token.Generation != _generation)
+        {
+            throw new InvalidOperationException("The UI render frame token is stale or invalid.");
+        }
+
+        return new UiRenderBatch(
+            _rectangles.AsSpan(0, _rectangleCount),
+            _textSubmissions.AsSpan(0, _textSubmissionCount),
+            _dirtyRecords.AsSpan(0, _dirtyRecordCount),
+            _clips.AsSpan(0, _clipCount),
+            in _delta,
+            token);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Array.Clear(_rectangles);
+        Array.Clear(_textSubmissions);
+        Array.Clear(_dirtyRecords);
+        Array.Clear(_clips);
+        _rectangles = [];
+        _textSubmissions = [];
+        _dirtyRecords = [];
+        _clips = [];
+        _rectangleCount = 0;
+        _textSubmissionCount = 0;
+        _dirtyRecordCount = 0;
+        _clipCount = 0;
+        _delta = default;
+        _disposed = true;
+    }
+
+    private static T[] EnsureCapacity<T>(T[] storage, int required)
+    {
+        if (storage.Length >= required)
+        {
+            return storage;
+        }
+
+        var capacity = Math.Max(4, storage.Length);
+        while (capacity < required)
+        {
+            capacity = checked(capacity * 2);
+        }
+
+        return new T[capacity];
+    }
+
+    private static void ClearTail<T>(T[] storage, int newCount, int oldCount)
+    {
+        if (newCount < oldCount)
+        {
+            Array.Clear(storage, newCount, oldCount - newCount);
+        }
+    }
+}
+
+/// <summary>
+/// Bridges a neutral UI batch to the existing renderer-owned combined submission path.
+/// </summary>
+public static class UiRenderBatchSubmission
+{
+    /// <summary>
+    /// Ends an already-begun frame from one borrowed UI view. This method never
+    /// calls <see cref="IRenderWindowFrameSession.BeginFrame"/> or a SubmitFrame
+    /// method. The source view must remain valid until this call returns.
+    /// </summary>
+    public static bool EndPreparedFrame(
+        this IRenderWindowFrameSession session,
+        in RenderFrameState frameState,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        IGraphicsPipeline? textPipeline,
+        in TextFrameParameters textParameters,
+        in UiRenderFrameView frame,
+        in TextProjectionContext projectionContext,
+        ITextWorldProjection? worldProjection,
+        Span<TextGlyphInstance> orderedGlyphs,
+        Span<TextBatchRange> textBatches)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(uiPipeline);
+        if (!frameState.IsValid)
+        {
+            return false;
+        }
+
+        var batch = frame.Batch;
+        var uiDrawList = new UiDrawList(batch.Rectangles);
+        if (batch.TextSubmissions.IsEmpty)
+        {
+            var emptyTextDrawList = default(TextDrawList);
+            var packet = new RenderFramePacket(
+                uiPipeline,
+                uiParameters,
+                uiDrawList,
+                null,
+                textParameters,
+                ReadOnlySpan<ITextAtlasPage>.Empty,
+                emptyTextDrawList,
+                batch.DirtyRecords);
+            return session.EndFrame(in frameState, in packet);
+        }
+
+        if (textPipeline is null)
+        {
+            return false;
+        }
+
+        var submission = new TextSubmissionFrame(batch.TextSubmissions);
+        if (!TextSubmissionBatching.TryBuild(
+                in submission,
+                in projectionContext,
+                worldProjection,
+                orderedGlyphs,
+                textBatches,
+                out var orderedCount,
+                out _,
+                out _))
+        {
+            return false;
+        }
+
+        var textDrawList = new TextDrawList(orderedGlyphs.Slice(0, orderedCount));
+        var textPacket = new RenderFramePacket(
+            uiPipeline,
+            uiParameters,
+            uiDrawList,
+            textPipeline,
+            textParameters,
+            frame.AtlasPages,
+            textDrawList,
+            batch.DirtyRecords);
+        return session.EndFrame(in frameState, in textPacket);
+    }
+
+    public static bool Submit(
+        this IRenderWindowFrameSession session,
+        IGraphicsPipeline uiPipeline,
+        in GraphicsFrameParameters uiParameters,
+        IGraphicsPipeline? textPipeline,
+        in TextFrameParameters textParameters,
+        ReadOnlySpan<ITextAtlasPage> atlasPages,
+        in UiRenderBatch batch,
+        in TextProjectionContext projectionContext,
+        ITextWorldProjection? worldProjection,
+        Span<TextGlyphInstance> orderedGlyphs,
+        Span<TextBatchRange> textBatches)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(uiPipeline);
+        var uiDrawList = new UiDrawList(batch.Rectangles);
+        if (batch.TextSubmissions.IsEmpty)
+        {
+            var emptyTextDrawList = default(TextDrawList);
+            var packet = new RenderFramePacket(
+                uiPipeline,
+                uiParameters,
+                uiDrawList,
+                null,
+                textParameters,
+                ReadOnlySpan<ITextAtlasPage>.Empty,
+                emptyTextDrawList,
+                batch.DirtyRecords);
+            return session.SubmitFrame(in packet);
+        }
+
+        if (textPipeline is null)
+        {
+            return false;
+        }
+
+        var submission = new TextSubmissionFrame(batch.TextSubmissions);
+        return session.SubmitTextSubmission(
+            uiPipeline,
+            in uiParameters,
+            uiDrawList,
+            textPipeline,
+            in textParameters,
+            atlasPages,
+            in submission,
+            in projectionContext,
+            worldProjection,
+            orderedGlyphs,
+            textBatches,
+            batch.DirtyRecords);
+    }
+}

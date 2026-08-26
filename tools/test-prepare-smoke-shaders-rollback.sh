@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE_DIR="$ROOT/samples/Delta.Render.Smoke/shaders"
+SOURCE_DIR="$ROOT/samples/DeltaRender.Smoke/shaders"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/delta-render-shader-rollback.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 

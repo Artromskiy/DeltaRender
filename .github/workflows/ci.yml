@@ -50,16 +50,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: DeltaRender
-      - name: Checkout Delta.Shader sibling
+      - name: Checkout DeltaShader sibling
         uses: actions/checkout@v7
         with:
           repository: Artromskiy/DeltaShader
           path: DeltaShader
-      - name: Checkout Delta.Maths shader contract
+      - name: Checkout DeltaMaths shader contract
         uses: actions/checkout@v7
         with:
           repository: Artromskiy/DeltaMaths
-          path: Maths
+          path: DeltaMaths
       - name: Install .NET 10
         uses: actions/setup-dotnet@v6
         with:
@@ -75,11 +75,11 @@ jobs:
       - name: Restore and build
         working-directory: DeltaRender
         run: |
-          dotnet restore Delta.Render.slnx
-          dotnet build Delta.Render.slnx -c Release --no-restore
+          dotnet restore DeltaRender.slnx
+          dotnet build DeltaRender.slnx -c Release --no-restore
       - name: Run tests
         working-directory: DeltaRender
-        run: dotnet test tests/Delta.Render.Tests/Delta.Render.Tests.csproj -c Release --no-build --no-restore
+        run: dotnet test tests/DeltaRender.Tests/DeltaRender.Tests.csproj -c Release --no-build --no-restore
       - name: Check generated smoke shader artifacts
         working-directory: DeltaRender
         run: ./tools/prepare-smoke-shaders.sh --check

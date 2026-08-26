@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DeltaRender</RootNamespace>
+    <AssemblyName>DeltaRender</AssemblyName>
+    <PackageId>DeltaRender</PackageId>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Contract/*.cs" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
+  </ItemGroup>
+</Project>
