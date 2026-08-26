@@ -5,7 +5,7 @@
       "deltamaths": {
         "type": "Project"
       },
-      "deltashader.abstractions": {
+      "deltashader": {
         "type": "Project"
       },
       "deltashader.contract": {

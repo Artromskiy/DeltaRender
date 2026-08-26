@@ -12,6 +12,14 @@ public interface IRenderGraph
 }
 
 /// <summary>
+/// Creates the graph owned by one render-window frame session.
+/// </summary>
+public interface IRenderGraphFactory
+{
+    IRenderGraph CreateRenderGraph();
+}
+
+/// <summary>
 /// Mutable graph-construction surface. Handles are valid only for the graph
 /// build in which they were returned.
 /// </summary>

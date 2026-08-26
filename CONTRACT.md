@@ -37,8 +37,8 @@ parse XAML/C#, shape text or own ECS storage.
 The flat `Contract` folder contains the following public areas:
 
 - **Window/lifecycle:** `IRenderWindowFactory`, `IRenderWindow`,
-  `IRenderWindowFrameSession`, `WindowConfiguration`, `WindowMetrics` and
-  `RenderFrameState`.
+  `IRenderWindowFrameSession`, `IRenderGraphFactory`, `WindowConfiguration`,
+  `WindowMetrics` and `RenderFrameState`.
 - **Frame submission:** borrowed `RenderFramePacket`, `UiDrawList`, text draw
   values, dirty records and the `BeginFrame`/`EndFrame` session boundary.
 - **RenderGraph:** `IRenderGraph`, `IRenderGraphBuilder`,
@@ -77,6 +77,10 @@ Engine/editor extraction
 `IRenderFeature.Submit` replaces feature data; it does not perform GPU work.
 Features declare resource reads/writes before recording. The Vulkan executor
 owns pass ordering, resource lifetime, barriers and command recording.
+
+`IRenderWindowFrameSession` also implements `IRenderGraphFactory`; its single
+`CreateRenderGraph()` method returns a graph using the same session device,
+queues and lifetime. Consumers do not access raw Vulkan handles.
 
 `RenderGraphFrame` contains frame identity and one or more `RenderView` values.
 Each view owns a surface handle, viewport and pixel-space `PixelRect`, so a

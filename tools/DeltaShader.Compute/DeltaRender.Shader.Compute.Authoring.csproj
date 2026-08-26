@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Remove="Program.cs" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Abstractions/DeltaShader.Abstractions.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
   </ItemGroup>
 </Project>

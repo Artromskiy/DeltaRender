@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render.Core;
+using Delta.Render.Core.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
@@ -702,6 +703,8 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     private readonly List<IGraphicsPipeline> _graphicsPipelines = new();
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The shared atlas service is disposed by the window-session cleanup path after its Vulkan resources are idle.")]
     private readonly VulkanTextAtlasService _textAtlas;
+    private readonly VulkanGraphResourceRegistry _resourceRegistry = new();
+    private readonly List<VulkanRenderGraph> _renderGraphs = new();
 
     private ClearColorValue _clearColor = new(0.1f, 0.12f, 0.2f, 1f);
 
@@ -878,6 +881,100 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
     internal Device Device => _device;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
     internal CommandBuffer CommandBuffer => _commandBuffer;
+    internal VulkanGraphResourceRegistry ResourceRegistry => _resourceRegistry;
+
+    internal RenderPass GraphRenderPass => _renderPass;
+    internal Framebuffer GraphFramebuffer => _frameBuffers[(int)_activeImageIndex];
+    internal Extent2D GraphExtent => _extent;
+    internal Queue GraphGraphicsQueue => _graphicsQueue;
+    internal Queue GraphPresentQueue => _presentQueue;
+    internal VulkanRenderer GraphRenderer => _renderer;
+
+    public IRenderGraph CreateRenderGraph()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var graph = new VulkanRenderGraph(this);
+        _renderGraphs.Add(graph);
+        return graph;
+    }
+
+    internal bool BeginGraphFrame(out RenderFrameState frameState)
+    {
+        frameState = BeginFrame();
+        if (!frameState.IsValid)
+        {
+            return false;
+        }
+
+        var beginInfo = new CommandBufferBeginInfo
+        {
+            SType = StructureType.CommandBufferBeginInfo,
+            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+        };
+        if (Api.BeginCommandBuffer(_commandBuffer, beginInfo) == Result.Success)
+        {
+            return true;
+        }
+
+        _inFrame = false;
+        return false;
+    }
+
+    internal unsafe bool EndGraphFrame()
+    {
+        var api = _renderer.Api;
+        try
+        {
+            if (api.EndCommandBuffer(_commandBuffer) != Result.Success)
+            {
+                return false;
+            }
+
+            var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
+            var imageAvailable = _imageAvailable;
+            var renderComplete = _renderComplete;
+            var commandBuffer = _commandBuffer;
+            var imageIndex = _activeImageIndex;
+            var swapchain = _swapchain;
+            var submitInfo = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = &imageAvailable,
+                PWaitDstStageMask = waitStages,
+                CommandBufferCount = 1,
+                PCommandBuffers = &commandBuffer,
+                SignalSemaphoreCount = 1,
+                PSignalSemaphores = &renderComplete
+            };
+            if (api.QueueSubmit(_graphicsQueue, 1, &submitInfo, _renderFence) != Result.Success ||
+                api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success)
+            {
+                return false;
+            }
+
+            var presentInfo = new PresentInfoKHR
+            {
+                SType = StructureType.PresentInfoKhr,
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = &renderComplete,
+                SwapchainCount = 1,
+                PSwapchains = &swapchain,
+                PImageIndices = &imageIndex
+            };
+            var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
+            return (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
+                   api.QueueWaitIdle(_presentQueue) == Result.Success;
+        }
+        finally
+        {
+            _inFrame = false;
+        }
+    }
+
+    internal void AbortGraphFrame() => _inFrame = false;
+
+    internal uint MaxBoundDescriptorSets => _renderer.Api.GetPhysicalDeviceProperties(_renderer.GetPhysicalDevice()).Limits.MaxBoundDescriptorSets;
 
     private static unsafe void FreeCommandBuffer(Vk api, Device device, CommandPool commandPool, CommandBuffer commandBuffer)
     {
@@ -1585,7 +1682,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
                 var inputAssembly = new PipelineInputAssemblyStateCreateInfo
                 {
                     SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-                    Topology = PrimitiveTopology.TriangleList
+                    Topology = Silk.NET.Vulkan.PrimitiveTopology.TriangleList
                 };
                 var viewportState = new PipelineViewportStateCreateInfo
                 {
@@ -1826,7 +1923,7 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
                 var inputAssembly = new PipelineInputAssemblyStateCreateInfo
                 {
                     SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-                    Topology = PrimitiveTopology.TriangleList
+                    Topology = Silk.NET.Vulkan.PrimitiveTopology.TriangleList
                 };
                 var viewportState = new PipelineViewportStateCreateInfo
                 {
@@ -1937,15 +2034,9 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
 
     private static void ValidateGraphicsArtifact(IShaderArtifact artifact, string parameterName)
     {
-        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
+        if (artifact.Abi.Stage == ShaderStage.Unknown || string.IsNullOrWhiteSpace(artifact.EntryPoint))
         {
-            throw new ArgumentException("Unsupported DeltaShader artifact format.", parameterName);
-        }
-
-        if (artifact.Abi.Version != ShaderAbi.CurrentVersion ||
-            string.IsNullOrWhiteSpace(artifact.EntryPoint))
-        {
-            throw new ArgumentException("Unsupported or incomplete DeltaShader graphics ABI manifest.", parameterName);
+            throw new ArgumentException("Unsupported or incomplete DeltaShader graphics artifact ABI.", parameterName);
         }
 
         if (artifact.Spirv.Length == 0 || (artifact.Spirv.Length & 3) != 0)
@@ -2335,6 +2426,13 @@ public sealed unsafe class VulkanWindowSession : IRenderWindowFrameSession, IVul
         if (_device.Handle != default)
         {
             api.DeviceWaitIdle(_device);
+            foreach (var graph in _renderGraphs)
+            {
+                graph.DisposeAsync().GetAwaiter().GetResult();
+            }
+
+            _renderGraphs.Clear();
+            _resourceRegistry.Dispose(this);
             _textAtlas.Dispose();
 
             foreach (var pipeline in _graphicsPipelines.ToArray())

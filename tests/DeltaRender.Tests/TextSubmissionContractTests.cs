@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Delta.Render.Core;
+using Delta.Render.Core.RenderGraph;
 using Xunit;
 
 namespace Delta.Render.Tests;
@@ -707,6 +708,7 @@ public sealed class TextSubmissionContractTests
         public ITextAtlasDevice CreateTextAtlasDevice() => throw new NotSupportedException();
         public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters) => false;
         public bool Resize(WindowMetrics metrics) => false;
+        public IRenderGraph CreateRenderGraph() => throw new NotSupportedException();
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

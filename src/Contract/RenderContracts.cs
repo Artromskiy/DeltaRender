@@ -1,4 +1,5 @@
 using Delta.Shader.Contract;
+using Delta.Render.Core.RenderGraph;
 
 namespace Delta.Render.Core;
 
@@ -92,7 +93,7 @@ public readonly ref struct RenderFramePacket
                                : UiPipeline is not null && TextParameters.IsValid);
 }
 
-public interface IRenderWindowFrameSession : IAsyncDisposable
+public interface IRenderWindowFrameSession : IAsyncDisposable, IRenderGraphFactory
 {
     RenderWindowId WindowId { get; }
 

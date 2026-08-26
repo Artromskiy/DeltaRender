@@ -483,17 +483,10 @@ public static class TextShaderArtifactContract
 
     private static bool ValidateArtifact(IShaderArtifact artifact, ShaderStage stage, out string? message)
     {
-        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
-        {
-            message = $"{stage} ShaderArtifact format version is unsupported.";
-            return false;
-        }
-
-        if (artifact.Abi.Version != ShaderAbi.CurrentVersion ||
-            artifact.Abi.Stage != stage ||
+        if (artifact.Abi.Stage != stage ||
             string.IsNullOrWhiteSpace(artifact.EntryPoint))
         {
-            message = $"{stage} ShaderArtifact ABI or entry point is incomplete.";
+            message = $"{stage} ShaderArtifact ABI stage or entry point is incomplete.";
             return false;
         }
 

@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Shader.Abstractions;
+using Delta.Shader;
 
 namespace Delta.Render.Shader.Compute;
 

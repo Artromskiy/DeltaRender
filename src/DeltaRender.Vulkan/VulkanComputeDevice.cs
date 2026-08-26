@@ -370,11 +370,6 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(artifact);
-        if (artifact.FormatVersion != ShaderArtifact.CurrentFormatVersion)
-        {
-            throw new ArgumentException($"Unsupported DeltaShader artifact format {artifact.FormatVersion}; expected {ShaderArtifact.CurrentFormatVersion}.", nameof(artifact));
-        }
-
         if (string.IsNullOrWhiteSpace(artifact.EntryPoint))
         {
             throw new ArgumentException("DeltaShader artifact must declare an entry point.", nameof(artifact));
@@ -903,9 +898,9 @@ public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkan
             throw new ArgumentException("SPIR-V words are missing the SPIR-V magic header.", nameof(words));
         }
 
-        if (abi.Version != ShaderAbi.CurrentVersion || abi.Stage != ShaderStage.Compute || !abi.WorkgroupSize.IsValid)
+        if (abi.Stage != ShaderStage.Compute || !abi.WorkgroupSize.IsValid)
         {
-            throw new ArgumentException("Compute ShaderAbi must declare the current version, compute stage and non-zero workgroup dimensions.", nameof(abi));
+            throw new ArgumentException("Compute ShaderAbi must declare the compute stage and non-zero workgroup dimensions.", nameof(abi));
         }
 
         if (abi.WorkgroupSize.X > Limits.MaxComputeWorkGroupSizeX)

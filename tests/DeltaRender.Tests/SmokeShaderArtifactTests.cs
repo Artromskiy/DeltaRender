@@ -35,6 +35,6 @@ public sealed class SmokeShaderArtifactTests
         Assert.NotEmpty(artifact.Spirv.ToArray());
         Assert.Equal(expectedStage, artifact.Stage);
         Assert.Equal("main", artifact.EntryPoint);
-        Assert.Equal(ShaderAbi.CurrentVersion, artifact.Abi.Version);
+        Assert.Equal(expectedStage, artifact.Abi.Stage);
     }
 }
