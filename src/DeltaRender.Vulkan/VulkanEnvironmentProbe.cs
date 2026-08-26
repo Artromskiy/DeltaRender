@@ -1,9 +1,9 @@
-using DeltaRender;
+using Delta.Render.Core;
 using System.Diagnostics.CodeAnalysis;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public static unsafe class VulkanEnvironmentProbe
 {

@@ -1,8 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaRender;
+using Delta.Render.Core;
 using SDL3;
 
-namespace DeltaRender.Platform.SDL3;
+namespace Delta.Render.Platform.SDL3;
 
 internal static class Sdl3Runtime
 {

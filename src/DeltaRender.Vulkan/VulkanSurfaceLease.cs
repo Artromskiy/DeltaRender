@@ -1,6 +1,6 @@
-using DeltaRender;
+using Delta.Render.Core;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 internal sealed class VulkanSurfaceLease
 {

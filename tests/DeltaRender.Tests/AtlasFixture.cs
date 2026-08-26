@@ -1,9 +1,9 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using DeltaRender;
+using Delta.Render.Core;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 internal static partial class AtlasFixture
 {

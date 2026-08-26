@@ -1,9 +1,9 @@
-using DeltaRender.FullscreenShaders;
-using DeltaRender.UiShaders;
-using DeltaShader.Contract;
+using Delta.Render.FullscreenShaders;
+using Delta.Render.UiShaders;
+using Delta.Shader.Contract;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class SmokeShaderArtifactTests
 {

@@ -1,4 +1,4 @@
-namespace DeltaRender;
+namespace Delta.Render.Core;
 
 public static class TextSubmissionRendering
 {

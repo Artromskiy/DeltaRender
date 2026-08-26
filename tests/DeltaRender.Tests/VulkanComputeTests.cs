@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
-using DeltaRender;
-using DeltaRender.Vulkan;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Render.Vulkan;
+using Delta.Shader.Contract;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class VulkanComputeTests
 {

@@ -1,8 +1,8 @@
 using System.Reflection;
-using DeltaRender;
+using Delta.Render.Core;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public class RenderContractTests
 {

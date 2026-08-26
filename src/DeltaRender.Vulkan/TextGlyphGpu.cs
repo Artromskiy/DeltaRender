@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using DeltaRender;
+using Delta.Render.Core;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 [StructLayout(LayoutKind.Explicit, Size = 48)]
 internal struct TextGlyphGpu

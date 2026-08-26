@@ -1,6 +1,6 @@
-using DeltaRender;
+using Delta.Render.Core;
 
-namespace DeltaRender.Platform.SDL3;
+namespace Delta.Render.Platform.SDL3;
 
 public sealed class Sdl3Window : IRenderWindow
 {

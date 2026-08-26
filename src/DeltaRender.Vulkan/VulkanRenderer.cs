@@ -3,8 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using DeltaRender;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Shader.Contract;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
@@ -12,7 +12,7 @@ using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public sealed unsafe class VulkanRenderer : IAsyncDisposable
 {

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using DeltaRender;
-using DeltaRender.Vulkan;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Render.Vulkan;
+using Delta.Shader.Contract;
 if (args.Length == 0)
 {
     Console.Error.WriteLine("Expected the compile-time artifact directory as the first argument.");

@@ -1,3 +1,3 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("DeltaRender.Tests")]
+[assembly: InternalsVisibleTo("Delta.Render.Tests")]

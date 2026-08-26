@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaRender;
+using Delta.Render.Core;
 
-namespace DeltaRender.Platform.SDL3;
+namespace Delta.Render.Platform.SDL3;
 
 public sealed class Sdl3WindowFactory : IRenderWindowFactory
 {

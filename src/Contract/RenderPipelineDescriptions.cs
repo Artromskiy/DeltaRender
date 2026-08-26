@@ -1,6 +1,6 @@
-using DeltaShader.Contract;
+using Delta.Shader.Contract;
 
-namespace DeltaRender.RenderGraph;
+namespace Delta.Render.Core.RenderGraph;
 
 public enum PrimitiveTopology
 {

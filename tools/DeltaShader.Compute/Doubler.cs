@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaShader.Abstractions;
+using Delta.Shader.Abstractions;
 
-namespace DeltaRender.Shader.Compute;
+namespace Delta.Render.Shader.Compute;
 
 public static class Doubler
 {

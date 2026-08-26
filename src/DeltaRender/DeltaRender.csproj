@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DeltaRender</RootNamespace>
+    <RootNamespace>Delta.Render.Core</RootNamespace>
     <AssemblyName>DeltaRender</AssemblyName>
     <PackageId>DeltaRender</PackageId>
   </PropertyGroup>

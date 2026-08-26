@@ -1,6 +1,6 @@
-using DeltaShader.Contract;
+using Delta.Shader.Contract;
 
-namespace DeltaRender;
+namespace Delta.Render.Core;
 
 public readonly record struct RenderWindowId(Guid Value)
 {

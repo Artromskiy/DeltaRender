@@ -1,8 +1,8 @@
-using DeltaRender;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Shader.Contract;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class GraphicsContractTests
 {

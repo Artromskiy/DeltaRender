@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using DeltaRender;
-using DeltaRender.Platform.SDL3;
-using DeltaRender.Vulkan;
-using DeltaRender.FullscreenShaders;
-using DeltaRender.UiShaders;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Render.Platform.SDL3;
+using Delta.Render.Vulkan;
+using Delta.Render.FullscreenShaders;
+using Delta.Render.UiShaders;
+using Delta.Shader.Contract;
 
-namespace DeltaRender.Smoke;
+namespace Delta.Render.Smoke;
 
 [SuppressMessage("Performance", "CA2007:Do not directly await a Task", Justification = "The bounded native smoke has no synchronization context; await-using declarations intentionally keep Vulkan resources scoped to each smoke operation.")]
 internal static class Program

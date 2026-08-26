@@ -1,8 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaMaths;
-using DeltaShader.Abstractions;
+using Delta.Maths;
+using Delta.Shader.Abstractions;
 
-namespace DeltaRender.FullscreenShaders;
+namespace Delta.Render.FullscreenShaders;
 
 public static class FullscreenUi
 {

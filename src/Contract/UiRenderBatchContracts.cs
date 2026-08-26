@@ -1,4 +1,4 @@
-namespace DeltaRender;
+namespace Delta.Render.Core;
 
 /// <summary>
 /// Identifies one borrowed UI frame owned by a <see cref="UiRenderBatchAdapter"/>.

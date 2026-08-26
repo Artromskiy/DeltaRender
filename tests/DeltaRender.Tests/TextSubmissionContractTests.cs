@@ -1,9 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using DeltaRender;
+using Delta.Render.Core;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class TextSubmissionContractTests
 {
@@ -702,8 +702,8 @@ public sealed class TextSubmissionContractTests
             EndedDirtyRecords = packet.DirtyRecords.ToArray();
             return true;
         }
-        public IGraphicsPipeline CreateTextPipeline(in DeltaShader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
-        public IGraphicsPipeline CreateGraphicsPipeline(in DeltaShader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
+        public IGraphicsPipeline CreateTextPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
+        public IGraphicsPipeline CreateGraphicsPipeline(in Delta.Shader.Contract.IGraphicsShaderProgram shaderProgram) => throw new NotSupportedException();
         public ITextAtlasDevice CreateTextAtlasDevice() => throw new NotSupportedException();
         public bool DrawFullscreenTriangle(IGraphicsPipeline pipeline, in GraphicsFrameParameters parameters) => false;
         public bool Resize(WindowMetrics metrics) => false;

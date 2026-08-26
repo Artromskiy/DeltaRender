@@ -1,6 +1,6 @@
 using System.Runtime.ExceptionServices;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 internal enum VulkanSessionResourceStage
 {

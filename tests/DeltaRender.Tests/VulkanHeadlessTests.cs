@@ -1,9 +1,9 @@
-using DeltaRender;
-using DeltaRender.Platform.SDL3;
-using DeltaRender.Vulkan;
+using Delta.Render.Core;
+using Delta.Render.Platform.SDL3;
+using Delta.Render.Vulkan;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public class VulkanHeadlessTests
 {

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DeltaRender.UiShaders</RootNamespace>
+    <RootNamespace>Delta.Render.UiShaders</RootNamespace>
     <AssemblyName>DeltaRender.UiShaders</AssemblyName>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

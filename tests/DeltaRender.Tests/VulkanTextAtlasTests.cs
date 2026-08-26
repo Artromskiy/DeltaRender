@@ -1,9 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaRender;
-using DeltaRender.Vulkan;
+using Delta.Render.Core;
+using Delta.Render.Vulkan;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 [SuppressMessage("Performance", "CA2007:Do not directly await a Task", Justification = "These tests deliberately use await-using declarations to cover async atlas lifetime; the resource is scoped to the test and no synchronization context is present.")]
 public sealed class VulkanTextAtlasTests

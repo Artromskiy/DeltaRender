@@ -1,9 +1,9 @@
-using DeltaRender.Vulkan;
+using Delta.Render.Vulkan;
 using Silk.NET.Vulkan;
 using Xunit;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class VulkanOwnershipContractTests
 {

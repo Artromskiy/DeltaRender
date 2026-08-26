@@ -2,14 +2,14 @@ using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
-using DeltaRender;
+using Delta.Render.Core;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
-using DeltaShader.Contract;
+using Delta.Shader.Contract;
 using VulkanBuffer = Silk.NET.Vulkan.Buffer;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public sealed unsafe partial class VulkanComputeDevice : IComputeDevice, IVulkanTextAtlasCommandContext
 {

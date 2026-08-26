@@ -1,10 +1,10 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
-using DeltaRender;
+using Delta.Render.Core;
 using Silk.NET.Vulkan;
 using VulkanImage = Silk.NET.Vulkan.Image;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 internal interface IVulkanTextAtlasCommandContext
 {

@@ -1,8 +1,8 @@
-using DeltaRender;
-using DeltaShader.Contract;
+using Delta.Render.Core;
+using Delta.Shader.Contract;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class TextContractTests
 {
@@ -79,8 +79,8 @@ public sealed class TextContractTests
     public void GeneratedDeltaShaderTextArtifactsMeetRenderContract(string mode, uint expectedBinding)
     {
         var program = mode == "sdf"
-            ? DeltaShader.Text.SdfTextGraphicsShaderProgram.CreateProgram(MagicSpirv(), MagicSpirv())
-            : DeltaShader.Text.MsdfTextGraphicsShaderProgram.CreateProgram(MagicSpirv(), MagicSpirv());
+            ? Delta.Shader.Text.SdfTextGraphicsShaderProgram.CreateProgram(MagicSpirv(), MagicSpirv())
+            : Delta.Shader.Text.MsdfTextGraphicsShaderProgram.CreateProgram(MagicSpirv(), MagicSpirv());
 
         Assert.True(TextShaderArtifactContract.TryDescribe(program, out var layout, out var diagnostic));
         Assert.Equal(TextShaderArtifactStatus.Ready, diagnostic.Status);

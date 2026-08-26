@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 internal static class SpirvEntryPointReader
 {

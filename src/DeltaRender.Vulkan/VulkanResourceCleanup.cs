@@ -1,4 +1,4 @@
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 internal static class VulkanResourceCleanup
 {

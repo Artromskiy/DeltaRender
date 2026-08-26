@@ -1,7 +1,7 @@
-using DeltaRender.Vulkan;
+using Delta.Render.Vulkan;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class VulkanSessionRollbackTests
 {

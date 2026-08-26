@@ -1,13 +1,13 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaMaths;
-using DeltaShader.Abstractions;
+using Delta.Maths;
+using Delta.Shader.Abstractions;
 
-namespace DeltaRender.UiShaders;
+namespace Delta.Render.UiShaders;
 
 public static class UiPanel
 {
     /// <summary>Push-constant values shared by the generated panel stages.</summary>
-    [SuppressMessage("Design", "CA1034:Nested types should not be visible", Justification = "The nested type is the public push-constant ABI emitted by DeltaShader.")]
+    [SuppressMessage("Design", "CA1034:Nested types should not be visible", Justification = "The nested type is the public push-constant ABI emitted by Delta.Shader.")]
     [SuppressMessage("Usage", "CA1815:Override equals and operator equals on value types", Justification = "The shader ABI parameter struct is not used as a managed value key.")]
     public struct Parameters
     {

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DeltaRender.Tests</RootNamespace>
+    <RootNamespace>Delta.Render.Tests</RootNamespace>
     <AssemblyName>DeltaRender.Tests</AssemblyName>
     <PackageId>DeltaRender.Tests</PackageId>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

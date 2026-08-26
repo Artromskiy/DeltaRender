@@ -1,8 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
-using DeltaRender;
-using DeltaText.Contract;
+using Delta.Render.Core;
+using Delta.Text.Contract;
 
-namespace DeltaRender.Text;
+namespace Delta.Render.Text;
 
 public readonly record struct TextGlyphCacheKey(
     FontInstanceId Font,

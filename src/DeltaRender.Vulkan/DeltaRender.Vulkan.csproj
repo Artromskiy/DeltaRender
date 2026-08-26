@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>DeltaRender.Vulkan</RootNamespace>
+    <RootNamespace>Delta.Render.Vulkan</RootNamespace>
     <AssemblyName>DeltaRender.Vulkan</AssemblyName>
     <PackageId>DeltaRender.Vulkan</PackageId>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

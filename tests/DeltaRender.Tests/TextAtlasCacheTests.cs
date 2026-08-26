@@ -1,9 +1,9 @@
-using DeltaRender;
-using DeltaRender.Text;
-using DeltaText.Contract;
+using Delta.Render.Core;
+using Delta.Render.Text;
+using Delta.Text.Contract;
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class TextAtlasCacheTests
 {

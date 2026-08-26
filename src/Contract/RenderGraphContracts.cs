@@ -1,4 +1,4 @@
-namespace DeltaRender.RenderGraph;
+namespace Delta.Render.Core.RenderGraph;
 
 /// <summary>
 /// Builds and executes one Vulkan render graph. Implementations own resource

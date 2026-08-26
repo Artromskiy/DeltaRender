@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace DeltaRender.Tests;
+namespace Delta.Render.Tests;
 
 public sealed class UiPanelShaderTests
 {

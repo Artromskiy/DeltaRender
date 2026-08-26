@@ -1,6 +1,6 @@
 using Silk.NET.Vulkan;
 
-namespace DeltaRender.Vulkan;
+namespace Delta.Render.Vulkan;
 
 public sealed class VulkanRendererOptions
 {
