@@ -19,6 +19,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 {
     private static readonly string[] MoltenVkLibraryNames = ["libMoltenVK.dylib", "MoltenVK"];
     private readonly DefaultNativeContext? _nativeContext;
+    private bool _initializedHeadless;
 
     public VulkanRenderer(VulkanRendererOptions options)
     {
@@ -75,6 +76,11 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         var sessionDiagnostics = new RenderDiagnosticBag();
         ArgumentNullException.ThrowIfNull(window);
 
+        if (_initializedHeadless)
+        {
+            throw new InvalidOperationException("A Vulkan renderer initialized for headless rendering cannot create a window session. Create a separate renderer for the window path.");
+        }
+
         if (!IsInitialized)
         {
             InitializeForWindow(window.VulkanSurfaceSource, sessionDiagnostics);
@@ -127,6 +133,36 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a Vulkan frame session backed by an offscreen color image. The returned graph
+    /// follows the same Build/Execute path as a window session, but Execute submits and waits
+    /// for completion instead of acquiring or presenting a swapchain image.
+    /// </summary>
+    public IRenderFrameSession CreateHeadlessSession(uint width, uint height)
+    {
+        if (width == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), "The headless render target width must be greater than zero.");
+        }
+
+        if (height == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(height), "The headless render target height must be greater than zero.");
+        }
+
+        var diagnostics = new RenderDiagnosticBag();
+        if (!IsInitialized)
+        {
+            InitializeForHeadless(diagnostics);
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException($"Failed to initialize headless Vulkan rendering. Diagnostics: {diagnostics}");
+            }
+        }
+
+        return VulkanWindowSession.CreateHeadless(this, new WindowMetrics(width, height, 1f));
+    }
+
     internal Queue GetGraphicsQueue() => _graphicsQueue;
     internal Queue GetPresentQueue() => _presentQueue;
     internal uint GetGraphicsFamily() => _graphicsFamily;
@@ -151,29 +187,58 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         IsInitialized = true;
     }
 
-    private unsafe bool InitializeInstance(IVulkanWindowSurfaceSource surfaceSource, RenderDiagnosticBag diagnostics)
+    private void InitializeForHeadless(RenderDiagnosticBag diagnostics)
     {
-        if (!surfaceSource.TryGetRequiredInstanceExtensions(out var platformExtensions, out var extensionDiagnostics))
+        if (IsInitialized)
+        {
+            return;
+        }
+
+        if (!InitializeInstance(null, diagnostics) ||
+            !SelectPhysicalDeviceForHeadless(diagnostics) ||
+            !CreateLogicalDeviceForHeadless(diagnostics))
+        {
+            return;
+        }
+
+        _initializedHeadless = true;
+        IsInitialized = true;
+    }
+
+    private unsafe bool InitializeInstance(IVulkanWindowSurfaceSource? surfaceSource, RenderDiagnosticBag diagnostics)
+    {
+        string[] platformExtensions;
+        var extensionDiagnostics = new RenderDiagnosticBag();
+        if (surfaceSource is null)
+        {
+            platformExtensions = Array.Empty<string>();
+        }
+        else if (!surfaceSource.TryGetRequiredInstanceExtensions(out platformExtensions, out extensionDiagnostics))
         {
             diagnostics.Merge(extensionDiagnostics);
             diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-INSTANCE", "Failed to get SDL Vulkan extensions.");
             return false;
         }
 
-        diagnostics.Merge(extensionDiagnostics);
-
-        var requiredExtensions = new HashSet<string>(platformExtensions)
+        if (surfaceSource is not null)
         {
-            KhrSurface.ExtensionName
-        };
+            diagnostics.Merge(extensionDiagnostics);
+        }
 
-        var portabilityEnumerationEnabled = surfaceSource.SupportsPortabilityEnumeration &&
+        var requiredExtensions = new HashSet<string>(platformExtensions);
+        if (surfaceSource is not null)
+        {
+            requiredExtensions.Add(KhrSurface.ExtensionName);
+        }
+
+        var portabilityEnumerationRequested = surfaceSource?.SupportsPortabilityEnumeration ?? true;
+        var portabilityEnumerationEnabled = portabilityEnumerationRequested &&
                                             IsInstanceExtensionPresent("VK_KHR_portability_enumeration");
         if (portabilityEnumerationEnabled)
         {
             requiredExtensions.Add("VK_KHR_portability_enumeration");
         }
-        else if (surfaceSource.SupportsPortabilityEnumeration)
+        else if (portabilityEnumerationRequested)
         {
             diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-PORTABILITY", "VK_KHR_portability_enumeration is not exposed by the loader; continuing without the optional instance extension.");
         }
@@ -235,7 +300,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             SilkMarshal.Free((nint)extensionPointers);
         }
 
-        if (!Api.TryGetInstanceExtension(Instance, out _khrSurface))
+        if (surfaceSource is not null && !Api.TryGetInstanceExtension(Instance, out _khrSurface))
         {
             diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-INSTANCE", "VK_KHR_surface was not available in created instance.");
             return false;
@@ -333,6 +398,69 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         }
 
         diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-DEVICE", "No physical device supports graphics+present with swapchain.");
+        return false;
+    }
+
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
+    private unsafe bool SelectPhysicalDeviceForHeadless(RenderDiagnosticBag diagnostics)
+    {
+        uint deviceCount = 0;
+        var enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, null);
+        if (enumResult != Result.Success || deviceCount == 0)
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", "No Vulkan physical devices are available.");
+            return false;
+        }
+
+        var devices = new PhysicalDevice[(int)deviceCount];
+        enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, devices);
+        if (enumResult != Result.Success)
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"EnumeratePhysicalDevices failed: {enumResult}");
+            return false;
+        }
+
+        for (var i = 0; i < devices.Length; i++)
+        {
+            var candidate = devices[i];
+            if (!TryGetGraphicsQueueFamily(candidate, out var graphicsFamily))
+            {
+                continue;
+            }
+
+            _physicalDevice = candidate;
+            _graphicsFamily = graphicsFamily;
+            _presentFamily = graphicsFamily;
+            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Suitable headless graphics device selected.");
+            return true;
+        }
+
+        diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-DEVICE", "No physical device exposes a graphics queue for headless rendering.");
+        return false;
+    }
+
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
+    private unsafe bool TryGetGraphicsQueueFamily(PhysicalDevice physicalDevice, out uint graphicsFamily)
+    {
+        graphicsFamily = uint.MaxValue;
+        uint queueFamilyCount = 0;
+        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, null);
+        if (queueFamilyCount == 0)
+        {
+            return false;
+        }
+
+        var families = new QueueFamilyProperties[(int)queueFamilyCount];
+        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families);
+        for (uint i = 0; i < queueFamilyCount; i++)
+        {
+            if (families[(int)i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+            {
+                graphicsFamily = i;
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -539,6 +667,70 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return true;
     }
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
+    private unsafe bool CreateLogicalDeviceForHeadless(RenderDiagnosticBag diagnostics)
+    {
+        if (_physicalDevice.Handle == default || _graphicsFamily == uint.MaxValue)
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-DEVICE", "Headless physical device or graphics queue was not selected.");
+            return false;
+        }
+
+        var queuePriority = 1f;
+        var queueCreateInfo = new DeviceQueueCreateInfo
+        {
+            SType = StructureType.DeviceQueueCreateInfo,
+            QueueFamilyIndex = _graphicsFamily,
+            QueueCount = 1,
+            PQueuePriorities = &queuePriority
+        };
+
+        var deviceExtensions = new List<string>();
+        if (DeviceSupportsSwapchainExtensions(_physicalDevice, "VK_KHR_portability_subset"))
+        {
+            deviceExtensions.Add("VK_KHR_portability_subset");
+            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-PORTABILITY", "VK_KHR_portability_subset enabled on the selected headless device.");
+        }
+
+        var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(deviceExtensions.ToArray());
+        try
+        {
+            var createInfo = new DeviceCreateInfo
+            {
+                SType = StructureType.DeviceCreateInfo,
+                QueueCreateInfoCount = 1,
+                PQueueCreateInfos = &queueCreateInfo,
+                PEnabledFeatures = null,
+                EnabledExtensionCount = (uint)deviceExtensions.Count,
+                PpEnabledExtensionNames = extensionPointers,
+                EnabledLayerCount = 0,
+                PpEnabledLayerNames = null,
+                Flags = 0
+            };
+
+            var result = Api.CreateDevice(_physicalDevice, createInfo, null, out var device);
+            if (result != Result.Success)
+            {
+                diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"CreateDevice failed: {result}");
+                return false;
+            }
+
+            Device = device;
+        }
+        finally
+        {
+            if (extensionPointers != null)
+            {
+                SilkMarshal.Free((nint)extensionPointers);
+            }
+        }
+
+        _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
+        _presentQueue = _graphicsQueue;
+        diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Headless logical device created.");
+        return true;
+    }
+
     [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface format and present-mode counts through unsafe out pointers that the analyzer cannot model.")]
     internal unsafe bool QuerySwapchainSupport(SurfaceKHR surface, out SurfaceCapabilitiesKHR capabilities, out SurfaceFormatKHR[] formats, out PresentModeKHR[] presentModes)
     {
@@ -668,6 +860,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         _nativeContext?.Dispose();
 
+        _initializedHeadless = false;
         IsInitialized = false;
         return ValueTask.CompletedTask;
     }
@@ -677,13 +870,15 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
 {
     private bool _disposed;
     private bool _inFrame;
+    private readonly bool _headless;
 
     private readonly VulkanRenderer _renderer;
     private readonly RenderWindowId _windowId;
+    private readonly RenderSurfaceHandle _surfaceHandle;
     private readonly SurfaceKHR _surface;
-    private readonly VulkanSurfaceLease _surfaceLease;
+    private readonly VulkanSurfaceLease? _surfaceLease;
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "The window session borrows extension loaders owned and disposed by VulkanRenderer.")]
-    private readonly KhrSwapchain _khrSwapchain;
+    private readonly KhrSwapchain? _khrSwapchain;
     private readonly Queue _graphicsQueue;
     private readonly Queue _presentQueue;
     private readonly Device _device;
@@ -694,6 +889,10 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
     private SwapchainKHR _swapchain;
     private ImageView[] _imageViews;
     private Framebuffer[] _frameBuffers;
+    private Image _headlessImage;
+    private DeviceMemory _headlessMemory;
+    private ImageView _headlessImageView;
+    private Framebuffer _headlessFramebuffer;
 
     private readonly VulkanSemaphore _imageAvailable;
     private readonly VulkanSemaphore _renderComplete;
@@ -711,6 +910,7 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
     private WindowMetrics _metrics;
     private uint _activeImageIndex;
     private PhysicalDeviceMemoryProperties _memoryProperties;
+    private static long _nextSurfaceHandle;
 
     internal static VulkanWindowSession Create(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, RenderWindowId windowId, WindowMetrics metrics)
     {
@@ -720,10 +920,20 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         return new VulkanWindowSession(renderer, surfaceLease, surface, windowId, metrics);
     }
 
+    internal static VulkanWindowSession CreateHeadless(VulkanRenderer renderer, WindowMetrics metrics)
+    {
+        ArgumentNullException.ThrowIfNull(renderer);
+        return new VulkanWindowSession(renderer, metrics);
+    }
+
     private VulkanWindowSession(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, SurfaceKHR surface, RenderWindowId windowId, WindowMetrics metrics)
     {
+        _headless = false;
         _renderer = renderer;
         _windowId = windowId;
+        _surfaceHandle = new RenderSurfaceHandle(
+            unchecked((ulong)Interlocked.Increment(ref _nextSurfaceHandle)),
+            1);
         _surface = surface;
         _surfaceLease = surfaceLease;
 
@@ -794,7 +1004,8 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
                     swapchain = CreateSwapchain(renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
                     break;
                 case VulkanSessionResourceStage.SwapchainImages:
-                    (imageViews, frameBuffers) = CreateSwapchainImageViews(renderer.Api, _khrSwapchain, _device, _extent, renderPass, swapchain, _imageFormat);
+                    var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+                    (imageViews, frameBuffers) = CreateSwapchainImageViews(renderer.Api, swapchainExtension, _device, _extent, renderPass, swapchain, _imageFormat);
                     break;
                 case VulkanSessionResourceStage.ImageAvailableSemaphore:
                     EnsureSuccess(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out imageAvailable), "CreateSemaphore(imageAvailable)");
@@ -873,6 +1084,101 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         }
     }
 
+    private VulkanWindowSession(VulkanRenderer renderer, WindowMetrics metrics)
+    {
+        _headless = true;
+        _renderer = renderer;
+        _windowId = RenderWindowId.New();
+        _surfaceHandle = new RenderSurfaceHandle(
+            unchecked((ulong)Interlocked.Increment(ref _nextSurfaceHandle)),
+            1);
+        _surface = default;
+        _surfaceLease = null;
+        _khrSwapchain = null;
+        _device = renderer.GetDevice();
+        _graphicsQueue = renderer.GetGraphicsQueue();
+        _presentQueue = _graphicsQueue;
+        _graphicsFamily = renderer.GetGraphicsFamily();
+        _presentFamily = _graphicsFamily;
+        _extent = new Extent2D(Math.Max(1u, metrics.Width), Math.Max(1u, metrics.Height));
+        _metrics = metrics;
+        _imageFormat = Format.B8G8R8A8Unorm;
+        _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+
+        RenderPass renderPass = default;
+        Fence renderFence = default;
+        CommandPool commandPool = default;
+        CommandBuffer commandBuffer = default;
+        HeadlessTarget target = default;
+        VulkanTextAtlasService? textAtlas = null;
+        try
+        {
+            renderPass = CreateRenderPass(renderer.Api, _device, _imageFormat, ImageLayout.ColorAttachmentOptimal);
+            _renderPass = renderPass;
+            target = CreateHeadlessTarget(_extent);
+
+            EnsureSuccess(renderer.Api.CreateFence(_device, new FenceCreateInfo
+            {
+                SType = StructureType.FenceCreateInfo,
+                Flags = FenceCreateFlags.SignaledBit
+            }, null, out renderFence), "CreateFence(headless)");
+            EnsureSuccess(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo
+            {
+                SType = StructureType.CommandPoolCreateInfo,
+                QueueFamilyIndex = _graphicsFamily,
+                Flags = CommandPoolCreateFlags.ResetCommandBufferBit
+            }, null, out commandPool), "CreateCommandPool(headless)");
+            EnsureSuccess(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandBufferCount = 1,
+                CommandPool = commandPool,
+                Level = CommandBufferLevel.Primary
+            }, out commandBuffer), "AllocateCommandBuffers(headless)");
+
+            textAtlas = new VulkanTextAtlasService(this);
+            _swapchain = default;
+            _imageViews = Array.Empty<ImageView>();
+            _frameBuffers = Array.Empty<Framebuffer>();
+            _imageAvailable = default;
+            _renderComplete = default;
+            _renderFence = renderFence;
+            _commandPool = commandPool;
+            _commandBuffer = commandBuffer;
+            _headlessImage = target.Image;
+            _headlessMemory = target.Memory;
+            _headlessImageView = target.View;
+            _headlessFramebuffer = target.Framebuffer;
+            _textAtlas = textAtlas ?? throw new InvalidOperationException("Headless text atlas initialization did not complete.");
+        }
+        catch
+        {
+            textAtlas?.Dispose();
+            if (commandBuffer.Handle != default)
+            {
+                FreeCommandBuffer(renderer.Api, _device, commandPool, commandBuffer);
+            }
+
+            if (commandPool.Handle != default)
+            {
+                renderer.Api.DestroyCommandPool(_device, commandPool, null);
+            }
+
+            if (renderFence.Handle != default)
+            {
+                renderer.Api.DestroyFence(_device, renderFence, null);
+            }
+
+            DestroyHeadlessTarget(renderer.Api, _device, target);
+            if (renderPass.Handle != default)
+            {
+                renderer.Api.DestroyRenderPass(_device, renderPass, null);
+            }
+
+            throw;
+        }
+    }
+
     internal Vk Api => _renderer.Api;
     internal Device Device => _device;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
@@ -880,11 +1186,90 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
     internal VulkanGraphResourceRegistry ResourceRegistry => _resourceRegistry;
 
     internal RenderPass GraphRenderPass => _renderPass;
-    internal Framebuffer GraphFramebuffer => _frameBuffers[(int)_activeImageIndex];
+    internal Framebuffer GraphFramebuffer => _headless ? _headlessFramebuffer : _frameBuffers[(int)_activeImageIndex];
     internal Extent2D GraphExtent => _extent;
-    internal Queue GraphGraphicsQueue => _graphicsQueue;
-    internal Queue GraphPresentQueue => _presentQueue;
-    internal VulkanRenderer GraphRenderer => _renderer;
+
+    private HeadlessTarget CreateHeadlessTarget(Extent2D extent)
+    {
+        var api = _renderer.Api;
+        var imageInfo = new ImageCreateInfo
+        {
+            SType = StructureType.ImageCreateInfo,
+            ImageType = ImageType.Type2D,
+            Format = _imageFormat,
+            Extent = new Extent3D(extent.Width, extent.Height, 1),
+            MipLevels = 1,
+            ArrayLayers = 1,
+            Samples = SampleCountFlags.Count1Bit,
+            Tiling = ImageTiling.Optimal,
+            Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit,
+            SharingMode = SharingMode.Exclusive,
+            InitialLayout = ImageLayout.Undefined
+        };
+
+        EnsureSuccess(api.CreateImage(_device, imageInfo, null, out var image), "CreateImage(headless)");
+        DeviceMemory memory = default;
+        ImageView view = default;
+        Framebuffer framebuffer = default;
+        try
+        {
+            var requirements = api.GetImageMemoryRequirements(_device, image);
+            var memoryType = FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
+            EnsureSuccess(api.AllocateMemory(_device, new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                AllocationSize = requirements.Size,
+                MemoryTypeIndex = memoryType
+            }, null, out memory), "AllocateMemory(headless)");
+            EnsureSuccess(api.BindImageMemory(_device, image, memory, 0), "BindImageMemory(headless)");
+            EnsureSuccess(api.CreateImageView(_device, new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = image,
+                ViewType = ImageViewType.Type2D,
+                Format = _imageFormat,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                }
+            }, null, out view), "CreateImageView(headless)");
+
+            var imageView = view;
+            EnsureSuccess(api.CreateFramebuffer(_device, new FramebufferCreateInfo
+            {
+                SType = StructureType.FramebufferCreateInfo,
+                RenderPass = _renderPass,
+                AttachmentCount = 1,
+                PAttachments = &imageView,
+                Width = extent.Width,
+                Height = extent.Height,
+                Layers = 1
+            }, null, out framebuffer), "CreateFramebuffer(headless)");
+            return new HeadlessTarget(image, memory, view, framebuffer);
+        }
+        catch
+        {
+            if (framebuffer.Handle != default) api.DestroyFramebuffer(_device, framebuffer, null);
+            if (view.Handle != default) api.DestroyImageView(_device, view, null);
+            if (memory.Handle != default) api.FreeMemory(_device, memory, null);
+            api.DestroyImage(_device, image, null);
+            throw;
+        }
+    }
+
+    private static void DestroyHeadlessTarget(Vk api, Device device, HeadlessTarget target)
+    {
+        if (target.Framebuffer.Handle != default) api.DestroyFramebuffer(device, target.Framebuffer, null);
+        if (target.View.Handle != default) api.DestroyImageView(device, target.View, null);
+        if (target.Image.Handle != default) api.DestroyImage(device, target.Image, null);
+        if (target.Memory.Handle != default) api.FreeMemory(device, target.Memory, null);
+    }
+
+    private readonly record struct HeadlessTarget(Image Image, DeviceMemory Memory, ImageView View, Framebuffer Framebuffer);
 
     public IRenderGraph CreateRenderGraph()
     {
@@ -897,21 +1282,25 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
     internal bool BeginGraphFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_inFrame || _frameBuffers.Length == 0)
+        if (_inFrame || (!_headless && _frameBuffers.Length == 0))
         {
             return false;
         }
 
         uint imageIndex = 0;
-        var acquireResult = _khrSwapchain.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref imageIndex);
-        if (acquireResult != Result.Success)
+        if (!_headless)
         {
-            return false;
-        }
+            var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+            var acquireResult = swapchainExtension.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref imageIndex);
+            if (acquireResult != Result.Success)
+            {
+                return false;
+            }
 
-        if (imageIndex >= (uint)_frameBuffers.Length)
-        {
-            throw new InvalidOperationException($"Vulkan returned swapchain image index {imageIndex}, but only {_frameBuffers.Length} framebuffers exist.");
+            if (imageIndex >= (uint)_frameBuffers.Length)
+            {
+                throw new InvalidOperationException($"Vulkan returned swapchain image index {imageIndex}, but only {_frameBuffers.Length} framebuffers exist.");
+            }
         }
 
         if (Api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success ||
@@ -948,10 +1337,22 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
                 return false;
             }
 
+            var commandBuffer = _commandBuffer;
+            if (_headless)
+            {
+                var headlessSubmit = new SubmitInfo
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = &commandBuffer
+                };
+                return api.QueueSubmit(_graphicsQueue, 1, &headlessSubmit, _renderFence) == Result.Success &&
+                       api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) == Result.Success;
+            }
+
             var waitStages = stackalloc PipelineStageFlags[] { PipelineStageFlags.ColorAttachmentOutputBit };
             var imageAvailable = _imageAvailable;
             var renderComplete = _renderComplete;
-            var commandBuffer = _commandBuffer;
             var imageIndex = _activeImageIndex;
             var swapchain = _swapchain;
             var submitInfo = new SubmitInfo
@@ -980,7 +1381,8 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
                 PSwapchains = &swapchain,
                 PImageIndices = &imageIndex
             };
-            var presentResult = _khrSwapchain.QueuePresent(_presentQueue, presentInfo);
+            var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+            var presentResult = swapchainExtension.QueuePresent(_presentQueue, presentInfo);
             return (presentResult == Result.Success || presentResult == Result.SuboptimalKhr) &&
                    api.QueueWaitIdle(_presentQueue) == Result.Success;
         }
@@ -1088,6 +1490,8 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
 
     public RenderWindowId WindowId => _windowId;
 
+    public RenderSurfaceHandle SurfaceHandle => _surfaceHandle;
+
     public ITextAtlasDevice CreateTextAtlasDevice() => _textAtlas;
 
     public IGraphicsPipeline CreateGraphicsPipeline(in IGraphicsShaderProgram shaderProgram)
@@ -1188,6 +1592,22 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         var api = _renderer.Api;
         var device = _renderer.GetDevice();
 
+        if (_headless)
+        {
+            api.DeviceWaitIdle(device);
+            var newExtent = new Extent2D(Math.Max(1u, metrics.Width), Math.Max(1u, metrics.Height));
+            var replacement = CreateHeadlessTarget(newExtent);
+            var previous = new HeadlessTarget(_headlessImage, _headlessMemory, _headlessImageView, _headlessFramebuffer);
+            _headlessImage = replacement.Image;
+            _headlessMemory = replacement.Memory;
+            _headlessImageView = replacement.View;
+            _headlessFramebuffer = replacement.Framebuffer;
+            _extent = newExtent;
+            _metrics = metrics;
+            DestroyHeadlessTarget(api, device, previous);
+            return true;
+        }
+
         api.DeviceWaitIdle(device);
 
         foreach (var frameBuffer in _frameBuffers)
@@ -1200,7 +1620,8 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
             api.DestroyImageView(device, imageView, null);
         }
 
-        _khrSwapchain.DestroySwapchain(device, _swapchain, null);
+        var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+        swapchainExtension.DestroySwapchain(device, _swapchain, null);
 
         _extent = new Extent2D(Math.Max(1, metrics.Width), Math.Max(1, metrics.Height));
         _metrics = metrics;
@@ -1211,7 +1632,7 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         }
 
         _swapchain = CreateSwapchain(_renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
-        (_imageViews, _frameBuffers) = CreateSwapchainImageViews(_renderer.Api, _khrSwapchain, _device, _extent, _renderPass, _swapchain, _imageFormat);
+        (_imageViews, _frameBuffers) = CreateSwapchainImageViews(_renderer.Api, swapchainExtension, _device, _extent, _renderPass, _swapchain, _imageFormat);
         return _frameBuffers.Length > 0;
     }
 
@@ -1828,7 +2249,8 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
             };
         }
 
-        var result = _khrSwapchain.CreateSwapchain(device, swapCreateInfo, null, out var swapchain);
+        var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+        var result = swapchainExtension.CreateSwapchain(device, swapCreateInfo, null, out var swapchain);
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"CreateSwapchain failed: {result}");
@@ -1959,7 +2381,7 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         }
     }
 
-    private static RenderPass CreateRenderPass(Vk api, Device device, Format format)
+    private static RenderPass CreateRenderPass(Vk api, Device device, Format format, ImageLayout finalLayout = ImageLayout.PresentSrcKhr)
     {
         var colorAttachment = new AttachmentDescription
         {
@@ -1968,7 +2390,7 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
             LoadOp = AttachmentLoadOp.Clear,
             StoreOp = AttachmentStoreOp.Store,
             InitialLayout = ImageLayout.Undefined,
-            FinalLayout = ImageLayout.PresentSrcKhr,
+            FinalLayout = finalLayout,
             StencilLoadOp = AttachmentLoadOp.DontCare,
             StencilStoreOp = AttachmentStoreOp.DontCare
         };
@@ -2070,6 +2492,15 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
                 }
             }
 
+            if (_headless)
+            {
+                DestroyHeadlessTarget(api, _device, new HeadlessTarget(_headlessImage, _headlessMemory, _headlessImageView, _headlessFramebuffer));
+                _headlessImage = default;
+                _headlessMemory = default;
+                _headlessImageView = default;
+                _headlessFramebuffer = default;
+            }
+
             for (var i = 0; i < _frameBuffers.Length; i++)
             {
                 api.DestroyFramebuffer(_device, _frameBuffers[i], null);
@@ -2080,13 +2511,26 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
                 api.DestroyImageView(_device, _imageViews[i], null);
             }
 
-            _khrSwapchain.DestroySwapchain(_device, _swapchain, null);
+            if (!_headless)
+            {
+                var swapchainExtension = _khrSwapchain ?? throw new InvalidOperationException("Vulkan swapchain extension is not initialized for a window session.");
+                swapchainExtension.DestroySwapchain(_device, _swapchain, null);
+            }
+
             api.DestroyRenderPass(_device, _renderPass, null);
-            api.DestroySemaphore(_device, _imageAvailable, null);
-            api.DestroySemaphore(_device, _renderComplete, null);
+            if (_imageAvailable.Handle != default)
+            {
+                api.DestroySemaphore(_device, _imageAvailable, null);
+            }
+
+            if (_renderComplete.Handle != default)
+            {
+                api.DestroySemaphore(_device, _renderComplete, null);
+            }
+
             api.DestroyFence(_device, _renderFence, null);
             api.DestroyCommandPool(_device, _commandPool, null);
-            if (!_surfaceLease.TryRelease(out var surfaceDiagnostics))
+            if (_surfaceLease is not null && !_surfaceLease.TryRelease(out var surfaceDiagnostics))
             {
                 throw new InvalidOperationException($"Failed to destroy Vulkan surface: {surfaceDiagnostics}");
             }
