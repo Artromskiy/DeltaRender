@@ -165,6 +165,11 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
             throw new ArgumentException("The imported surface handle is invalid.", nameof(surface));
         }
 
+        if (surface != _session.SurfaceHandle)
+        {
+            throw new InvalidOperationException("The imported surface handle does not belong to this render session.");
+        }
+
         return AddResource(GraphResource.Surface(surface));
     }
 

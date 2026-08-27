@@ -30,6 +30,7 @@ public class RenderContractTests
 
         Assert.Contains(nameof(IRenderFrameSession.CreateRenderGraph), methods);
         Assert.Contains(nameof(IRenderFrameSession.CreateGraphicsPipeline), methods);
+        Assert.Contains(nameof(IRenderFrameSession.SurfaceHandle), methods);
         Assert.Contains(nameof(IRenderFrameSession.Resize), methods);
         Assert.DoesNotContain("BeginFrame", methods);
         Assert.DoesNotContain("EndFrame", methods);

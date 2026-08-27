@@ -11,29 +11,29 @@ Consumers provide `DeltaShader.Contract.IShaderArtifact` and
 entry point and the resolved `ShaderAbi`. DeltaRender consumes that contract; it
 does not compile C# or GLSL and does not define a second ABI.
 
-## Window and frame submission
+## Window and render-graph session
 
 `IRenderWindowFactory.CreateWindow` creates an `IRenderWindow`. The platform
 provider supplies the Vulkan instance extensions and surface operations.
-`IRenderWindowFrameSession` exposes:
+`IRenderFrameSession` exposes the graph entry point:
 
 ```csharp
-RenderFrameState BeginFrame();
-bool EndFrame(in RenderFrameState state, in RenderFramePacket packet);
+IRenderGraph CreateRenderGraph();
 ```
 
-`RenderFramePacket` is a borrowed, one-frame value containing optional UI and
-text pipelines, their parameters and draw lists, atlas pages, and dirty record
-changes. The default packet is clear-only. A pipeline/data pair must be
-consistent; invalid pairs are rejected without fallback allocation. The
-`SubmitFrame` extension performs exactly one `BeginFrame` followed by the
-canonical `EndFrame`.
+The consumer creates a `RenderGraphFrame`, lets features declare their passes
+and resources, then builds and executes the graph:
 
-The packet and all spans remain valid only through the immediate submission.
-The producer must not mutate or dispose their backing storage before
-`EndFrame` returns. The session does not poll events or own input/game-loop
-state. Resize is requested through `Resize(WindowMetrics)` and a not-ready or
-resize frame is not submitted.
+```csharp
+IRenderGraph graph = session.CreateRenderGraph();
+graph.Build(in frame, features);
+graph.Execute();
+```
+
+`Execute()` owns target acquisition, pass ordering, synchronization, command
+submission and presentation. The session does not poll events or own
+input/game-loop state. Resize is handled by the session outside an active graph
+execution.
 
 ## UI handoff
 

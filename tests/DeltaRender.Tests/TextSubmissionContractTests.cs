@@ -432,12 +432,6 @@ public sealed class TextSubmissionContractTests
         }
     }
 
-    private sealed class FakePipeline : IGraphicsPipeline, IDisposable
-    {
-        public void Dispose() { }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
-
     private sealed class TestFrameSource : IUiRenderFrameSource, IDisposable
     {
         private readonly UiRenderBatchAdapter _adapter = new();

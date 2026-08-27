@@ -138,7 +138,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     /// follows the same Build/Execute path as a window session, but Execute submits and waits
     /// for completion instead of acquiring or presenting a swapchain image.
     /// </summary>
-    public IRenderFrameSession CreateHeadlessSession(uint width, uint height)
+    public VulkanWindowSession CreateHeadlessSession(uint width, uint height)
     {
         if (width == 0)
         {
@@ -1102,7 +1102,7 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         _presentFamily = _graphicsFamily;
         _extent = new Extent2D(Math.Max(1u, metrics.Width), Math.Max(1u, metrics.Height));
         _metrics = metrics;
-        _imageFormat = Format.B8G8R8A8Unorm;
+        _imageFormat = Format.R8G8B8A8Unorm;
         _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
 
         RenderPass renderPass = default;
@@ -1634,6 +1634,161 @@ public sealed unsafe class VulkanWindowSession : IRenderFrameSession, IVulkanTex
         _swapchain = CreateSwapchain(_renderer.Api, _device, _graphicsFamily, _presentFamily, _extent, capabilities, formats, modes);
         (_imageViews, _frameBuffers) = CreateSwapchainImageViews(_renderer.Api, swapchainExtension, _device, _extent, _renderPass, _swapchain, _imageFormat);
         return _frameBuffers.Length > 0;
+    }
+
+    /// <summary>
+    /// Copies the completed headless color target to caller-owned R/G/B/A bytes.
+    /// The destination layout is row-major with four bytes per pixel.
+    /// </summary>
+    public bool ReadbackRgba8(Span<byte> destination)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_headless)
+        {
+            throw new InvalidOperationException("Readback is available only for a headless Vulkan session.");
+        }
+
+        var byteCount = checked((int)((ulong)_extent.Width * _extent.Height * 4));
+        if (destination.Length < byteCount)
+        {
+            throw new ArgumentException($"The readback destination must contain at least {byteCount} bytes.", nameof(destination));
+        }
+
+        if (_inFrame)
+        {
+            return false;
+        }
+
+        var api = _renderer.Api;
+        api.DeviceWaitIdle(_device);
+        var staging = CreateBuffer((ulong)byteCount, BufferUsageFlags.TransferDstBit, MemoryPropertyFlags.HostVisibleBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+        try
+        {
+            if (api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue) != Result.Success ||
+                api.ResetFences(_device, 1, _renderFence) != Result.Success ||
+                api.ResetCommandBuffer(_commandBuffer, 0) != Result.Success)
+            {
+                return false;
+            }
+
+            var beginInfo = new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            };
+            if (api.BeginCommandBuffer(_commandBuffer, beginInfo) != Result.Success)
+            {
+                return false;
+            }
+
+            var toTransfer = new ImageMemoryBarrier
+            {
+                SType = StructureType.ImageMemoryBarrier,
+                SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+                DstAccessMask = AccessFlags.TransferReadBit,
+                OldLayout = ImageLayout.ColorAttachmentOptimal,
+                NewLayout = ImageLayout.TransferSrcOptimal,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Image = _headlessImage,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                }
+            };
+            api.CmdPipelineBarrier(
+                _commandBuffer,
+                PipelineStageFlags.ColorAttachmentOutputBit,
+                PipelineStageFlags.TransferBit,
+                DependencyFlags.None,
+                ReadOnlySpan<MemoryBarrier>.Empty,
+                ReadOnlySpan<BufferMemoryBarrier>.Empty,
+                new[] { toTransfer });
+
+            var copy = new BufferImageCopy
+            {
+                BufferOffset = 0,
+                BufferRowLength = _extent.Width,
+                BufferImageHeight = _extent.Height,
+                ImageSubresource = new ImageSubresourceLayers
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    MipLevel = 0,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                },
+                ImageOffset = new Offset3D(0, 0, 0),
+                ImageExtent = new Extent3D(_extent.Width, _extent.Height, 1)
+            };
+            api.CmdCopyImageToBuffer(_commandBuffer, _headlessImage, ImageLayout.TransferSrcOptimal, staging.Buffer, new[] { copy });
+
+            var toColor = new ImageMemoryBarrier
+            {
+                SType = StructureType.ImageMemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferReadBit,
+                DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
+                OldLayout = ImageLayout.TransferSrcOptimal,
+                NewLayout = ImageLayout.ColorAttachmentOptimal,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Image = _headlessImage,
+                SubresourceRange = toTransfer.SubresourceRange
+            };
+            api.CmdPipelineBarrier(
+                _commandBuffer,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.ColorAttachmentOutputBit,
+                DependencyFlags.None,
+                ReadOnlySpan<MemoryBarrier>.Empty,
+                ReadOnlySpan<BufferMemoryBarrier>.Empty,
+                new[] { toColor });
+
+            EnsureSuccess(api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer(headless readback)");
+            var commandBuffer = _commandBuffer;
+            var submit = new SubmitInfo
+            {
+                SType = StructureType.SubmitInfo,
+                CommandBufferCount = 1,
+                PCommandBuffers = &commandBuffer
+            };
+            EnsureSuccess(api.QueueSubmit(_graphicsQueue, 1, &submit, _renderFence), "QueueSubmit(headless readback)");
+            EnsureSuccess(api.WaitForFences(_device, 1, _renderFence, true, ulong.MaxValue), "WaitForFences(headless readback)");
+
+            void* mapped = null;
+            EnsureSuccess(api.MapMemory(_device, staging.Memory, 0, staging.AllocationSize, 0, &mapped), "MapMemory(headless readback)");
+            try
+            {
+                if (!staging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
+                {
+                    var range = new MappedMemoryRange
+                    {
+                        SType = StructureType.MappedMemoryRange,
+                        Memory = staging.Memory,
+                        Size = (nuint)byteCount
+                    };
+                    EnsureSuccess(api.InvalidateMappedMemoryRanges(_device, 1, &range), "InvalidateMappedMemoryRanges(headless readback)");
+                }
+
+                fixed (byte* target = destination)
+                {
+                    System.Buffer.MemoryCopy(mapped, target, byteCount, byteCount);
+                }
+            }
+            finally
+            {
+                api.UnmapMemory(_device, staging.Memory);
+            }
+
+            return true;
+        }
+        finally
+        {
+            DestroyAllocation(staging);
+        }
     }
 
     private VulkanGraphicsPipeline CreateGraphicsPipelineCore(in IGraphicsShaderProgram shaderProgram)

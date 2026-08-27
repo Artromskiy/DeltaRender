@@ -47,6 +47,8 @@ public interface IRenderFrameSession : IAsyncDisposable
 {
     RenderWindowId WindowId { get; }
 
+    RenderSurfaceHandle SurfaceHandle { get; }
+
     IRenderGraph CreateRenderGraph();
 
     IGraphicsPipeline CreateTextPipeline(in IGraphicsShaderProgram shaderProgram);

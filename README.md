@@ -6,8 +6,8 @@ uses MoltenVK.
 
 ## Boundaries
 
-- `DeltaRender` contains platform-neutral renderer contracts and borrowed
-  frame packets.
+- `DeltaRender` contains platform-neutral renderer contracts and the
+  graph-first frame boundary.
 - `DeltaRender.Vulkan` owns Vulkan resources, pipelines and presentation.
 - `DeltaRender.Platform.SDL3` owns SDL window and surface integration.
 - `DeltaRender.Text` adapts DeltaText's immutable glyph-image and shaping
@@ -30,8 +30,8 @@ uses MoltenVK.
 - [Vulkan/SDL3/MoltenVK ADR](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md):
   platform and package decisions.
 
-The renderer never owns the event loop. A frame session calls `BeginFrame`
-once and accepts one borrowed `RenderFramePacket` in `EndFrame`; the extension
-`SubmitFrame` is the convenience path for that same sequence. Compute and
-graphics preserve their existing SSBO, dispatch, swapchain and presentation
-paths. UI/text batches are grouped by pipeline, atlas page and clip.
+The renderer never owns the event loop. A frame session creates a graph;
+features declare passes and resources, and `graph.Execute()` owns acquire,
+submission and presentation. Compute and graphics preserve their existing
+SSBO, dispatch, swapchain and presentation paths. UI/text batches are grouped
+by pipeline, atlas page and clip.

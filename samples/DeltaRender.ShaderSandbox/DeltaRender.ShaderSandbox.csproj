@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Delta.Render.ShaderSandbox</RootNamespace>
+    <AssemblyName>DeltaRender.ShaderSandbox</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj" />
+    <ProjectReference Include="../../../DeltaXAML/src/DeltaXAML.Contract/DeltaXAML.Contract.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
+    <ProjectReference Include="../../../DeltaMaths/DeltaMaths.csproj">
+      <SetTargetFramework>TargetFramework=netstandard2.1</SetTargetFramework>
+    </ProjectReference>
+
+    <!-- Compile the canonical DeltaShader test fixture; no DeltaShader test assembly is a runtime dependency. -->
+    <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />
+  </ItemGroup>
+</Project>

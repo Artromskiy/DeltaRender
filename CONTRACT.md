@@ -1,7 +1,7 @@
 # DeltaRender cross-project contract
 
 This is the canonical cross-project contract supplied by DeltaRender. It is
-the complete renderer-facing API for the engine and editor, not an internal
+the graph-first renderer-facing API for the engine and editor, not an internal
 description of the RenderGraph implementation. The contract is Vulkan-only;
 SDL3 supplies the window/surface bridge and MoltenVK supplies the macOS Vulkan
 portability layer.
@@ -14,9 +14,9 @@ contract assembly:
 src/Contract/*.cs
 ```
 
-There are no contract subfolders. The project identity is `DeltaRender`; its
-public CLR namespaces are `Delta.Render.Core` for general values and
-`Delta.Render.Core.RenderGraph` for graph values.
+There are no contract subfolders. The project identity is `DeltaRender`; the
+public CLR namespace for this contract is `Delta.Render`. Implementation
+namespaces remain private to the renderer modules.
 
 ## Producer and consumers
 
@@ -37,10 +37,7 @@ parse XAML/C#, shape text or own ECS storage.
 The flat `Contract` folder contains the following public areas:
 
 - **Window/lifecycle:** `IRenderWindowFactory`, `IRenderWindow`,
-  `IRenderWindowFrameSession`, `IRenderGraphFactory`, `WindowConfiguration`,
-  `WindowMetrics` and `RenderFrameState`.
-- **Frame submission:** borrowed `RenderFramePacket`, `UiDrawList`, text draw
-  values, dirty records and the `BeginFrame`/`EndFrame` session boundary.
+  `IRenderFrameSession`, `WindowConfiguration` and `WindowMetrics`.
 - **RenderGraph:** `IRenderGraph`, `IRenderGraphBuilder`,
   `IRenderFeature`, raster/compute/transfer pass interfaces, command contexts,
   resource descriptions and graph-local handles.
@@ -78,20 +75,20 @@ Engine/editor extraction
 Features declare resource reads/writes before recording. The Vulkan executor
 owns pass ordering, resource lifetime, barriers and command recording.
 
-`IRenderWindowFrameSession` also implements `IRenderGraphFactory`; its single
-`CreateRenderGraph()` method returns a graph using the same session device,
-queues and lifetime. Consumers do not access raw Vulkan handles.
+`IRenderFrameSession.CreateRenderGraph()` returns a graph using the same
+session device, queues and lifetime. Consumers do not access raw Vulkan
+handles. The graph owns the complete frame lifecycle: target acquisition,
+recording, submission and presentation.
 
 `RenderGraphFrame` contains frame identity and one or more `RenderView` values.
 Each view owns a surface handle, viewport and pixel-space `PixelRect`, so a
 frame may target multiple surfaces. No Render contract carries `DeltaTime` or
 defines a clock.
 
-`RenderFramePacket` is a borrowed, one-frame submission value for the existing
-window session. Its spans remain valid until `EndFrame` returns. The packet is
-clear-only when pipelines and draw lists are empty. `SubmitFrame` is only a
-convenience extension that performs one `BeginFrame` followed by one
-`EndFrame`; it is not a second submission model.
+There is no separate direct frame-submission or packet API in this
+cross-project contract. UI, text, mesh and compute work enters through graph
+features and pass-owned submission data; `IRenderGraph.Execute()` performs the
+single submission path.
 
 ## Ownership and lifetime
 

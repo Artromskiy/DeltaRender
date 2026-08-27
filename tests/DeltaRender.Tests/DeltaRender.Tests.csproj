@@ -13,6 +13,7 @@
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Text/DeltaShader.Text.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender\\DeltaRender.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Text\\DeltaRender.Text.csproj" />
+    <ProjectReference Include="..\\..\\src\\DeltaRender.XAML\\DeltaRender.XAML.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Platform.SDL3\\DeltaRender.Platform.SDL3.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Vulkan\\DeltaRender.Vulkan.csproj" />
   </ItemGroup>

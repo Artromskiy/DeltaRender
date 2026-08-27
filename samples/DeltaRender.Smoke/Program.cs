@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Delta.Render;
+using Delta.Render.RenderGraph;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.Vulkan;
 using Delta.Render.FullscreenShaders;
@@ -78,9 +79,14 @@ internal static class Program
                 Sdl3WindowFactory.PumpEvents();
                 var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
                 var drawList = panelAdapter.CurrentDrawList.Span;
-                var feature = new SmokeRasterFeature(program, in parameters, panel ? drawList : ReadOnlySpan<UiQuad>.Empty, panel);
+                var feature = new SmokeRasterFeature(
+                    program,
+                    in parameters,
+                    panel ? drawList : ReadOnlySpan<UiQuad>.Empty,
+                    panel,
+                    clearOnly);
                 var view = new RenderView(
-                    new RenderSurfaceHandle(1, 1),
+                    session.SurfaceHandle,
                     new RenderViewport(0, 0, window.Metrics.Width, window.Metrics.Height),
                     new PixelRect(0, 0, (int)window.Metrics.Width, (int)window.Metrics.Height));
                 var frame = new RenderGraphFrame(renderedFrames, new[] { view });
@@ -88,7 +94,6 @@ internal static class Program
                 graph.Execute();
                 renderedFrames++;
             }
-            await graph.DisposeAsync().ConfigureAwait(false);
             await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
         }
         catch (Exception ex)
@@ -122,25 +127,28 @@ internal static class Program
         private readonly GraphicsFrameParameters _parameters;
         private readonly UiQuad[] _quads;
         private readonly bool _panel;
+        private readonly bool _clearOnly;
 
         public SmokeRasterFeature(
             IGraphicsShaderProgram program,
             in GraphicsFrameParameters parameters,
             ReadOnlySpan<UiQuad> quads,
-            bool panel)
+            bool panel,
+            bool clearOnly)
         {
             _program = program;
             _parameters = parameters;
             _quads = quads.ToArray();
             _panel = panel;
+            _clearOnly = clearOnly;
         }
 
         public void AddPasses(IRenderGraphBuilder graph, IRenderFeatureContext context)
         {
             var surface = graph.ImportSurface(context.View.Surface);
             var pass = graph.AddRasterPass(
-                new RasterPassDescription("smoke", new RasterPipelineDescription(_program, RasterCullMode.None)),
-                new SmokeRasterPass(context.View.Viewport, context.View.Scissor, _parameters, _quads, _panel));
+                new RasterPassDescription("smoke", new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)),
+                new SmokeRasterPass(context.View.Viewport, context.View.Scissor, _parameters, _quads, _panel, _clearOnly));
             graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(
                 surface,
                 AttachmentLoadOperation.Clear,
@@ -154,12 +162,18 @@ internal static class Program
         PixelRect scissor,
         GraphicsFrameParameters parameters,
         UiQuad[] quads,
-        bool panel) : IRasterPass
+        bool panel,
+        bool clearOnly) : IRasterPass
     {
         public void Record(IRasterCommandContext commands)
         {
             commands.SetViewport(in viewport);
             commands.SetScissor(in scissor);
+            if (clearOnly)
+            {
+                return;
+            }
+
             if (!panel)
             {
                 Span<byte> pushConstants = stackalloc byte[16];
@@ -215,7 +229,7 @@ internal static class Program
         var artifact = new ShaderArtifact(shader, "main", new ShaderAbi(
             ShaderStage.Compute,
             resources: [new ShaderResourceBinding(
-                new ShaderBinding(0, 0),
+                new Delta.Shader.Contract.ShaderBinding(0, 0),
                 ShaderResourceKind.StorageBuffer,
                 ShaderResourceAccess.ReadWrite,
                 ShaderStageMask.Compute,
