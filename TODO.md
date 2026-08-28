@@ -1,7 +1,7 @@
 # DeltaRender TODO
 
-The authoritative public surface is [CONTRACT.md](CONTRACT.md). The ordered
-implementation/removal plan is [MIGRATION.md](MIGRATION.md). Do not redesign
+The authoritative public surface is [docs/CONTRACT.md](docs/CONTRACT.md). The ordered
+implementation/removal plan is [docs/MIGRATION.md](docs/MIGRATION.md). Do not redesign
 the contract or add a compatibility facade while executing this list.
 
 ## P0 - one Vulkan session and graph executor

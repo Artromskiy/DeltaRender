@@ -2,7 +2,7 @@
 
 This is the complete cross-project contract supplied by DeltaRender. The only
 supported GPU execution model is the Vulkan RenderGraph declared by the flat
-sources in `src/Contract`. A window, an offscreen target and a compute-only
+sources in `src/DeltaRender`. A window, an offscreen target and a compute-only
 session use the same interfaces and the same Vulkan executor.
 
 The contract assembly is `DeltaRender`; public CLR namespaces are

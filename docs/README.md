@@ -27,7 +27,7 @@ does not compile source, poll input, shape text or own ECS state.
 - [USER_API.md](USER_API.md): graph authoring and resource usage.
 - [INTERNAL.md](INTERNAL.md): Vulkan implementation design.
 - [MIGRATION.md](MIGRATION.md): removal of every legacy submission path.
-- [TODO.md](TODO.md): selected implementation work.
-- [WORKFLOW.md](WORKFLOW.md): bounded local checks.
-- [Vulkan/SDL3/MoltenVK ADR](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md):
+- [TODO.md](../TODO.md): selected implementation work.
+- [WORKFLOW.md](../WORKFLOW.md): bounded local checks.
+- [Vulkan/SDL3/MoltenVK ADR](adr/0001-vulkan-sdl3-moltenvk-stack.md):
   platform decision.

@@ -17,7 +17,7 @@ headless/compiler/contract checks. Empty mandatory domains stay tracked with
 .gitkeep.
 
 The contract checkpoint can be checked independently while the Vulkan and
-consumer migration in `MIGRATION.md` is in progress:
+consumer migration in `docs/MIGRATION.md` is in progress:
 
 ```bash
 dotnet build src/DeltaRender/DeltaRender.csproj -c Release \

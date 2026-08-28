@@ -6,7 +6,6 @@
     <PackageId>DeltaRender</PackageId>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../Contract/*.cs" />
     <ProjectReference Include="../../../DeltaDiagnostics/src/Delta.Diagnostics.Contract/Delta.Diagnostics.Contract.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
   </ItemGroup>

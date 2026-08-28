@@ -3,10 +3,11 @@
 Scope: renderer-neutral draw/resource contracts, Vulkan implementation and
 SDL3 surface/window integration. Engine owns event polling and frame policy.
 
-- [README.md](README.md) — stable renderer boundaries and supported paths.
-- [CONTRACT.md](CONTRACT.md) — complete cross-project renderer contract;
-  declarations are flat in `src/Contract`.
-- [MIGRATION.md](MIGRATION.md) — mandatory removal order for every legacy GPU
+- [docs/README.md](docs/README.md) — stable renderer boundaries and supported paths.
+- [docs/CONTRACT.md](docs/CONTRACT.md) — complete cross-project renderer
+  contract; declarations are part of the `Delta.Render` assembly in
+  `src/DeltaRender`.
+- [docs/MIGRATION.md](docs/MIGRATION.md) — mandatory removal order for every legacy GPU
   submission path; do not replace those paths with compatibility facades.
 - [TODO.md](TODO.md) — selected renderer work.
 - [IDEAS.md](IDEAS.md) — deferred renderer hypotheses.

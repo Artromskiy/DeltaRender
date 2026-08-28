@@ -6,16 +6,25 @@ project_name="${LAYOUT_PROJECT_NAME:-$(basename "$repo_root")}"
 required_directories=(
     src
     tests
-    benchmarks
     samples
-    probes
-    playground
     tools
-    adr
     docs
     eng
     artifacts
     assets
+)
+required_management_files=(
+    AGENTS.md
+    TODO.md
+    WORKFLOW.md
+    IDEAS.md
+)
+forbidden_root_documents=(
+    README.md
+    CONTRACT.md
+    USER_API.md
+    INTERNAL.md
+    MIGRATION.md
 )
 failed=0
 
@@ -27,9 +36,23 @@ for directory in "${required_directories[@]}"; do
     fi
 done
 
+for file in "${required_management_files[@]}"; do
+    if [[ ! -f "$repo_root/$file" ]]; then
+        printf 'layout: missing required root management file: %s\n' "$file" >&2
+        failed=1
+    fi
+done
+
+for file in "${forbidden_root_documents[@]}"; do
+    if [[ -e "$repo_root/$file" ]]; then
+        printf 'layout: substantive documentation must be under docs/: %s\n' "$file" >&2
+        failed=1
+    fi
+done
+
 while IFS= read -r tracked_directory; do
     case "$tracked_directory" in
-        .github|src|tests|benchmarks|samples|probes|playground|tools|adr|docs|eng|artifacts|assets)
+        .github|src|tests|samples|tools|docs|eng|artifacts|assets|Assets)
             ;;
         *)
             printf 'layout: unexpected tracked top-level directory: %s\n' "$tracked_directory" >&2
@@ -57,8 +80,7 @@ if [[ -d "$source_root" ]]; then
                 ;;
         esac
     done < <(
-        git -C "$repo_root" ls-tree -d --name-only HEAD src/ |
-            sed 's#^src/##' |
+        find "$source_root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; |
             sort
     )
 fi
