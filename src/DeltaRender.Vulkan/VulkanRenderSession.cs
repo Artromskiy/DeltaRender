@@ -641,19 +641,40 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderBufferHandle handle, [NotNullWhen(true)] out T? value) where T : class
     {
         value = null;
-        return handle.IsValid && values.TryGetValue(handle.Value, out var candidate) && candidate is not null && ((PersistentBuffer)(object)candidate).Generation == handle.Generation && (value = candidate) is not null;
+        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentBuffer)(object)candidate).Generation != handle.Generation)
+        {
+            return false;
+        }
+
+        values.Remove(handle.Value);
+        value = candidate;
+        return true;
     }
 
     private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderTextureHandle handle, [NotNullWhen(true)] out T? value) where T : class
     {
         value = null;
-        return handle.IsValid && values.TryGetValue(handle.Value, out var candidate) && candidate is not null && ((PersistentTexture)(object)candidate).Generation == handle.Generation && (value = candidate) is not null;
+        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentTexture)(object)candidate).Generation != handle.Generation)
+        {
+            return false;
+        }
+
+        values.Remove(handle.Value);
+        value = candidate;
+        return true;
     }
 
     private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderSamplerHandle handle, [NotNullWhen(true)] out T? value) where T : class
     {
         value = null;
-        return handle.IsValid && values.TryGetValue(handle.Value, out var candidate) && candidate is not null && ((PersistentSampler)(object)candidate).Generation == handle.Generation && (value = candidate) is not null;
+        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentSampler)(object)candidate).Generation != handle.Generation)
+        {
+            return false;
+        }
+
+        values.Remove(handle.Value);
+        value = candidate;
+        return true;
     }
 
     private static BufferUsageFlags ToVulkanBufferUsage(RenderBufferUsage usage)

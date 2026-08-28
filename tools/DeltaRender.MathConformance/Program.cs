@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text.Json;
 using Delta.Render;
@@ -98,7 +99,10 @@ internal static class ConformanceOrchestrator
         var runner = new VulkanCaseRunner(session, report);
         foreach (var assignment in assignments)
         {
-            await runner.ExecuteAsync(assignment).ConfigureAwait(false);
+            foreach (var testCase in assignment.Cases)
+            {
+                await runner.ExecuteAsync(assignment with { Cases = [testCase] }).ConfigureAwait(false);
+            }
         }
     }
 
@@ -808,6 +812,7 @@ internal sealed class VulkanCaseRunner
         try
         {
             var resources = artifact.Artifact.Abi.Resources;
+            var countPushConstants = BuildCountPushConstants(artifact.Artifact);
             buffers = new RenderBufferHandle[resources.Count];
             var uploads = new byte[]?[resources.Count];
             for (var resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
@@ -835,7 +840,14 @@ internal sealed class VulkanCaseRunner
                 }
             }
 
-            var feature = new GraphConformanceFeature(artifact.Artifact, resources, buffers, uploads, cases.Count);
+            var feature = new GraphConformanceFeature(
+                artifact.Artifact,
+                resources,
+                buffers,
+                uploads,
+                cases.Count,
+                countPushConstants.Data,
+                countPushConstants.Offset);
             IRenderFeature[] features = [feature];
             graph.Build(0, features);
             var execution = graph.Execute();
@@ -858,7 +870,7 @@ internal sealed class VulkanCaseRunner
             {
                 var testCase = cases[caseIndex];
                 var actual = ShaderAbiValueCodec.Read(testCase.Expected, outputResource.Layout, outputData.AsSpan(checked((int)((ulong)caseIndex * outputStride)), checked((int)outputStride)));
-                _report.AddComparison(testCase, artifact.Path, ValueComparer.Compare(testCase.Expected, actual, testCase.AbsoluteTolerance, testCase.RelativeTolerance, testCase.MaxUlps));
+                _report.AddComparison(testCase, artifact.Path, ValueComparer.Compare(testCase.Expected, actual, testCase.Comparison, testCase.AbsoluteTolerance, testCase.RelativeTolerance, testCase.MaxUlps));
             }
         }
         catch (Exception exception) when (RunnerFailure.IsReportable(exception))
@@ -870,11 +882,6 @@ internal sealed class VulkanCaseRunner
         }
         finally
         {
-            if (graph is IAsyncDisposable disposableGraph)
-            {
-                await disposableGraph.DisposeAsync().ConfigureAwait(false);
-            }
-
             for (var index = createdBufferCount - 1; index >= 0; index--)
             {
                 _session.Release(buffers[index]);
@@ -888,12 +895,6 @@ internal sealed class VulkanCaseRunner
         if (abi.RequiredCapabilities != ShaderCapabilities.None)
         {
             ReportCapabilityExcluded(cases, artifact.Path, "Required shader capabilities are not available in the current render session.");
-            return false;
-        }
-
-        if (abi.PushConstants.Count != 0)
-        {
-            ReportCompilerBlocked(cases, artifact.Path, "The conformance case bundle does not provide the artifact push-constant input.");
             return false;
         }
 
@@ -912,6 +913,36 @@ internal sealed class VulkanCaseRunner
         }
 
         return true;
+    }
+
+    private static (byte[] Data, uint Offset) BuildCountPushConstants(ShaderArtifact artifact)
+    {
+        var ranges = artifact.Abi.PushConstants;
+        if (ranges.Count != 1)
+        {
+            throw new InvalidDataException("Stage-1 conformance artifacts must declare exactly one push-constant range for Count.");
+        }
+
+        var range = ranges[0];
+        if (range.Size != range.Layout.Size || range.Size < sizeof(uint) || range.Layout.Members.Count != 1)
+        {
+            throw new InvalidDataException("The conformance push-constant ABI must contain one layout-sized Count member.");
+        }
+
+        var member = range.Layout.Members[0];
+        if (member.Type.Kind != ShaderValueKind.UnsignedInteger ||
+            member.Type.BitWidth != 32 ||
+            member.Type.VectorSize != 1 ||
+            member.Type.Columns != 1 ||
+            member.Size != sizeof(uint) ||
+            member.Offset > range.Size - sizeof(uint))
+        {
+            throw new InvalidDataException("The conformance push-constant ABI must contain a 32-bit unsigned Count member.");
+        }
+
+        var data = new byte[checked((int)range.Size)];
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(checked((int)member.Offset), sizeof(uint)), 1);
+        return (data, range.Offset);
     }
 
     private void ReportCompilerBlocked(IReadOnlyList<ConformanceCase> cases, string artifact, string reason)
@@ -939,19 +970,25 @@ internal sealed class GraphConformanceFeature : IRenderFeature
     private readonly RenderBufferHandle[] _buffers;
     private readonly byte[]?[] _uploads;
     private readonly int _caseCount;
+    private readonly byte[] _pushConstants;
+    private readonly uint _pushConstantOffset;
 
     internal GraphConformanceFeature(
         IShaderArtifact artifact,
         IReadOnlyList<ShaderResourceBinding> resources,
         RenderBufferHandle[] buffers,
         byte[]?[] uploads,
-        int caseCount)
+        int caseCount,
+        byte[] pushConstants,
+        uint pushConstantOffset)
     {
         _artifact = artifact ?? throw new ArgumentNullException(nameof(artifact));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
         _buffers = buffers ?? throw new ArgumentNullException(nameof(buffers));
         _uploads = uploads ?? throw new ArgumentNullException(nameof(uploads));
         _caseCount = caseCount;
+        _pushConstants = pushConstants ?? throw new ArgumentNullException(nameof(pushConstants));
+        _pushConstantOffset = pushConstantOffset;
     }
 
     internal RenderGraphReadbackHandle Readback { get; private set; }
@@ -975,7 +1012,7 @@ internal sealed class GraphConformanceFeature : IRenderFeature
 
         var compute = graph.AddComputePass(
             new ComputePassDescription("conformance-compute", _artifact),
-            new GraphComputePass(_artifact, _resources, graphBuffers, _caseCount));
+            new GraphComputePass(_artifact, _resources, graphBuffers, _caseCount, _pushConstants, _pushConstantOffset));
         for (var index = 0; index < _resources.Count; index++)
         {
             graph.UseBuffer(compute, graphBuffers[index], ToRenderAccess(_resources[index].Access), RenderPipelineStages.Compute);
@@ -1012,7 +1049,9 @@ internal sealed class GraphComputePass(
     IShaderArtifact artifact,
     IReadOnlyList<ShaderResourceBinding> resources,
     RenderGraphBufferHandle[] buffers,
-    int caseCount) : IComputePass
+    int caseCount,
+    byte[] pushConstants,
+    uint pushConstantOffset) : IComputePass
 {
     public void Record(IComputeCommandContext commands)
     {
@@ -1021,6 +1060,7 @@ internal sealed class GraphComputePass(
             commands.BindBuffer(resources[index].Binding, buffers[index]);
         }
 
+        commands.PushConstants(pushConstants, pushConstantOffset);
         var workgroupSize = artifact.Abi.WorkgroupSize.X;
         var groups = checked(((uint)caseCount + workgroupSize - 1) / workgroupSize);
         commands.Dispatch(groups);
@@ -1044,6 +1084,7 @@ internal static class ValueComparer
     public static ComparisonResult Compare(
         CaseValue expected,
         uint[] actual,
+        ComparisonProfile profile,
         double absoluteTolerance,
         double relativeTolerance,
         long maxUlps)
@@ -1053,6 +1094,12 @@ internal static class ValueComparer
         {
             mismatches.Add(new MismatchDetail(-1, expected.Words.Length.ToString(CultureInfo.InvariantCulture), actual.Length.ToString(CultureInfo.InvariantCulture), null, null, null, null, null));
             return new ComparisonResult(false, mismatches);
+        }
+
+        if (profile == ComparisonProfile.QuaternionEquivalent &&
+            AcceptQuaternion(expected.Words, actual))
+        {
+            return new ComparisonResult(true, mismatches);
         }
 
         var isFloat = expected.Type.StartsWith("float", StringComparison.Ordinal) ||
@@ -1092,6 +1139,41 @@ internal static class ValueComparer
         }
 
         return new ComparisonResult(mismatches.Count == 0, mismatches);
+    }
+
+    private static bool AcceptQuaternion(uint[] expected, uint[] actual)
+    {
+        const double angularToleranceRadians = 0.0001 * Math.PI / 180.0;
+        if (expected.Length != 4 || actual.Length != 4)
+        {
+            return false;
+        }
+
+        double expectedLengthSquared = 0;
+        double actualLengthSquared = 0;
+        double dot = 0;
+        for (var lane = 0; lane < 4; lane++)
+        {
+            var expectedValue = BitConverter.UInt32BitsToSingle(expected[lane]);
+            var actualValue = BitConverter.UInt32BitsToSingle(actual[lane]);
+            if (!float.IsFinite(expectedValue) || !float.IsFinite(actualValue))
+            {
+                return false;
+            }
+
+            expectedLengthSquared += (double)expectedValue * expectedValue;
+            actualLengthSquared += (double)actualValue * actualValue;
+            dot += (double)expectedValue * actualValue;
+        }
+
+        if (expectedLengthSquared <= double.Epsilon || actualLengthSquared <= double.Epsilon)
+        {
+            return false;
+        }
+
+        var normalizedDot = Math.Abs(dot / Math.Sqrt(expectedLengthSquared * actualLengthSquared));
+        normalizedDot = Math.Clamp(normalizedDot, -1, 1);
+        return 2 * Math.Acos(normalizedDot) <= angularToleranceRadians;
     }
 
     private static bool AcceptFloat(

@@ -69,14 +69,6 @@
       "deltashader.contract": {
         "type": "Project"
       }
-    },
-    "net10.0/osx-arm64": {
-      "Silk.NET.MoltenVK.Native": {
-        "type": "Direct",
-        "requested": "[2.23.0, )",
-        "resolved": "2.23.0",
-        "contentHash": "MNlYsAlfPsv+p2KoLiqvW0xFToFK2vGCW5XhldUYND+sq3QEoSHn0ZGppEqFYGu996z/8d3c86HFBo63L2ZW5Q=="
-      }
     }
   }
 }
