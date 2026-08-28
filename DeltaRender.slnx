@@ -10,4 +10,5 @@
   <Project Path="tests/DeltaRender.Tests/DeltaRender.Tests.csproj" />
   <Project Path="tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj" />
   <Project Path="tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
+  <Project Path="tools/DeltaRender.MathConformance/DeltaRender.MathConformance.csproj" />
 </Solution>

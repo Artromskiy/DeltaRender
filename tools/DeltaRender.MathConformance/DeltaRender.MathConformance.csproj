@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Delta.Render.MathConformance</RootNamespace>
+    <AssemblyName>DeltaRender.MathConformance</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
+  </ItemGroup>
+</Project>
