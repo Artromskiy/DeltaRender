@@ -368,7 +368,14 @@ internal static class ShaderArtifactLoader
         var result = new List<LoadedArtifact>(manifests.Length);
         foreach (var manifestPath in manifests.Order(StringComparer.Ordinal))
         {
-            result.Add(Load(manifestPath));
+            try
+            {
+                result.Add(Load(manifestPath));
+            }
+            catch (Exception exception) when (RunnerFailure.IsReportable(exception))
+            {
+                throw new InvalidDataException($"Manifest '{manifestPath}' is invalid: {exception}", exception);
+            }
         }
 
         return result;
@@ -386,31 +393,34 @@ internal static class ShaderArtifactLoader
 
         using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
         var root = document.RootElement;
-        if (GetRequiredUInt32(root, "Stage") != 0)
+        var abiDocument = LoadAbiDocument(manifestPath);
+        using (abiDocument)
         {
-            throw new InvalidDataException($"Only compute artifacts are accepted: '{manifestPath}'.");
-        }
+            var abiRoot = abiDocument is null ? root : RequiredObject(abiDocument.RootElement, "Abi");
+            if (!IsComputeStage(abiRoot, "Stage"))
+            {
+                throw new InvalidDataException($"Only compute artifacts are accepted: '{manifestPath}'.");
+            }
 
-        var entryPoint = GetRequiredString(root, "EntryPointName");
-        var resources = ParseResources(root);
-        var pushConstants = ParsePushConstants(root);
-        var localSize = new ShaderWorkgroupSize(
-            GetRequiredUInt32(root, "LocalSizeX"),
-            GetRequiredUInt32(root, "LocalSizeY"),
-            GetRequiredUInt32(root, "LocalSizeZ"));
-        var requiredCapabilities = ParseRequiredCapabilities(root);
-        var abi = new ShaderAbi(
-            ShaderStage.Compute,
-            resources,
-            pushConstants,
-            workgroupSize: localSize,
-            requiredCapabilities: requiredCapabilities);
-        var artifact = new ShaderArtifact(File.ReadAllBytes(spirvPath), entryPoint, abi);
-        return new LoadedArtifact(
-            manifestPath,
-            artifact,
-            ParseCaseIds(root),
-            OptionalString(root, "OperationIdentity"));
+            var entryPoint = GetRequiredString(root, "EntryPointName");
+            var resources = ParseResources(abiRoot);
+            var pushConstants = ParsePushConstants(abiRoot);
+            var localSize = ParseWorkgroupSize(abiRoot);
+            var requiredCapabilities = ParseRequiredCapabilities(abiRoot);
+            var abi = new ShaderAbi(
+                ShaderStage.Compute,
+                resources,
+                pushConstants,
+                workgroupSize: localSize,
+                requiredCapabilities: requiredCapabilities);
+            var artifact = new ShaderArtifact(File.ReadAllBytes(spirvPath), entryPoint, abi);
+            var metadata = LoadIdentityMetadata(manifestPath, root);
+            return new LoadedArtifact(
+                manifestPath,
+                artifact,
+                metadata.CaseIds,
+                metadata.OperationIdentity);
+        }
     }
 
     private static ShaderResourceBinding[] ParseResources(JsonElement root)
@@ -420,29 +430,26 @@ internal static class ShaderArtifactLoader
         var index = 0;
         foreach (var value in values.EnumerateArray())
         {
-            var category = OptionalString(value, "Category");
-            if (!string.Equals(category, "storage-buffer", StringComparison.Ordinal))
+            var canonical = value.TryGetProperty("Binding", out var bindingValue) && bindingValue.ValueKind == JsonValueKind.Object;
+            var category = canonical ? OptionalString(value, "Kind") : OptionalString(value, "Category");
+            if (canonical
+                ? !string.Equals(category, "StorageBuffer", StringComparison.Ordinal)
+                : !string.Equals(category, "storage-buffer", StringComparison.Ordinal))
             {
                 throw new InvalidDataException("Conformance artifacts may contain only storage-buffer resources.");
             }
 
             var readOnly = value.TryGetProperty("ReadOnly", out var readOnlyProperty) &&
                 readOnlyProperty.ValueKind == JsonValueKind.True;
-            var access = readOnly
-                ? ShaderResourceAccess.Read
-                : GetRequiredUInt32(value, "Access") switch
-                {
-                    1 => ShaderResourceAccess.Read,
-                    2 => ShaderResourceAccess.Write,
-                    3 => ShaderResourceAccess.ReadWrite,
-                    _ => throw new InvalidDataException("Storage-buffer access is invalid.")
-                };
+            var access = readOnly ? ShaderResourceAccess.Read : ParseAccess(value);
             result[index++] = new ShaderResourceBinding(
-                new ShaderBinding(GetRequiredUInt32(value, "Set"), GetRequiredUInt32(value, "Binding")),
+                canonical
+                    ? new ShaderBinding(GetRequiredUInt32(bindingValue, "Set"), GetRequiredUInt32(bindingValue, "Binding"))
+                    : new ShaderBinding(GetRequiredUInt32(value, "Set"), GetRequiredUInt32(value, "Binding")),
                 ShaderResourceKind.StorageBuffer,
                 access,
                 ShaderStageMask.Compute,
-                ParseLayout(value));
+                canonical ? ParseLayout(RequiredObject(value, "Layout")) : ParseLayout(value));
         }
 
         return result;
@@ -455,7 +462,9 @@ internal static class ShaderArtifactLoader
         var index = 0;
         foreach (var value in values.EnumerateArray())
         {
-            var layout = ParseLayout(value);
+            var layout = value.TryGetProperty("Layout", out var layoutValue) && layoutValue.ValueKind == JsonValueKind.Object
+                ? ParseLayout(layoutValue)
+                : ParseLayout(value);
             var offset = OptionalUInt32(value, "Offset");
             result[index++] = new ShaderPushConstantRange(offset, layout.Size, ShaderStageMask.Compute, layout);
         }
@@ -489,7 +498,7 @@ internal static class ShaderArtifactLoader
                 ? ParseLayout(value)
                 : null;
             result[index++] = new ShaderAbiMember(
-                ParseValueType(GetRequiredString(value, "GlslType")),
+                ParseMemberValueType(value),
                 GetRequiredUInt32(value, "Offset"),
                 GetRequiredUInt32(value, "Size"),
                 GetRequiredUInt32(value, "Alignment"),
@@ -527,6 +536,120 @@ internal static class ShaderArtifactLoader
         _ => throw new InvalidDataException($"Unsupported ShaderAbi type '{type}'.")
     };
 
+    private static ShaderResourceAccess ParseAccess(JsonElement value)
+    {
+        if (!value.TryGetProperty("Access", out var access))
+        {
+            throw new InvalidDataException("Storage-buffer access is missing.");
+        }
+
+        if (access.ValueKind == JsonValueKind.String)
+        {
+            return access.GetString() switch
+            {
+                "ReadOnly" or "Read" => ShaderResourceAccess.Read,
+                "Write" => ShaderResourceAccess.Write,
+                "ReadWrite" => ShaderResourceAccess.ReadWrite,
+                _ => throw new InvalidDataException("Storage-buffer access is invalid.")
+            };
+        }
+
+        return access.TryGetUInt32(out var numericAccess) ? numericAccess switch
+        {
+            1 => ShaderResourceAccess.Read,
+            2 => ShaderResourceAccess.Write,
+            3 => ShaderResourceAccess.ReadWrite,
+            _ => throw new InvalidDataException("Storage-buffer access is invalid.")
+        } : throw new InvalidDataException("Storage-buffer access is invalid.");
+    }
+
+    private static ShaderValueType ParseMemberValueType(JsonElement value)
+        => value.TryGetProperty("GlslType", out var glslType)
+            ? ParseValueType(GetRequiredString(value, "GlslType"))
+            : ParseCanonicalValueType(RequiredObject(value, "Type"));
+
+    private static ShaderValueType ParseCanonicalValueType(JsonElement value)
+    {
+        var kind = GetRequiredString(value, "Kind");
+        var bitWidth = GetRequiredUInt32(value, "BitWidth");
+        var vectorSize = GetRequiredUInt32(value, "VectorSize");
+        var columns = GetRequiredUInt32(value, "Columns");
+        return kind switch
+        {
+            "Boolean" => new ShaderValueType(ShaderValueKind.Boolean, bitWidth, vectorSize, columns),
+            "SignedInteger" => new ShaderValueType(ShaderValueKind.SignedInteger, bitWidth, vectorSize, columns),
+            "UnsignedInteger" => new ShaderValueType(ShaderValueKind.UnsignedInteger, bitWidth, vectorSize, columns),
+            "FloatingPoint" => new ShaderValueType(ShaderValueKind.FloatingPoint, bitWidth, vectorSize, columns),
+            "Structure" => ShaderValueType.Structure,
+            _ => throw new InvalidDataException($"Unsupported canonical ShaderAbi kind '{kind}'.")
+        };
+    }
+
+    private static ShaderWorkgroupSize ParseWorkgroupSize(JsonElement root)
+        => root.TryGetProperty("WorkgroupSize", out var value) && value.ValueKind == JsonValueKind.Object
+            ? new ShaderWorkgroupSize(
+                GetRequiredUInt32(value, "X"),
+                GetRequiredUInt32(value, "Y"),
+                GetRequiredUInt32(value, "Z"))
+            : new ShaderWorkgroupSize(
+                GetRequiredUInt32(root, "LocalSizeX"),
+                GetRequiredUInt32(root, "LocalSizeY"),
+                GetRequiredUInt32(root, "LocalSizeZ"));
+
+    private static ShaderCapabilities ParseRequiredCapabilities(JsonElement root)
+    {
+        if (!root.TryGetProperty("RequiredCapabilities", out var value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return ShaderCapabilities.None;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetUInt64(out var numeric))
+        {
+            return (ShaderCapabilities)numeric;
+        }
+
+        var text = value.GetString();
+        if (string.Equals(text, "None", StringComparison.Ordinal))
+        {
+            return ShaderCapabilities.None;
+        }
+
+        return text is not null &&
+            Enum.TryParse(text, ignoreCase: true, out ShaderCapabilities capabilities)
+            ? capabilities
+            : throw new InvalidDataException("Artifact required capabilities are invalid.");
+    }
+
+    private static JsonDocument? LoadAbiDocument(string manifestPath)
+    {
+        var metadataPath = manifestPath[..^".shader.json".Length] + ".abi.json";
+        return File.Exists(metadataPath) ? JsonDocument.Parse(File.ReadAllText(metadataPath)) : null;
+    }
+
+    private static JsonElement RequiredObject(JsonElement value, string name)
+    {
+        if (!value.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException($"Artifact property '{name}' must be an object.");
+        }
+
+        return property;
+    }
+
+    private static (string[] CaseIds, string? OperationIdentity) LoadIdentityMetadata(string manifestPath, JsonElement root)
+    {
+        var metadataPath = manifestPath[..^".shader.json".Length] + ".abi.json";
+        if (!File.Exists(metadataPath))
+        {
+            return (ParseCaseIds(root), OptionalString(root, "OperationIdentity"));
+        }
+
+        using var document = JsonDocument.Parse(File.ReadAllText(metadataPath));
+        var metadata = document.RootElement;
+        var caseId = OptionalString(metadata, "CaseId");
+        return (caseId is null ? ParseCaseIds(root) : [caseId], OptionalString(metadata, "OperationIdentity"));
+    }
+
     private static string[] ParseCaseIds(JsonElement root)
     {
         if (!root.TryGetProperty("CaseIds", out var values) && !root.TryGetProperty("caseIds", out values))
@@ -540,12 +663,6 @@ internal static class ShaderArtifactLoader
         }
 
         return values.EnumerateArray().Select(value => value.GetString() ?? throw new InvalidDataException("Artifact CaseIds contains null.")).ToArray();
-    }
-
-    private static ShaderCapabilities ParseRequiredCapabilities(JsonElement root)
-    {
-        var value = OptionalUInt64(root, "RequiredCapabilities");
-        return (ShaderCapabilities)value;
     }
 
     private static JsonElement RequiredArray(JsonElement value, string name)
@@ -567,23 +684,65 @@ internal static class ShaderArtifactLoader
             : null;
 
     private static uint GetRequiredUInt32(JsonElement value, string name)
-        => value.TryGetProperty(name, out var property) && property.TryGetUInt32(out var result)
-            ? result
-            : throw new InvalidDataException($"Artifact property '{name}' must be an unsigned integer.");
+    {
+        if (!value.TryGetProperty(name, out var property))
+        {
+            throw new InvalidDataException($"Artifact property '{name}' must be an unsigned integer.");
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetUInt32(out var result))
+        {
+            return result;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            uint.TryParse(property.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out result))
+        {
+            return result;
+        }
+
+        throw new InvalidDataException($"Artifact property '{name}' must be an unsigned integer.");
+    }
 
     private static uint OptionalUInt32(JsonElement value, string name)
-        => !value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null
-            ? 0
-            : property.TryGetUInt32(out var result)
-                ? result
-                : throw new InvalidDataException($"Artifact property '{name}' must be an unsigned integer or null.");
+    {
+        if (!value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return 0;
+        }
+
+        return GetRequiredUInt32(value, name);
+    }
 
     private static ulong OptionalUInt64(JsonElement value, string name)
-        => !value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null
-            ? 0
-            : property.TryGetUInt64(out var result)
-                ? result
-                : 0;
+    {
+        if (!value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return 0;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetUInt64(out var result))
+        {
+            return result;
+        }
+
+        return property.ValueKind == JsonValueKind.String &&
+            ulong.TryParse(property.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out result)
+            ? result
+            : throw new InvalidDataException($"Artifact property '{name}' must be an unsigned integer or null.");
+    }
+
+    private static bool IsComputeStage(JsonElement value, string name)
+    {
+        if (!value.TryGetProperty(name, out var property))
+        {
+            throw new InvalidDataException($"Artifact property '{name}' must identify a compute stage.");
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? string.Equals(property.GetString(), "Compute", StringComparison.Ordinal)
+            : property.TryGetUInt32(out var stage) && stage == 0;
+    }
 }
 
 internal sealed record CaseAssignment(LoadedArtifact Artifact, IReadOnlyList<ConformanceCase> Cases)
