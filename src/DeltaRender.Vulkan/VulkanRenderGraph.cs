@@ -14,8 +14,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     private readonly List<GraphResource> _resources = new();
     private readonly List<GraphPass> _passes = new();
     private readonly List<ReadbackRequest> _readbacks = new();
-    private readonly Dictionary<IGraphicsShaderProgram, VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<IShaderArtifact, VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
+    private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
     private bool _built;
     private bool _disposed;
@@ -56,7 +55,9 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         }
 
         if (!_session.BeginGraphFrame()) return Failed();
-        var states = new ResourceState[_resources.Count];
+        if (_states.Length < _resources.Count) _states = new ResourceState[_resources.Count];
+        Array.Clear(_states, 0, _resources.Count);
+        var states = _states;
         var rasterActive = false;
         try
         {
@@ -144,14 +145,15 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
 
     public ValueTask DisposeAsync()
     {
-        if (_disposed) return ValueTask.CompletedTask;
-        _disposed = true;
-        ResetBuild();
-        foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(_session);
-        foreach (var pipeline in _computePipelines.Values) pipeline.Dispose(_session);
-        _rasterPipelines.Clear();
-        _computePipelines.Clear();
+        DisposeGraph();
         return ValueTask.CompletedTask;
+    }
+
+    internal void DisposeGraph()
+    {
+        if (_disposed) return;
+        ResetBuild();
+        _disposed = true;
     }
 
     public RenderGraphTextureHandle ImportTarget(RenderTargetHandle target)
@@ -195,11 +197,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         ThrowIfMutable();
         ArgumentNullException.ThrowIfNull(pass);
         if (!_session.HasTarget) throw new InvalidOperationException("Raster passes require a graphics target.");
-        if (!_rasterPipelines.TryGetValue(description.Pipeline.ShaderProgram, out var pipeline))
-        {
-            pipeline = VulkanGraphPipeline.CreateRaster(_session, description.Pipeline);
-            _rasterPipelines.Add(description.Pipeline.ShaderProgram, pipeline);
-        }
+        var pipeline = _session.GetOrCreateRasterPipeline(description.Pipeline);
 
         _passes.Add(new GraphPass(description.Name, PassKind.Raster, pipeline) { Raster = pass });
         return new RenderGraphPassHandle((uint)_passes.Count);
@@ -209,11 +207,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     {
         ThrowIfMutable();
         ArgumentNullException.ThrowIfNull(pass);
-        if (!_computePipelines.TryGetValue(description.Shader, out var pipeline))
-        {
-            pipeline = VulkanGraphPipeline.CreateCompute(_session, description.Shader);
-            _computePipelines.Add(description.Shader, pipeline);
-        }
+        var pipeline = _session.GetOrCreateComputePipeline(description.Shader);
 
         _passes.Add(new GraphPass(description.Name, PassKind.Compute, pipeline) { Compute = pass });
         return new RenderGraphPassHandle((uint)_passes.Count);
@@ -502,7 +496,15 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         internal static GraphResource OwnedTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image, Owns = true };
         internal static GraphResource FromBuffer(PersistentBuffer buffer) => new() { IsBuffer = true, Buffer = buffer };
         internal static GraphResource OwnedBuffer(BufferAllocation allocation, RenderBufferDescription description) => new() { IsBuffer = true, Buffer = new PersistentBuffer(allocation, description, 0), Owns = true };
-        internal void Dispose(VulkanRenderSession session) { if (!Owns) return; if (IsBuffer && Buffer is not null) session.DestroyAllocation(Buffer.Allocation); if (IsTexture && Texture is not null) session.DestroyTexture(Texture); Buffer = null; Texture = null; Image = default; }
+        internal void Dispose(VulkanRenderSession session)
+        {
+            if (!Owns) return;
+            if (IsBuffer && Buffer is not null) session.DeferTransient(Buffer.Allocation);
+            if (IsTexture && Texture is not null) session.DeferTransient(Texture);
+            Buffer = null;
+            Texture = null;
+            Image = default;
+        }
     }
 
     private readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);

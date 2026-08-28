@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Delta.Render;
 using Delta.Render.RenderGraph;
+using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
@@ -33,6 +34,11 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private readonly Dictionary<ulong, PersistentBuffer> _buffers = new();
     private readonly Dictionary<ulong, PersistentTexture> _textures = new();
     private readonly Dictionary<ulong, PersistentSampler> _samplers = new();
+    private readonly Dictionary<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly List<BufferAllocation> _deferredBuffers = new();
+    private readonly List<PersistentTexture> _deferredTextures = new();
+    private VulkanRenderGraph? _graph;
 
     private SwapchainKHR _swapchain;
     private ImageView[] _swapchainViews = [];
@@ -201,7 +207,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     public IRenderGraph CreateRenderGraph()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return new VulkanRenderGraph(this);
+        return _graph ??= new VulkanRenderGraph(this);
     }
 
     public RenderBufferHandle CreateBuffer(in RenderBufferDescription description)
@@ -328,6 +334,28 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     internal uint MaxBoundDescriptorSets => Capabilities.MaxBoundDescriptorSets;
     internal BufferAllocation StagingBuffer => _staging;
 
+    internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
+    {
+        if (!_rasterPipelines.TryGetValue(description.ShaderProgram, out var pipeline))
+        {
+            pipeline = VulkanRenderGraph.VulkanGraphPipeline.CreateRaster(this, description);
+            _rasterPipelines.Add(description.ShaderProgram, pipeline);
+        }
+
+        return pipeline;
+    }
+
+    internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateComputePipeline(IShaderArtifact artifact)
+    {
+        if (!_computePipelines.TryGetValue(artifact, out var pipeline))
+        {
+            pipeline = VulkanRenderGraph.VulkanGraphPipeline.CreateCompute(this, artifact);
+            _computePipelines.Add(artifact, pipeline);
+        }
+
+        return pipeline;
+    }
+
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
     {
         buffer = null;
@@ -382,6 +410,24 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     internal PersistentTexture CreateTransientTexture(in RenderTextureDescription description) => CreateNativeTexture(description);
 
+    internal void DeferTransient(BufferAllocation allocation)
+    {
+        if (VulkanBufferAllocation.IsLive(in allocation)) _deferredBuffers.Add(allocation);
+    }
+
+    internal void DeferTransient(PersistentTexture texture)
+    {
+        if (texture.Image.Handle != default) _deferredTextures.Add(texture);
+    }
+
+    private void ReclaimDeferredTransients()
+    {
+        foreach (var texture in _deferredTextures) DestroyTexture(texture);
+        foreach (var allocation in _deferredBuffers) DestroyAllocation(allocation);
+        _deferredTextures.Clear();
+        _deferredBuffers.Clear();
+    }
+
     internal void DestroyAllocation(BufferAllocation allocation)
     {
         if (allocation.Buffer.Handle != default) Api.DestroyBuffer(Device, allocation.Buffer, null);
@@ -409,6 +455,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_recording) return false;
         WaitForFrame();
+        ReclaimDeferredTransients();
         _stagingCursor = 0;
         if (_windowed)
         {
@@ -517,8 +564,14 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     public ValueTask DisposeAsync()
     {
         if (_disposed) return ValueTask.CompletedTask;
+        _graph?.DisposeGraph();
         _disposed = true;
         Api.DeviceWaitIdle(Device);
+        ReclaimDeferredTransients();
+        foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(this);
+        foreach (var pipeline in _computePipelines.Values) pipeline.Dispose(this);
+        _rasterPipelines.Clear();
+        _computePipelines.Clear();
         foreach (var item in _samplers.Values) if (item.Sampler.Handle != default) Api.DestroySampler(Device, item.Sampler, null);
         foreach (var item in _textures.Values) DestroyTexture(item);
         foreach (var item in _buffers.Values) DestroyAllocation(item.Allocation);
