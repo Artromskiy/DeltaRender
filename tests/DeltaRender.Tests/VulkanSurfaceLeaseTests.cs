@@ -18,8 +18,8 @@ public sealed class VulkanSurfaceLeaseTests
         Assert.True(lease.TryRelease(out var secondDiagnostics));
 
         Assert.Equal(1, source.DestroyCount);
-        Assert.Equal("No diagnostics.", firstDiagnostics.ToString());
-        Assert.Equal("No diagnostics.", secondDiagnostics.ToString());
+        Assert.Equal(0, firstDiagnostics.Count);
+        Assert.Equal(0, secondDiagnostics.Count);
         Assert.True(lease.IsReleased);
     }
 

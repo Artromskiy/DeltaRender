@@ -21,26 +21,20 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
-      "deltamaths": {
+      "delta.diagnostics.contract": {
         "type": "Project"
       },
       "deltarender": {
         "type": "Project",
         "dependencies": {
-          "DeltaShader.Contract": "[1.0.0, )"
-        }
-      },
-      "deltarender.fullscreenshaders": {
-        "type": "Project",
-        "dependencies": {
-          "DeltaMaths": "[1.0.0, )",
-          "DeltaShader": "[1.0.0, )",
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
         }
       },
       "deltarender.vulkan": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaRender": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )",
           "Silk.NET.MoltenVK.Native": "[2.23.0, )",
@@ -48,9 +42,6 @@
           "Silk.NET.Vulkan.Extensions.EXT": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )"
         }
-      },
-      "deltashader": {
-        "type": "Project"
       },
       "deltashader.contract": {
         "type": "Project"

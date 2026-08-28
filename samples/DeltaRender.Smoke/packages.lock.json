@@ -27,12 +27,16 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
+      "delta.diagnostics.contract": {
+        "type": "Project"
+      },
       "deltamaths": {
         "type": "Project"
       },
       "deltarender": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
         }
       },
@@ -65,6 +69,7 @@
       "deltarender.vulkan": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaRender": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )",
           "Silk.NET.MoltenVK.Native": "[2.23.0, )",

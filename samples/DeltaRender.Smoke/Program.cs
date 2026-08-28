@@ -1,203 +1,206 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
 using Delta.Render;
-using Delta.Render.RenderGraph;
-using Delta.Render.Platform.SDL3;
-using Delta.Render.Vulkan;
 using Delta.Render.FullscreenShaders;
+using Delta.Render.Platform.SDL3;
+using Delta.Render.RenderGraph;
 using Delta.Render.UiShaders;
+using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.Smoke;
 
-[SuppressMessage("Performance", "CA2007:Do not directly await a Task", Justification = "The bounded native smoke has no synchronization context; await-using declarations intentionally keep Vulkan resources scoped to each smoke operation.")]
 internal static class Program
 {
-    private const string ComputeZeroMessage = "compute-size=0 pass=no-op";
-    private const string DirtyRecordsMessage = "dirty-records pass=coalesced";
-    private const string MultiComputeZeroMessage = "multi-compute-size=0 pass=no-op";
-
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "The executable smoke boundary converts renderer/native failures into a process exit diagnostic.")]
     private static async Task<int> Main(string[] args)
     {
-        if (args.Any(a => string.Equals(a, "--compute", StringComparison.OrdinalIgnoreCase)))
-        {
-            return await RunComputeSmokeAsync(GetOption(args, "--compute-shader")).ConfigureAwait(false);
-        }
-
-        var clearOnly = args.Any(a => string.Equals(a, "--clear", StringComparison.OrdinalIgnoreCase));
-        var panel = args.Any(a => string.Equals(a, "--panel", StringComparison.OrdinalIgnoreCase));
-        var interactive = args.Any(a => string.Equals(a, "--interactive", StringComparison.OrdinalIgnoreCase));
-
-        var headless = args.Any(a => string.Equals(a, "--headless", StringComparison.OrdinalIgnoreCase));
+        var headless = args.Any(argument => string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase));
         if (headless)
         {
             var probe = VulkanEnvironmentProbe.CheckHeadless();
-            await Console.Out.WriteLineAsync(probe.Diagnostics.ToText());
+            await Console.Out.WriteLineAsync(probe.Diagnostics.ToText()).ConfigureAwait(false);
             return probe.Usable ? 0 : 1;
         }
 
+        var panel = args.Any(argument => string.Equals(argument, "--panel", StringComparison.OrdinalIgnoreCase));
+        var clearOnly = args.Any(argument => string.Equals(argument, "--clear", StringComparison.OrdinalIgnoreCase));
+        var interactive = args.Any(argument => string.Equals(argument, "--interactive", StringComparison.OrdinalIgnoreCase));
+        var frameCount = ParsePositiveInt(args, "--frames", interactive ? int.MaxValue : 1);
         var factory = new Sdl3WindowFactory();
-        var result = factory.CreateWindow(new WindowConfiguration("DeltaRender Smoke", 960, 540, true, true));
-
-        if (!result.Success || result.Window is null)
+        var createResult = factory.CreateWindow(new WindowConfiguration("DeltaRender Smoke", 960, 540, true, true));
+        if (!createResult.Succeeded || createResult.Window is not { } window)
         {
-            await Console.Error.WriteLineAsync("Window creation failed");
-            await Console.Error.WriteLineAsync(result.Diagnostics.ToText());
+            await Console.Error.WriteLineAsync("Window creation failed.").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(createResult.Diagnostics.ToText()).ConfigureAwait(false);
             return 1;
         }
 
-        await using var window = result.Window;
-
-        try
+        await using var windowLease = window.ConfigureAwait(false);
+        await using (var renderer = new VulkanRenderer(new VulkanRendererOptions()))
         {
-            var renderer = new VulkanRenderer(new VulkanRendererOptions());
-            await using var _ = renderer;
-
-            await using IRenderFrameSession session = renderer.CreateWindowSession(window);
-            var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", panel ? "ui-panel.vert.spv" : "fullscreen-rounded-rectangle.vert.spv");
-            var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", panel ? "ui-panel.frag.spv" : "fullscreen-rounded-rectangle.frag.spv");
-            if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
+            try
             {
-                await Console.Error.WriteLineAsync("Graphics fixtures were not found.");
+                await using var session = renderer.CreateWindowSession(window);
+                var program = LoadProgram(panel);
+                var graph = session.CreateRenderGraph();
+                var metrics = window.Metrics;
+                var feature = new SmokeFeature(program, session.Target, panel, clearOnly, metrics.Width, metrics.Height);
+                IRenderFeature[] features = [feature];
+                var extent = default(PixelExtent);
+                var stopwatch = Stopwatch.StartNew();
+                var renderedFrames = 0;
+                while (!window.IsClosed && renderedFrames < frameCount)
+                {
+                    Sdl3WindowFactory.PumpEvents();
+                    metrics = window.Metrics;
+                    var nextExtent = new PixelExtent(metrics.Width, metrics.Height);
+                    if (nextExtent != extent)
+                    {
+                        session.ResizeTarget(in nextExtent);
+                        extent = nextExtent;
+                    }
+
+                    feature.Update(metrics.Width, metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                    graph.Build((ulong)renderedFrames, features);
+                    var result = graph.Execute();
+                    if (result.Status != RenderGraphExecutionStatus.Submitted)
+                    {
+                        await Console.Error.WriteLineAsync($"Graph execution failed: {result.Status}").ConfigureAwait(false);
+                        return 1;
+                    }
+
+                    renderedFrames++;
+                }
+
+                await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present").ConfigureAwait(false);
+                return 0;
+            }
+            catch (Exception exception)
+            {
+                await Console.Error.WriteLineAsync("Renderer initialization or execution failed:").ConfigureAwait(false);
+                await Console.Error.WriteLineAsync(exception.ToString()).ConfigureAwait(false);
                 return 1;
             }
-
-            var program = panel
-                ? UiPanelGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath))
-                : FullscreenUiGraphicsShaderProgram.CreateProgram(File.ReadAllBytes(vertexPath), File.ReadAllBytes(fragmentPath));
-            var graph = session.CreateRenderGraph();
-            var stopwatch = Stopwatch.StartNew();
-            var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
-                ? Math.Max(1, parsedFrames)
-                : 1;
-            var renderedFrames = 0;
-            var panelAdapter = new PanelUiAdapter();
-            while (interactive || renderedFrames < frames)
-            {
-                Sdl3WindowFactory.PumpEvents();
-                var parameters = new GraphicsFrameParameters(window.Metrics.Width, window.Metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
-                var drawList = panelAdapter.CurrentDrawList.Span;
-                var feature = new SmokeRasterFeature(
-                    program,
-                    in parameters,
-                    panel ? drawList : ReadOnlySpan<UiQuad>.Empty,
-                    panel,
-                    clearOnly);
-                var view = new RenderView(
-                    session.SurfaceHandle,
-                    new RenderViewport(0, 0, window.Metrics.Width, window.Metrics.Height),
-                    new PixelRect(0, 0, (int)window.Metrics.Width, (int)window.Metrics.Height));
-                var frame = new RenderGraphFrame(renderedFrames, new[] { view });
-                graph.Build(in frame, new IRenderFeature[] { feature });
-                graph.Execute();
-                renderedFrames++;
-            }
-            await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present");
         }
-        catch (Exception ex)
-        {
-            await Console.Error.WriteLineAsync("Renderer initialization failed:");
-            await Console.Error.WriteLineAsync(ex.ToString()).ConfigureAwait(false);
-            return 1;
-        }
-
-        Sdl3WindowFactory.PumpEvents();
-        return 0;
     }
 
-    private sealed class PanelUiAdapter
+    private static IGraphicsShaderProgram LoadProgram(bool panel)
     {
-        private readonly UiQuad[] _drawList =
-        [
-            new UiQuad(180, 120, 600, 300, 0.08f, 0.65f, 0.95f, 0.92f),
-            new UiQuad(240, 180, 480, 180, 0.95f, 0.34f, 0.12f, 0.72f)
-            {
-                Clip = new UiClipRect(260, 200, 420, 120)
-            }
-        ];
+        var prefix = panel ? "ui-panel" : "fullscreen-rounded-rectangle";
+        var vertexPath = Path.Combine(AppContext.BaseDirectory, "shaders", prefix + ".vert.spv");
+        var fragmentPath = Path.Combine(AppContext.BaseDirectory, "shaders", prefix + ".frag.spv");
+        if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
+        {
+            throw new FileNotFoundException($"Graphics fixtures were not found: {vertexPath}, {fragmentPath}");
+        }
 
-        public ReadOnlyMemory<UiQuad> CurrentDrawList => _drawList;
+        var vertex = File.ReadAllBytes(vertexPath);
+        var fragment = File.ReadAllBytes(fragmentPath);
+        return panel
+            ? UiPanelGraphicsShaderProgram.CreateProgram(vertex, fragment)
+            : FullscreenUiGraphicsShaderProgram.CreateProgram(vertex, fragment);
     }
 
-    private sealed class SmokeRasterFeature : IRenderFeature
+    private static int ParsePositiveInt(string[] args, string option, int fallback)
+    {
+        for (var index = 0; index + 1 < args.Length; index++)
+        {
+            if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase) && int.TryParse(args[index + 1], out var value))
+            {
+                return Math.Max(1, value);
+            }
+        }
+
+        return fallback;
+    }
+
+    private sealed class SmokeFeature : IRenderFeature
     {
         private readonly IGraphicsShaderProgram _program;
-        private readonly GraphicsFrameParameters _parameters;
-        private readonly UiQuad[] _quads;
+        private readonly RenderTargetHandle _target;
         private readonly bool _panel;
         private readonly bool _clearOnly;
+        private readonly PanelQuad[] _quads =
+        [
+            new PanelQuad(180, 120, 600, 300, 0.08f, 0.65f, 0.95f, 0.92f),
+            new PanelQuad(240, 180, 480, 180, 0.95f, 0.34f, 0.12f, 0.72f, new PixelRect(260, 200, 420, 120))
+        ];
+        private readonly SmokePass _pass;
 
-        public SmokeRasterFeature(
-            IGraphicsShaderProgram program,
-            in GraphicsFrameParameters parameters,
-            ReadOnlySpan<UiQuad> quads,
-            bool panel,
-            bool clearOnly)
+        internal SmokeFeature(IGraphicsShaderProgram program, RenderTargetHandle target, bool panel, bool clearOnly, uint width, uint height)
         {
             _program = program;
-            _parameters = parameters;
-            _quads = quads.ToArray();
+            _target = target;
             _panel = panel;
             _clearOnly = clearOnly;
+            _pass = new SmokePass(panel, clearOnly, width, height, _quads);
         }
 
-        public void AddPasses(IRenderGraphBuilder graph, IRenderFeatureContext context)
+        internal void Update(uint width, uint height, float time) => _pass.Update(width, height, time);
+
+        public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
         {
-            var surface = graph.ImportSurface(context.View.Surface);
-            var pass = graph.AddRasterPass(
-                new RasterPassDescription("smoke", new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)),
-                new SmokeRasterPass(context.View.Viewport, context.View.Scissor, _parameters, _quads, _panel, _clearOnly));
-            graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(
-                surface,
-                AttachmentLoadOperation.Clear,
-                AttachmentStoreOperation.Store,
-                new ClearColor(0.1f, 0.12f, 0.2f, 1f)));
+            var target = graph.ImportTarget(_target);
+            var pass = graph.AddRasterPass(new RasterPassDescription("smoke", new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)), _pass);
+            graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(target, AttachmentLoadOperation.Clear, AttachmentStoreOperation.Store, new ClearColor(0.1f, 0.12f, 0.2f, 1f)));
         }
     }
 
-    private sealed class SmokeRasterPass(
-        RenderViewport viewport,
-        PixelRect scissor,
-        GraphicsFrameParameters parameters,
-        UiQuad[] quads,
-        bool panel,
-        bool clearOnly) : IRasterPass
+    private sealed class SmokePass : IRasterPass
     {
+        private readonly bool _panel;
+        private readonly bool _clearOnly;
+        private readonly PanelQuad[] _quads;
+        private RenderViewport _viewport;
+        private PixelRect _scissor;
+        private float _width;
+        private float _height;
+        private float _time;
+
+        internal SmokePass(bool panel, bool clearOnly, uint width, uint height, PanelQuad[] quads)
+        {
+            _panel = panel;
+            _clearOnly = clearOnly;
+            _quads = quads;
+            Update(width, height, 0);
+        }
+
+        internal void Update(uint width, uint height, float time)
+        {
+            _width = width;
+            _height = height;
+            _time = time;
+            _viewport = new RenderViewport(0, 0, width, height);
+            _scissor = new PixelRect(0, 0, checked((int)width), checked((int)height));
+        }
+
         public void Record(IRasterCommandContext commands)
         {
-            commands.SetViewport(in viewport);
-            commands.SetScissor(in scissor);
-            if (clearOnly)
+            commands.SetViewport(in _viewport);
+            commands.SetScissor(in _scissor);
+            if (_clearOnly)
             {
                 return;
             }
 
-            if (!panel)
+            if (!_panel)
             {
-                Span<byte> pushConstants = stackalloc byte[16];
-                WriteFloat(pushConstants, 0, parameters.ResolutionX);
-                WriteFloat(pushConstants, 4, parameters.ResolutionY);
-                WriteFloat(pushConstants, 8, parameters.TimeSeconds);
-                commands.PushConstants(pushConstants);
+                Span<byte> constants = stackalloc byte[16];
+                WriteFloat(constants, 0, _width);
+                WriteFloat(constants, 4, _height);
+                WriteFloat(constants, 8, _time);
+                commands.PushConstants(constants);
                 commands.Draw(3);
                 return;
             }
 
             Span<byte> panelConstants = stackalloc byte[40];
-            for (var index = 0; index < quads.Length; index++)
+            foreach (var quad in _quads)
             {
-                var quad = quads[index];
-                if (!quad.Clip.TryGetScissor(new WindowMetrics((uint)scissor.Width, (uint)scissor.Height, 1), out var quadScissor))
-                {
-                    continue;
-                }
-
-                var quadRect = new PixelRect(quadScissor.X, quadScissor.Y, (int)quadScissor.Width, (int)quadScissor.Height);
-                commands.SetScissor(in quadRect);
-                WriteFloat(panelConstants, 0, parameters.ResolutionX);
-                WriteFloat(panelConstants, 4, parameters.ResolutionY);
+                var scissor = quad.Clip.IsEmpty ? _scissor : quad.Clip;
+                commands.SetScissor(in scissor);
+                WriteFloat(panelConstants, 0, _width);
+                WriteFloat(panelConstants, 4, _height);
                 WriteFloat(panelConstants, 8, quad.X);
                 WriteFloat(panelConstants, 12, quad.Y);
                 WriteFloat(panelConstants, 16, quad.Width);
@@ -211,212 +214,8 @@ internal static class Program
             }
         }
 
-        private static void WriteFloat(Span<byte> destination, int offset, float value)
-            => MemoryMarshal.Write(destination[offset..], in value);
+        private static void WriteFloat(Span<byte> destination, int offset, float value) => BinaryPrimitives.WriteSingleLittleEndian(destination[offset..], value);
     }
 
-    private static async Task<int> RunComputeSmokeAsync(string? externalShaderPath)
-    {
-        var shaderPath = externalShaderPath ?? Path.Combine(AppContext.BaseDirectory, "fixtures", "compute_double.spv");
-        if (!File.Exists(shaderPath))
-        {
-            await Console.Error.WriteLineAsync($"Compute shader was not found: {shaderPath}");
-            return 1;
-        }
-
-        await Console.Out.WriteLineAsync($"compute-shader={Path.GetFullPath(shaderPath)}");
-        var shader = await File.ReadAllBytesAsync(shaderPath).ConfigureAwait(false);
-        var artifact = new ShaderArtifact(shader, "main", new ShaderAbi(
-            ShaderStage.Compute,
-            resources: [new ShaderResourceBinding(
-                new Delta.Shader.Contract.ShaderBinding(0, 0),
-                ShaderResourceKind.StorageBuffer,
-                ShaderResourceAccess.ReadWrite,
-                ShaderStageMask.Compute,
-                new ShaderAbiLayout(4, 4, arrayStride: 4))],
-            workgroupSize: new ShaderWorkgroupSize(64, 1, 1)));
-
-        await using var device = new VulkanComputeDevice(new VulkanRendererOptions());
-        IComputePipeline pipeline = device.CreateComputePipeline(artifact);
-
-        await using (pipeline)
-        {
-            return await RunComputeSizesAsync(device, pipeline).ConfigureAwait(false);
-        }
-    }
-
-    private static async Task<int> RunComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
-    {
-        if (pipeline.Abi.Resources.Count == 2)
-        {
-            return await RunMultiBufferComputeSizesAsync(device, pipeline).ConfigureAwait(false);
-        }
-
-        var localSizeX = pipeline.Abi.WorkgroupSize.X;
-
-        foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
-        {
-            await using var buffer = device.CreateStorageBuffer((ulong)size * sizeof(uint));
-            if (size == 0)
-            {
-                var noOp = device.Dispatch(pipeline, ReadOnlySpan<ComputeBufferBinding>.Empty, 0);
-                if (noOp.Status != ComputeDispatchStatus.NoOp)
-                {
-                    await Console.Error.WriteLineAsync("zero-sized dispatch was not a no-op");
-                    return 1;
-                }
-                await Console.Out.WriteLineAsync(ComputeZeroMessage);
-                continue;
-            }
-
-            var values = new uint[size];
-            for (var i = 0; i < values.Length; i++)
-            {
-                values[i] = (uint)i;
-            }
-
-            var bytes = MemoryMarshal.AsBytes(values.AsSpan());
-            if (!device.Upload(buffer, bytes))
-            {
-                return await FailComputeAsync(size, "upload");
-            }
-
-            var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
-            var dispatch = device.Dispatch(pipeline, new[] { new ComputeBufferBinding(0, 0, buffer) }, groups);
-            if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed)
-            {
-                return await FailComputeAsync(size, dispatch.Error ?? "dispatch");
-            }
-
-            var output = new byte[bytes.Length];
-            if (!device.Readback(buffer, output))
-            {
-                return await FailComputeAsync(size, "readback");
-            }
-
-            var actual = MemoryMarshal.Cast<byte, uint>(output);
-            for (var i = 0; i < actual.Length; i++)
-            {
-                if (actual[i] != (uint)(i * 2 + 1))
-                {
-                    return await FailComputeAsync(size, $"oracle mismatch at {i}: {actual[i]}");
-                }
-            }
-            await Console.Out.WriteLineAsync($"compute-size={size} groups={groups} pass=oracle");
-        }
-
-        var recordStride = 16u;
-        await using var recordBuffer = device.CreateStorageBuffer(64);
-        var payloadBytes = Enumerable.Range(0, (int)recordStride).Select(static value => (byte)value).ToArray();
-        var changes = new[]
-        {
-            RenderRecordChange.Upsert(1, 7, payloadBytes),
-            RenderRecordChange.Upsert(2, 7, payloadBytes),
-            RenderRecordChange.Remove(3, 7)
-        };
-        var update = device.ApplyDirtyRecords(recordBuffer, changes, recordStride, 4);
-        if (!update.Succeeded || update.UploadRuns != 1)
-        {
-            return await FailComputeAsync(-1, update.Error ?? "dirty-record update");
-        }
-
-        var records = new byte[64];
-        if (!device.Readback(recordBuffer, records))
-        {
-            return await FailComputeAsync(-1, "dirty-record readback");
-        }
-
-        if (!records.AsSpan(16, 16).SequenceEqual(payloadBytes) || !records.AsSpan(32, 16).SequenceEqual(payloadBytes) || !records.AsSpan(48, 16).SequenceEqual(new byte[16]))
-        {
-            return await FailComputeAsync(-1, "dirty-record oracle mismatch");
-        }
-
-        await Console.Out.WriteLineAsync(DirtyRecordsMessage);
-
-        return 0;
-    }
-
-    private static async Task<int> RunMultiBufferComputeSizesAsync(VulkanComputeDevice device, IComputePipeline pipeline)
-    {
-        var localSizeX = pipeline.Abi.WorkgroupSize.X;
-        foreach (var size in new[] { 0, 1, 63, 64, 65, 128, 129, 256 })
-        {
-            await using var input = device.CreateStorageBuffer((ulong)size * sizeof(uint), ComputeBufferAccess.ReadOnly);
-            await using var output = device.CreateStorageBuffer((ulong)size * sizeof(uint), ComputeBufferAccess.ReadWrite);
-            if (size == 0)
-            {
-                var noOp = device.Dispatch(pipeline, ReadOnlySpan<ComputeBufferBinding>.Empty, 0);
-                if (noOp.Status != ComputeDispatchStatus.NoOp)
-                {
-                    await Console.Error.WriteLineAsync("zero-sized multi-buffer dispatch was not a no-op");
-                    return 1;
-                }
-                await Console.Out.WriteLineAsync(MultiComputeZeroMessage);
-                continue;
-            }
-
-            var values = new uint[size];
-            for (var i = 0; i < values.Length; i++)
-            {
-                values[i] = (uint)i;
-            }
-
-            var inputBytes = MemoryMarshal.AsBytes(values.AsSpan());
-            if (!device.Upload(input, inputBytes))
-            {
-                return await FailComputeAsync(size, "multi-buffer input upload");
-            }
-
-            var groups = (uint)((size + (int)localSizeX - 1) / (int)localSizeX);
-            var dispatch = device.Dispatch(
-                pipeline,
-                new[]
-                {
-                    new ComputeBufferBinding(0, 0, input),
-                    new ComputeBufferBinding(0, 1, output)
-                },
-                groups);
-            if (!dispatch.Succeeded || dispatch.Status != ComputeDispatchStatus.Executed)
-            {
-                return await FailComputeAsync(size, dispatch.Error ?? "multi-buffer dispatch");
-            }
-
-            var outputBytes = new byte[inputBytes.Length];
-            if (!device.Readback(output, outputBytes))
-            {
-                return await FailComputeAsync(size, "multi-buffer readback");
-            }
-
-            var actual = MemoryMarshal.Cast<byte, uint>(outputBytes);
-            for (var i = 0; i < actual.Length; i++)
-            {
-                if (actual[i] != (uint)(i * 2 + 1))
-                {
-                    return await FailComputeAsync(size, $"multi-buffer oracle mismatch at {i}: {actual[i]}");
-                }
-            }
-            await Console.Out.WriteLineAsync($"multi-compute-size={size} groups={groups} pass=oracle");
-        }
-
-        return 0;
-    }
-
-    private static string? GetOption(string[] args, string option)
-    {
-        for (var i = 0; i + 1 < args.Length; i++)
-        {
-            if (string.Equals(args[i], option, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
-    }
-
-    private static async Task<int> FailComputeAsync(int size, string reason)
-    {
-        await Console.Error.WriteLineAsync($"compute-size={size} failed: {reason}");
-        return 1;
-    }
+    private readonly record struct PanelQuad(float X, float Y, float Width, float Height, float Red, float Green, float Blue, float Alpha, PixelRect Clip = default);
 }

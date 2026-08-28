@@ -2,11 +2,6 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
-      "HarfBuzzSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "7.3.0.2",
-        "contentHash": "nycYH/WLJ6ogm+I+QSFCdPJsdxSb5GANWYbQyp1vsd/KjXN56RVUJWPhbgP2GKb/Y7mrsHM7EProqVXlO/EMsA=="
-      },
       "Microsoft.DotNet.PlatformAbstractions": {
         "type": "Transitive",
         "resolved": "3.1.6",
@@ -26,24 +21,8 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
-      "SkiaSharp": {
-        "type": "Transitive",
-        "resolved": "2.88.8",
-        "contentHash": "bRkp3uKp5ZI8gXYQT57uKwil1uobb2p8c69n7v5evlB/2JNcMAXVcw9DZAP5Ig3WSvgzGm2YSn27UVeOi05NlA==",
-        "dependencies": {
-          "SkiaSharp.NativeAssets.Win32": "2.88.8",
-          "SkiaSharp.NativeAssets.macOS": "2.88.8"
-        }
-      },
-      "SkiaSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "2.88.8",
-        "contentHash": "6Kn5TSkKlfyS6azWHF3Jk2sW5C4jCE5uSshM/5AbfFrR+5n6qM5XEnz9h4VaVl7LTxBvHvMkuPb/3bpbq0vxTw=="
-      },
-      "SkiaSharp.NativeAssets.Win32": {
-        "type": "Transitive",
-        "resolved": "2.88.8",
-        "contentHash": "O9QXoWEXA+6cweR4h3BOnwMz+pO9vL9mXdjLrpDd0w1QzCgWmLQBxa1VgySDITiH7nQndrDG1h6937zm9pLj1Q=="
+      "delta.diagnostics.contract": {
+        "type": "Project"
       },
       "deltamaths": {
         "type": "Project"
@@ -51,6 +30,15 @@
       "deltarender": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltarender.fullscreenshaders": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaShader": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
         }
       },
@@ -75,6 +63,7 @@
       "deltarender.vulkan": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaRender": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )",
           "Silk.NET.MoltenVK.Native": "[2.23.0, )",
@@ -83,33 +72,11 @@
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )"
         }
       },
-      "deltarender.xaml": {
-        "type": "Project",
-        "dependencies": {
-          "DeltaRender": "[1.0.0, )",
-          "DeltaXAML.Contract": "[1.0.0, )"
-        }
-      },
       "deltashader": {
         "type": "Project"
       },
       "deltashader.contract": {
         "type": "Project"
-      },
-      "deltatext": {
-        "type": "Project",
-        "dependencies": {
-          "HarfBuzzSharp.NativeAssets.macOS": "[7.3.0.2, )",
-          "SkiaSharp": "[2.88.8, )",
-          "SkiaSharp.NativeAssets.macOS": "[2.88.8, )"
-        }
-      },
-      "deltaxaml.contract": {
-        "type": "Project",
-        "dependencies": {
-          "DeltaMaths": "[1.0.0, )",
-          "DeltaText": "[1.0.0, )"
-        }
       },
       "SDL3-CS": {
         "type": "CentralTransitive",

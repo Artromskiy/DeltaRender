@@ -1,9 +1,9 @@
-using System.Runtime.InteropServices;
+using System.Buffers.Binary;
 using System.Globalization;
 using Delta.Render;
-using Delta.Shader.Contract;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.HeadlessShaderPlayground;
 
@@ -27,48 +27,42 @@ internal static class Program
         if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
         {
             await Console.Error.WriteLineAsync($"Missing generated shader pair: {vertexPath} and {fragmentPath}").ConfigureAwait(false);
-            await Console.Error.WriteLineAsync("Pass --shader-dir or explicit --vertex/--fragment paths.").ConfigureAwait(false);
             return 2;
         }
 
         try
         {
-            var vertexSpirv = await File.ReadAllBytesAsync(vertexPath).ConfigureAwait(false);
-            var fragmentSpirv = await File.ReadAllBytesAsync(fragmentPath).ConfigureAwait(false);
             var program = ShaderManifestFixtureLoader.LoadGraphicsProgram(
-                vertexSpirv,
-                fragmentSpirv,
+                await File.ReadAllBytesAsync(vertexPath).ConfigureAwait(false),
+                await File.ReadAllBytesAsync(fragmentPath).ConfigureAwait(false),
                 Path.ChangeExtension(vertexPath, ".shader.json"),
                 Path.ChangeExtension(fragmentPath, ".shader.json"));
 
             await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var session = renderer.CreateHeadlessSession(width, height);
             var graph = session.CreateRenderGraph();
-            var view = new RenderView(
-                session.SurfaceHandle,
-                new RenderViewport(0, 0, width, height),
-                new PixelRect(0, 0, checked((int)width), checked((int)height)));
-            var views = new[] { view };
-            var time = ParseFloat(args, "--time", 1.25f);
-            var features = new IRenderFeature[] { new FullscreenFeature(program, width, height, time) };
-
-            for (var frameNumber = 0u; frameNumber < frames; frameNumber++)
+            var feature = new FullscreenFeature(program, session.Target, width, height, ParseFloat(args, "--time", 1.25f));
+            IRenderFeature[] features = [feature];
+            for (var frameNumber = 0UL; frameNumber < frames; frameNumber++)
             {
-                var frame = new RenderGraphFrame(frameNumber, views);
-                graph.Build(in frame, features);
-                graph.Execute();
+                graph.Build(frameNumber, features);
+                var result = graph.Execute();
+                if (result.Status != RenderGraphExecutionStatus.Submitted)
+                {
+                    await Console.Error.WriteLineAsync($"Graph execution failed: {result.Status}").ConfigureAwait(false);
+                    return 1;
+                }
             }
 
-            var bgra = new byte[checked((int)((ulong)width * height * 4))];
-            if (!session.ReadbackRgba8(bgra))
+            var rgba = new byte[checked((int)((ulong)width * height * 4))];
+            if (graph.CopyReadback(feature.Readback, rgba) != rgba.Length)
             {
                 await Console.Error.WriteLineAsync("Headless Vulkan readback did not complete.").ConfigureAwait(false);
                 return 1;
             }
 
-            SavePpm(outputPath, width, height, bgra);
-
-            await Console.Out.WriteLineAsync($"headless-shader-playground frames={frames} target={width}x{height} time={time.ToString(CultureInfo.InvariantCulture)} vertex={Path.GetFileName(vertexPath)} fragment={Path.GetFileName(fragmentPath)} output={Path.GetFullPath(outputPath)}").ConfigureAwait(false);
+            SavePpm(outputPath, width, height, rgba);
+            await Console.Out.WriteLineAsync($"headless-shader-playground frames={frames} target={width}x{height} time={feature.Time.ToString(CultureInfo.InvariantCulture)} vertex={Path.GetFileName(vertexPath)} fragment={Path.GetFileName(fragmentPath)} output={Path.GetFullPath(outputPath)}").ConfigureAwait(false);
             return 0;
         }
         catch (Exception exception)
@@ -88,9 +82,7 @@ internal static class Program
     private static float ParseFloat(string[] args, string option, float fallback)
     {
         var value = GetOption(args, option);
-        return value is not null && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && float.IsFinite(parsed)
-            ? parsed
-            : fallback;
+        return value is not null && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && float.IsFinite(parsed) ? parsed : fallback;
     }
 
     private static string? GetOption(string[] args, string option)
@@ -106,20 +98,18 @@ internal static class Program
         return null;
     }
 
-    private static void SavePpm(string path, uint width, uint height, ReadOnlySpan<byte> bgra)
+    private static void SavePpm(string path, uint width, uint height, ReadOnlySpan<byte> rgba)
     {
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
         Directory.CreateDirectory(directory);
         var rgb = new byte[checked((int)((ulong)width * height * 3))];
-        var source = 0;
-        var target = 0;
-        while (source < bgra.Length)
+        for (var source = 0; source < rgba.Length; source += 4)
         {
-            rgb[target++] = bgra[source];
-            rgb[target++] = bgra[source + 1];
-            rgb[target++] = bgra[source + 2];
-            source += 4;
+            var target = source / 4 * 3;
+            rgb[target] = rgba[source];
+            rgb[target + 1] = rgba[source + 1];
+            rgb[target + 2] = rgba[source + 2];
         }
 
         using var stream = File.Create(fullPath);
@@ -131,59 +121,56 @@ internal static class Program
     private sealed class FullscreenFeature : IRenderFeature
     {
         private readonly IGraphicsShaderProgram _program;
+        private readonly RenderTargetHandle _target;
+        private readonly uint _width;
+        private readonly uint _height;
+        private readonly byte[] _pushConstants = new byte[16];
         private readonly FullscreenPass _pass;
 
-        public FullscreenFeature(IGraphicsShaderProgram program, uint width, uint height, float time)
+        internal FullscreenFeature(IGraphicsShaderProgram program, RenderTargetHandle target, uint width, uint height, float time)
         {
             _program = program;
-            _pass = new FullscreenPass(width, height, time);
+            _target = target;
+            _width = width;
+            _height = height;
+            Time = time;
+            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(0, 4), width);
+            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(4, 4), height);
+            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(8, 4), time);
+            _pass = new FullscreenPass(width, height, _pushConstants);
         }
 
-        public void AddPasses(IRenderGraphBuilder graph, IRenderFeatureContext context)
+        internal float Time { get; }
+        internal RenderGraphReadbackHandle Readback { get; private set; }
+
+        public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
         {
-            var surface = graph.ImportSurface(context.View.Surface);
-            var pass = graph.AddRasterPass(
-                new RasterPassDescription(
-                    "headless-shader-playground",
-                    new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)),
-                _pass);
-            graph.UseColorAttachment(
-                pass,
-                0,
-                new ColorAttachmentDescription(
-                    surface,
-                    AttachmentLoadOperation.Clear,
-                    AttachmentStoreOperation.Store,
-                    new ClearColor(0.04f, 0.05f, 0.08f, 1f)));
+            var target = graph.ImportTarget(_target);
+            var pass = graph.AddRasterPass(new RasterPassDescription("headless-shader-playground", new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)), _pass);
+            graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(target, AttachmentLoadOperation.Clear, AttachmentStoreOperation.Store, new ClearColor(0.04f, 0.05f, 0.08f, 1f)));
+            Readback = graph.ReadbackTexture(target, new PixelRect(0, 0, checked((int)_width), checked((int)_height)));
         }
     }
 
     private sealed class FullscreenPass : IRasterPass
     {
-        private readonly GraphicsFrameParameters _parameters;
         private readonly RenderViewport _viewport;
         private readonly PixelRect _scissor;
+        private readonly byte[] _pushConstants;
 
-        public FullscreenPass(uint width, uint height, float time)
+        internal FullscreenPass(uint width, uint height, byte[] pushConstants)
         {
-            _parameters = new GraphicsFrameParameters(width, height, time);
             _viewport = new RenderViewport(0, 0, width, height);
             _scissor = new PixelRect(0, 0, checked((int)width), checked((int)height));
+            _pushConstants = pushConstants;
         }
 
         public void Record(IRasterCommandContext commands)
         {
             commands.SetViewport(in _viewport);
             commands.SetScissor(in _scissor);
-            Span<byte> pushConstants = stackalloc byte[16];
-            WriteFloat(pushConstants, 0, _parameters.ResolutionX);
-            WriteFloat(pushConstants, 4, _parameters.ResolutionY);
-            WriteFloat(pushConstants, 8, _parameters.TimeSeconds);
-            commands.PushConstants(pushConstants);
+            commands.PushConstants(_pushConstants);
             commands.Draw(3);
         }
-
-        private static void WriteFloat(Span<byte> destination, int offset, float value)
-            => MemoryMarshal.Write(destination[offset..], in value);
     }
 }

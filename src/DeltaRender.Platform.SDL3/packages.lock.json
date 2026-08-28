@@ -26,9 +26,13 @@
         "resolved": "3.4.12.6",
         "contentHash": "ZILtbNxwhV8/dcmPukYD/ZWwYT3q7cNU1H+XeG6WBC3yxXotBX3cvX4WdmRZV8B4FiOjH8pahoQjlF/0hNnp6g=="
       },
+      "delta.diagnostics.contract": {
+        "type": "Project"
+      },
       "deltarender": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
         }
       },

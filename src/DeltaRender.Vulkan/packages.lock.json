@@ -56,9 +56,13 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
+      "delta.diagnostics.contract": {
+        "type": "Project"
+      },
       "deltarender": {
         "type": "Project",
         "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
         }
       },

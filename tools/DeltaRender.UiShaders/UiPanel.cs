@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Delta.Maths;
 using Delta.Shader;
 
@@ -6,54 +5,66 @@ namespace Delta.Render.UiShaders;
 
 public static class UiPanel
 {
-    /// <summary>Push-constant values shared by the generated panel stages.</summary>
-    [SuppressMessage("Design", "CA1034:Nested types should not be visible", Justification = "The nested type is the public push-constant ABI emitted by Delta.Shader.")]
-    [SuppressMessage("Usage", "CA1815:Override equals and operator equals on value types", Justification = "The shader ABI parameter struct is not used as a managed value key.")]
     public struct Parameters
     {
-        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
-        /// <summary>Viewport resolution in pixels.</summary>
-        public float2 Resolution;
-        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
-        /// <summary>Panel rectangle in pixel coordinates.</summary>
-        public float4 Rect;
-        [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Public fields are consumed as the generated shader push-constant ABI.")]
-        /// <summary>Panel premultiplied color.</summary>
-        public float4 Color;
+        public float2 Resolution = default;
+        public float4 Rect = default;
+        public float4 Color = default;
+
+        public Parameters()
+        {
+        }
     }
 
-    /// <summary>Emits the panel triangle-list vertex position.</summary>
-    [VertexShader]
-    public static void Vertex(
-        [VertexIndex] uint vertexIndex,
-        [PushConstant] Parameters parameters,
-        [Position] out float4 position)
+    [Interstage]
+    public struct VertexOutput
     {
-        position = default;
+        [Position]
+        public float4 Position;
+
+    }
+
+    public readonly struct VertexContext
+    {
+        [Interstage]
+        public readonly VertexOutput Vertex;
+
+        [PushConstant]
+        public readonly Parameters Constants;
+    }
+
+    public readonly struct FragmentContext
+    {
+        [Interstage]
+        public readonly VertexOutput Fragment;
+
+        [PushConstant]
+        public readonly Parameters Constants;
+    }
+
+    [VertexShader]
+    public static VertexOutput Vertex(in VertexContext context)
+    {
+        var vertexIndex = ShaderBuiltins.VertexIndex;
         var local = new float2(0f, 0f);
         if (vertexIndex == 1u || vertexIndex == 2u || vertexIndex == 4u)
         {
-            local.x = 1f;
+            local = new float2(1f, local.y);
         }
         if (vertexIndex == 2u || vertexIndex == 4u || vertexIndex == 5u)
         {
-            local.y = 1f;
+            local = new float2(local.x, 1f);
         }
+
         var pixel = new float2(
-            parameters.Rect.x + local.x * parameters.Rect.z,
-            parameters.Rect.y + local.y * parameters.Rect.w);
+            context.Constants.Rect.x + local.x * context.Constants.Rect.z,
+            context.Constants.Rect.y + local.y * context.Constants.Rect.w);
         var clip = new float2(
-            pixel.x / parameters.Resolution.x * 2f - 1f,
-            1f - pixel.y / parameters.Resolution.y * 2f);
-        position = new float4(clip.x, clip.y, 0f, 1f);
+            pixel.x / context.Constants.Resolution.x * 2f - 1f,
+            1f - pixel.y / context.Constants.Resolution.y * 2f);
+        return new VertexOutput { Position = new float4(clip.x, clip.y, 0f, 1f) };
     }
 
-    /// <summary>Emits the panel fragment color.</summary>
     [FragmentShader]
-    public static void Fragment(
-        [PushConstant] Parameters parameters,
-        [FragmentColor] out float4 color)
-    {
-        color = parameters.Color;
-    }
+    public static float4 Fragment(in FragmentContext context) => context.Constants.Color;
 }

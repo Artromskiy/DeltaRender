@@ -159,7 +159,7 @@ internal static class ShaderManifestFixtureLoader
         {
             "Position" => ShaderBuiltin.Position,
             "VertexIndex" => ShaderBuiltin.VertexIndex,
-            "FragmentPosition" => ShaderBuiltin.FragmentCoordinate,
+            "FragmentCoord" or "FragmentPosition" => ShaderBuiltin.FragmentCoordinate,
             "FragmentColor" => ShaderBuiltin.None,
             _ => throw new InvalidDataException($"Unsupported graphics builtin '{builtin}'.")
         };

@@ -6,8 +6,7 @@ namespace Delta.Render.FullscreenShaders;
 
 public static class FullscreenUi
 {
-    [SuppressMessage("Design", "CA1051", Justification = "Public fields are the declared shader-visible push-constant ABI.")]
-    [SuppressMessage("Design", "CA1815", Justification = "Field-only shader ABI record; equality is not part of the serialized layout contract.")]
+    [SuppressMessage("Design", "CA1051", Justification = "Shader ABI fields are emitted by Delta.Shader.")]
     public struct UiPushConstants
     {
         public float2 Resolution = default;
@@ -18,46 +17,63 @@ public static class FullscreenUi
         }
     }
 
-    [VertexShader]
-    public static void Vertex(
-        [VertexIndex] uint vertexIndex,
-        [Position] out float4 position,
-        [ShaderVarying(0)] out float2 uv)
+    [Interstage]
+    public struct UiVarying
     {
-        position = default;
-        uv = default;
+        [Position]
+        public float4 Position;
+        public float2 Uv;
 
-        if (vertexIndex == 0u)
+        public UiVarying()
         {
-            position = new float4(-1f, -1f, 0f, 1f);
-            uv = new float2(0f, 0f);
-        }
-        if (vertexIndex == 1u)
-        {
-            position = new float4(3f, -1f, 0f, 1f);
-            uv = new float2(2f, 0f);
-        }
-        if (vertexIndex == 2u)
-        {
-            position = new float4(-1f, 3f, 0f, 1f);
-            uv = new float2(0f, 2f);
         }
     }
 
-    [FragmentShader]
-    public static void Fragment(
-        [FragmentCoord] float2 fragmentCoord,
-        [PushConstant] UiPushConstants constants,
-        [ShaderVarying(0)] float2 uv,
-        [FragmentColor] out float4 color)
+    public readonly struct VertexContext
     {
-        var p = (fragmentCoord / constants.Resolution) * 2f - new float2(1f, 1f);
+        [Interstage]
+        public readonly UiVarying Vertex;
+
+        [PushConstant]
+        public readonly UiPushConstants Constants;
+    }
+
+    public readonly struct FragmentContext
+    {
+        [Interstage]
+        public readonly UiVarying Fragment;
+
+        [PushConstant]
+        public readonly UiPushConstants Constants;
+    }
+
+    [VertexShader("fullscreen-ui")]
+    public static UiVarying Vertex(in VertexContext context)
+    {
+        var vertexIndex = ShaderBuiltins.VertexIndex;
+        if (vertexIndex == 0u)
+        {
+            return new UiVarying { Position = new float4(-1f, -1f, 0f, 1f), Uv = new float2(0f, 0f) };
+        }
+        if (vertexIndex == 1u)
+        {
+            return new UiVarying { Position = new float4(3f, -1f, 0f, 1f), Uv = new float2(2f, 0f) };
+        }
+
+        return new UiVarying { Position = new float4(-1f, 3f, 0f, 1f), Uv = new float2(0f, 2f) };
+    }
+
+    [FragmentShader("fullscreen-ui")]
+    public static float4 Fragment(in FragmentContext context)
+    {
+        var fragmentCoord = new float2(ShaderBuiltins.FragmentCoord.X, ShaderBuiltins.FragmentCoord.Y);
+        var p = (fragmentCoord / context.Constants.Resolution) * 2f - new float2(1f, 1f);
         var halfSize = new float2(0.55f, 0.32f);
         var q = maths.abs(p) - halfSize + 0.12f;
         var distance = maths.length(maths.max(q, new float2(0f, 0f))) + maths.min(maths.max(q.x, q.y), 0f) - 0.12f;
         var edge = ShaderIntrinsics.fwidth(distance);
         var mask = 1f - maths.smoothStep(-edge, edge, distance);
-        var tint = 0.5f + 0.5f * maths.sin(constants.Time);
-        color = new float4(0.08f + 0.2f * mask, 0.12f + 0.4f * mask, 0.2f + 0.5f * tint * mask, 1f);
+        var tint = 0.5f + 0.5f * maths.sin(context.Constants.Time);
+        return new float4(0.08f + 0.2f * mask, 0.12f + 0.4f * mask, 0.2f + 0.5f * tint * mask, 1f);
     }
 }

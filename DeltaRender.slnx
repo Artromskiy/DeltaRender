@@ -3,8 +3,6 @@
   <Project Path="samples/DeltaRender.ShaderSandbox/DeltaRender.ShaderSandbox.csproj" />
   <Project Path="samples/DeltaRender.HeadlessShaderPlayground/DeltaRender.HeadlessShaderPlayground.csproj" />
   <Project Path="src/DeltaRender/DeltaRender.csproj" />
-  <Project Path="src/DeltaRender.Text/DeltaRender.Text.csproj" />
-  <Project Path="src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
   <Project Path="src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />
   <Project Path="src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
   <Project Path="tests/DeltaRender.Tests/DeltaRender.Tests.csproj" />

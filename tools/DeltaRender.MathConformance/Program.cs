@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Delta.Render;
+using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
@@ -91,27 +92,13 @@ internal static class ConformanceOrchestrator
         IReadOnlyList<CaseAssignment> assignments,
         ConformanceReport report)
     {
-        var renderer = new VulkanRenderer(new VulkanRendererOptions());
-        try
+        await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
+        await using var session = renderer.CreateComputeSession();
+        report.Device = new DeviceReport(session.Capabilities);
+        var runner = new VulkanCaseRunner(session, report);
+        foreach (var assignment in assignments)
         {
-            var device = renderer.CreateComputeDevice();
-            try
-            {
-                report.Device = new DeviceReport(device.Limits);
-                var runner = new VulkanCaseRunner(device, report);
-                foreach (var assignment in assignments)
-                {
-                    await runner.ExecuteAsync(assignment).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                await device.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            await renderer.DisposeAsync().ConfigureAwait(false);
+            await runner.ExecuteAsync(assignment).ConfigureAwait(false);
         }
     }
 
@@ -797,12 +784,12 @@ internal sealed record CaseAssignment(LoadedArtifact Artifact, IReadOnlyList<Con
 
 internal sealed class VulkanCaseRunner
 {
-    private readonly IComputeDevice _device;
+    private readonly IRenderFrameSession _session;
     private readonly ConformanceReport _report;
 
-    public VulkanCaseRunner(IComputeDevice device, ConformanceReport report)
+    public VulkanCaseRunner(IRenderFrameSession session, ConformanceReport report)
     {
-        _device = device;
+        _session = session;
         _report = report;
     }
 
@@ -815,18 +802,63 @@ internal sealed class VulkanCaseRunner
             return;
         }
 
-        var buffers = new List<IComputeStorageBuffer>(artifact.Artifact.Abi.Resources.Count);
+        var graph = _session.CreateRenderGraph();
+        var buffers = Array.Empty<RenderBufferHandle>();
+        var createdBufferCount = 0;
         try
         {
-            var bindings = ComputeBufferFactory.Create(_device, artifact, cases, buffers);
-            var pipeline = _device.CreateComputePipeline(artifact.Artifact);
-            try
+            var resources = artifact.Artifact.Abi.Resources;
+            buffers = new RenderBufferHandle[resources.Count];
+            var uploads = new byte[]?[resources.Count];
+            for (var resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
             {
-                await ComputeDispatchRunner.ExecuteAsync(_device, _report, artifact, cases, buffers, bindings, pipeline).ConfigureAwait(false);
+                var resource = resources[resourceIndex];
+                var stride = resource.Layout.ArrayStride == 0 ? resource.Layout.Size : resource.Layout.ArrayStride;
+                if (stride == 0 || stride > int.MaxValue || (ulong)cases.Count > ulong.MaxValue / stride)
+                {
+                    throw new InvalidDataException($"Resource {resource.Binding.Set}:{resource.Binding.Binding} has an invalid array stride.");
+                }
+
+                var bytes = checked((int)(stride * (ulong)cases.Count));
+                var description = new RenderBufferDescription(
+                    (ulong)Math.Max(1, bytes),
+                    RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination | RenderBufferUsage.TransferSource);
+                buffers[resourceIndex] = _session.CreateBuffer(in description);
+                createdBufferCount++;
+                if (resourceIndex < resources.Count - 1)
+                {
+                    uploads[resourceIndex] = new byte[bytes];
+                    for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
+                    {
+                        ShaderAbiValueCodec.Pack(cases[caseIndex].Inputs[resourceIndex], resource.Layout, uploads[resourceIndex].AsSpan(checked((int)((ulong)caseIndex * stride)), checked((int)stride)));
+                    }
+                }
             }
-            finally
+
+            var feature = new GraphConformanceFeature(artifact.Artifact, resources, buffers, uploads, cases.Count);
+            IRenderFeature[] features = [feature];
+            graph.Build(0, features);
+            var execution = graph.Execute();
+            if (execution.Status != RenderGraphExecutionStatus.Submitted)
             {
-                await pipeline.DisposeAsync().ConfigureAwait(false);
+                throw new InvalidOperationException($"RenderGraph execution failed with status {execution.Status}.");
+            }
+
+            var outputResource = resources[^1];
+            var outputStride = outputResource.Layout.ArrayStride == 0 ? outputResource.Layout.Size : outputResource.Layout.ArrayStride;
+            var readback = feature.Readback;
+            var outputData = new byte[checked((int)(outputStride * (ulong)cases.Count))];
+            if (graph.CopyReadback(readback, outputData) != outputData.Length)
+            {
+                throw new InvalidOperationException("Output readback failed.");
+            }
+
+            _report.ExecutedGpuCaseCount += cases.Count;
+            for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
+            {
+                var testCase = cases[caseIndex];
+                var actual = ShaderAbiValueCodec.Read(testCase.Expected, outputResource.Layout, outputData.AsSpan(checked((int)((ulong)caseIndex * outputStride)), checked((int)outputStride)));
+                _report.AddComparison(testCase, artifact.Path, ValueComparer.Compare(testCase.Expected, actual, testCase.AbsoluteTolerance, testCase.RelativeTolerance, testCase.MaxUlps));
             }
         }
         catch (Exception exception) when (RunnerFailure.IsReportable(exception))
@@ -838,9 +870,14 @@ internal sealed class VulkanCaseRunner
         }
         finally
         {
-            for (var index = buffers.Count - 1; index >= 0; index--)
+            if (graph is IAsyncDisposable disposableGraph)
             {
-                await buffers[index].DisposeAsync().ConfigureAwait(false);
+                await disposableGraph.DisposeAsync().ConfigureAwait(false);
+            }
+
+            for (var index = createdBufferCount - 1; index >= 0; index--)
+            {
+                _session.Release(buffers[index]);
             }
         }
     }
@@ -850,13 +887,13 @@ internal sealed class VulkanCaseRunner
         var abi = artifact.Artifact.Abi;
         if (abi.RequiredCapabilities != ShaderCapabilities.None)
         {
-            ReportCapabilityExcluded(cases, artifact.Path, "Optional shader capabilities cannot be queried through the current IComputeDevice contract.");
+            ReportCapabilityExcluded(cases, artifact.Path, "Required shader capabilities are not available in the current render session.");
             return false;
         }
 
         if (abi.PushConstants.Count != 0)
         {
-            ReportCompilerBlocked(cases, artifact.Path, "IComputeDevice.Dispatch has no push-constant input; Count ABI cannot be supplied safely.");
+            ReportCompilerBlocked(cases, artifact.Path, "The conformance case bundle does not provide the artifact push-constant input.");
             return false;
         }
 
@@ -893,6 +930,101 @@ internal sealed class VulkanCaseRunner
         }
     }
 
+}
+
+internal sealed class GraphConformanceFeature : IRenderFeature
+{
+    private readonly IShaderArtifact _artifact;
+    private readonly IReadOnlyList<ShaderResourceBinding> _resources;
+    private readonly RenderBufferHandle[] _buffers;
+    private readonly byte[]?[] _uploads;
+    private readonly int _caseCount;
+
+    internal GraphConformanceFeature(
+        IShaderArtifact artifact,
+        IReadOnlyList<ShaderResourceBinding> resources,
+        RenderBufferHandle[] buffers,
+        byte[]?[] uploads,
+        int caseCount)
+    {
+        _artifact = artifact ?? throw new ArgumentNullException(nameof(artifact));
+        _resources = resources ?? throw new ArgumentNullException(nameof(resources));
+        _buffers = buffers ?? throw new ArgumentNullException(nameof(buffers));
+        _uploads = uploads ?? throw new ArgumentNullException(nameof(uploads));
+        _caseCount = caseCount;
+    }
+
+    internal RenderGraphReadbackHandle Readback { get; private set; }
+
+    public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
+    {
+        var graphBuffers = new RenderGraphBufferHandle[_buffers.Length];
+        for (var index = 0; index < _buffers.Length; index++)
+        {
+            graphBuffers[index] = graph.ImportBuffer(_buffers[index]);
+        }
+
+        var transfer = graph.AddTransferPass("conformance-upload", new GraphTransferPass(graphBuffers, _uploads));
+        for (var index = 0; index < _resources.Count; index++)
+        {
+            if (_uploads[index] is { Length: > 0 })
+            {
+                graph.UseBuffer(transfer, graphBuffers[index], RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+            }
+        }
+
+        var compute = graph.AddComputePass(
+            new ComputePassDescription("conformance-compute", _artifact),
+            new GraphComputePass(_artifact, _resources, graphBuffers, _caseCount));
+        for (var index = 0; index < _resources.Count; index++)
+        {
+            graph.UseBuffer(compute, graphBuffers[index], ToRenderAccess(_resources[index].Access), RenderPipelineStages.Compute);
+        }
+
+        var output = _resources[^1].Layout.ArrayStride == 0 ? _resources[^1].Layout.Size : _resources[^1].Layout.ArrayStride;
+        Readback = graph.ReadbackBuffer(graphBuffers[^1], new BufferRange(0, checked(output * (ulong)_caseCount)));
+    }
+
+    private static RenderResourceAccess ToRenderAccess(ShaderResourceAccess access)
+    {
+        var result = RenderResourceAccess.None;
+        if (access.HasFlag(ShaderResourceAccess.Read)) result |= RenderResourceAccess.Read;
+        if (access.HasFlag(ShaderResourceAccess.Write)) result |= RenderResourceAccess.Write;
+        return result;
+    }
+}
+
+internal sealed class GraphTransferPass(RenderGraphBufferHandle[] buffers, byte[]?[] uploads) : ITransferPass
+{
+    public void Record(ITransferCommandContext commands)
+    {
+        for (var index = 0; index < buffers.Length; index++)
+        {
+            if (uploads[index] is { Length: > 0 } data)
+            {
+                commands.UploadBuffer(buffers[index], data);
+            }
+        }
+    }
+}
+
+internal sealed class GraphComputePass(
+    IShaderArtifact artifact,
+    IReadOnlyList<ShaderResourceBinding> resources,
+    RenderGraphBufferHandle[] buffers,
+    int caseCount) : IComputePass
+{
+    public void Record(IComputeCommandContext commands)
+    {
+        for (var index = 0; index < resources.Count; index++)
+        {
+            commands.BindBuffer(resources[index].Binding, buffers[index]);
+        }
+
+        var workgroupSize = artifact.Abi.WorkgroupSize.X;
+        var groups = checked(((uint)caseCount + workgroupSize - 1) / workgroupSize);
+        commands.Dispatch(groups);
+    }
 }
 
 internal sealed record ComparisonResult(bool Passed, IReadOnlyList<MismatchDetail> Mismatches);
@@ -1099,14 +1231,14 @@ internal sealed record DeviceReport(
     uint MaxComputeWorkGroupCountX,
     uint MaxBoundDescriptorSets)
 {
-    public DeviceReport(ComputeDeviceLimits limits)
+    public DeviceReport(RenderDeviceCapabilities capabilities)
         : this(
-            limits.MaxStorageBufferRange,
-            limits.MinStorageBufferOffsetAlignment,
-            limits.NonCoherentAtomSize,
-            limits.MaxComputeWorkGroupSizeX,
-            limits.MaxComputeWorkGroupCountX,
-            limits.MaxBoundDescriptorSets)
+            capabilities.MaxStorageBufferRange,
+            capabilities.MinStorageBufferOffsetAlignment,
+            0,
+            capabilities.MaxComputeWorkGroupSizeX,
+            capabilities.MaxComputeWorkGroupCountX,
+            capabilities.MaxBoundDescriptorSets)
     {
     }
 }
