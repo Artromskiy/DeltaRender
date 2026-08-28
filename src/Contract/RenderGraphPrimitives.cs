@@ -1,6 +1,8 @@
+using Delta.Diagnostics;
+
 namespace Delta.Render.RenderGraph;
 
-public readonly record struct RenderSurfaceHandle(ulong Value, uint Generation)
+public readonly record struct RenderTargetHandle(ulong Value, uint Generation)
 {
     public bool IsValid => Value != 0 && Generation != 0;
 }
@@ -35,11 +37,24 @@ public readonly record struct RenderGraphPassHandle(uint Value)
     public bool IsValid => Value != 0;
 }
 
-public readonly record struct ShaderBinding(uint Set, uint Binding);
+public readonly record struct RenderGraphReadbackHandle(uint Value)
+{
+    public bool IsValid => Value != 0;
+}
+
+public readonly record struct PixelExtent(uint Width, uint Height)
+{
+    public bool IsEmpty => Width == 0 || Height == 0;
+}
 
 public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 {
     public bool IsEmpty => Width <= 0 || Height <= 0;
+}
+
+public readonly record struct BufferRange(ulong Offset, ulong SizeInBytes)
+{
+    public bool IsEmpty => SizeInBytes == 0;
 }
 
 public readonly record struct RenderViewport(
@@ -57,24 +72,35 @@ public readonly record struct RenderViewport(
                            MinDepth >= 0 && MaxDepth <= 1 && MinDepth <= MaxDepth;
 }
 
-public readonly record struct RenderView(
-    RenderSurfaceHandle Surface,
-    RenderViewport Viewport,
-    PixelRect Scissor)
-{
-    public bool IsValid => Surface.IsValid && Viewport.IsValid && !Scissor.IsEmpty;
-}
-
-public readonly record struct RenderGraphFrame(
-    long FrameNumber,
-    ReadOnlyMemory<RenderView> Views)
-{
-    public bool IsValid => FrameNumber >= 0 && !Views.IsEmpty;
-}
-
 public readonly record struct ClearColor(float Red, float Green, float Blue, float Alpha);
 
 public readonly record struct ClearDepthStencil(float Depth, uint Stencil = 0);
+
+public readonly record struct RenderDeviceCapabilities(
+    ulong MaxStorageBufferRange,
+    ulong MinStorageBufferOffsetAlignment,
+    uint MaxPushConstantBytes,
+    uint MaxBoundDescriptorSets,
+    uint MaxComputeWorkGroupInvocations,
+    uint MaxComputeWorkGroupSizeX,
+    uint MaxComputeWorkGroupSizeY,
+    uint MaxComputeWorkGroupSizeZ,
+    uint MaxComputeWorkGroupCountX,
+    uint MaxComputeWorkGroupCountY,
+    uint MaxComputeWorkGroupCountZ);
+
+public enum RenderGraphExecutionStatus : byte
+{
+    Unknown,
+    Submitted,
+    NoWork,
+    Failed,
+    DeviceLost,
+}
+
+public readonly record struct RenderGraphExecutionResult(
+    RenderGraphExecutionStatus Status,
+    ReadOnlyMemory<Diagnostic> Diagnostics);
 
 [Flags]
 public enum RenderPipelineStages
@@ -99,20 +125,20 @@ public enum RenderResourceAccess
     ReadWrite = Read | Write,
 }
 
-public enum AttachmentLoadOperation
+public enum AttachmentLoadOperation : byte
 {
     Load,
     Clear,
     Discard,
 }
 
-public enum AttachmentStoreOperation
+public enum AttachmentStoreOperation : byte
 {
     Store,
     Discard,
 }
 
-public enum IndexElementFormat
+public enum IndexElementFormat : byte
 {
     UnsignedShort,
     UnsignedInt,

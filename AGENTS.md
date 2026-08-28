@@ -6,6 +6,8 @@ SDL3 surface/window integration. Engine owns event polling and frame policy.
 - [README.md](README.md) — stable renderer boundaries and supported paths.
 - [CONTRACT.md](CONTRACT.md) — complete cross-project renderer contract;
   declarations are flat in `src/Contract`.
+- [MIGRATION.md](MIGRATION.md) — mandatory removal order for every legacy GPU
+  submission path; do not replace those paths with compatibility facades.
 - [TODO.md](TODO.md) — selected renderer work.
 - [IDEAS.md](IDEAS.md) — deferred renderer hypotheses.
 - [WORKFLOW.md](WORKFLOW.md) — builds, contract tests and native smokes.

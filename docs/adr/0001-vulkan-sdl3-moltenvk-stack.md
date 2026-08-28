@@ -9,9 +9,14 @@ Delivery 1 requires one Vulkan renderer stack on three desktop platforms. The re
 ## Decision
 - Use `SDL3-CS` managed wrapper for SDL surfaces/input integration.
 - Use `Silk.NET.Vulkan` for all Vulkan API usage.
-- Keep `DeltaRender.Platform.SDL3` and `DeltaRender.Vulkan` as separate projects with a narrow cross-project interop surface.
-- Keep raw Vulkan handles inside `DeltaRender.Vulkan`; only raw extension/hook interop points are exposed through `IVulkanWindowSurfaceSource`.
-- Use `DeltaRender` as the root namespace for all own source, test, and sample code. Use the matching `DeltaRender.*` identity for project, assembly, package, solution, and directory names.
+- Keep `DeltaRender.Platform.SDL3` and `DeltaRender.Vulkan` as separate projects;
+  their surface bootstrap is implementation integration, not part of the
+  cross-project RenderGraph contract.
+- Keep every raw Vulkan handle inside `DeltaRender.Vulkan`. SDL extension and
+  surface hooks are consumed by the Vulkan implementation and are never
+  exposed as graph resources.
+- Use `Delta.Render` as the public CLR namespace and `DeltaRender.*` for
+  project, assembly, package, solution and directory identities.
 - On macOS, request portability enumeration when the loader advertises it and enable the device portability subset when the selected device advertises it; rely on MoltenVK packages for the `VK_EXT_METAL` backend.
 - Add explicit headless probes so tests and smoke sample can print deterministic diagnostics if loader/display is unavailable.
 
@@ -27,7 +32,9 @@ Delivery 1 requires one Vulkan renderer stack on three desktop platforms. The re
 - **macOS arm64/x64:** native `SDL3-CS.MacOS` + `VK_KHR_portability_enumeration` where available + MoltenVK runtime package (`Silk.NET.MoltenVK.Native`) and explicit diagnostics for portability path in initialization.
 
 ## Delivery scope completed in this phase
-1. Platform-neutral contracts and diagnostics in `DeltaRender`.
-2. SDL3 windowing module in `DeltaRender.Platform.SDL3` with Vulkan extension query and surface creation.
-3. Vulkan instance/device queue bootstrap and swapchain clear/present code path in `DeltaRender.Vulkan`.
-4. Headless probe tests and macOS smoke execution sample.
+1. One Vulkan RenderGraph contract in `DeltaRender`.
+2. SDL3 windowing module in `DeltaRender.Platform.SDL3` with Vulkan extension
+   query and surface creation kept behind implementation boundaries.
+3. Vulkan instance/device/queue bootstrap and graph execution in
+   `DeltaRender.Vulkan`.
+4. Compute-only, offscreen and windowed graph acceptance on the same executor.

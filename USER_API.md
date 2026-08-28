@@ -1,74 +1,100 @@
 # DeltaRender user API
 
-This file is the user-facing API summary. The complete cross-project contract
-is [CONTRACT.md](CONTRACT.md); implementation details belong in
-`INTERNAL.md`.
+The user-facing renderer API is the same thin RenderGraph contract used by
+Engine features. There is no direct frame, packet or standalone compute path.
 
-## Shader input
+## Session
 
-Consumers provide `DeltaShader.Contract.IShaderArtifact` and
-`IGraphicsShaderProgram`. An artifact owns validated SPIR-V bytes, its emitted
-entry point and the resolved `ShaderAbi`. DeltaRender consumes that contract; it
-does not compile C# or GLSL and does not define a second ABI.
+A Vulkan implementation creates one `IRenderFrameSession` in one of three
+modes:
 
-## Window and render-graph session
+- compute-only: `Target.IsValid == false`;
+- headless graphics: `Target` is an offscreen image;
+- windowed: `Target` is presentable.
 
-`IRenderWindowFactory.CreateWindow` creates an `IRenderWindow`. The platform
-provider supplies the Vulkan instance extensions and surface operations.
-`IRenderFrameSession` exposes the graph entry point:
-
-```csharp
-IRenderGraph CreateRenderGraph();
-```
-
-The consumer creates a `RenderGraphFrame`, lets features declare their passes
-and resources, then builds and executes the graph:
+The creation mechanism is implementation/platform setup, not a second
+cross-project rendering API. Once created, every mode uses the same calls:
 
 ```csharp
 IRenderGraph graph = session.CreateRenderGraph();
-graph.Build(in frame, features);
-graph.Execute();
+graph.Build(frameNumber, features);
+RenderGraphExecutionResult result = graph.Execute();
 ```
 
-`Execute()` owns target acquisition, pass ordering, synchronization, command
-submission and presentation. The session does not poll events or own
-input/game-loop state. Resize is handled by the session outside an active graph
-execution.
+## Features and passes
 
-## UI handoff
+A feature stores its current submission and declares ordinary graph passes:
 
-`UiRenderBatchAdapter` is the copying boundary for renderer-neutral UI records.
-Its borrowed `UiRenderBatch` preserves rectangles, resource handles,
-owner/generation/order, clip identity and hierarchy, text submissions and dirty
-version ranges. `IUiRenderFrameSource.BorrowFrame()` returns one borrowed batch
-and the matching borrowed atlas-page span. The view expires after the next
-replace/prepare/cache mutation or dispose.
+```csharp
+public sealed class FullscreenFeature : IRenderFeature, IRasterPass
+{
+    private readonly RenderTargetHandle _target;
+    private readonly RasterPassDescription _pass;
 
-The renderer-facing batch contains no ECS storage and no retained-XAML object.
-An integration adapter converts `UiDisplayList` and consumer-owned shaped text
-into these records before the one frame submission.
+    public FullscreenFeature(
+        RenderTargetHandle target,
+        RasterPassDescription pass)
+    {
+        _target = target;
+        _pass = pass;
+    }
 
-## Text input
+    public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
+    {
+        RenderGraphTextureHandle target = graph.ImportTarget(_target);
+        RenderGraphPassHandle pass = graph.AddRasterPass(_pass, this);
+        graph.UseColorAttachment(
+            pass,
+            0,
+            new ColorAttachmentDescription(
+                target,
+                AttachmentLoadOperation.Clear,
+                AttachmentStoreOperation.Store));
+    }
 
-`DeltaRender.Text.TextAtlasCache` consumes immutable DeltaText `GlyphImage`
-values and copies their pixels into renderer-owned pages. Shaping is supplied
-as DeltaText `ShapedGlyph` values; Render does not accept strings or perform
-shaping. `TextGlyphPlacement.ToInstance` accepts the caller's fractional
-baseline position and applies the final pixel conversion only when producing a
-`TextGlyphInstance`.
+    public void Record(IRasterCommandContext commands)
+    {
+        commands.Draw(3);
+    }
+}
+```
 
-`ITextAtlasDevice` owns GPU page creation and dirty uploads. The consumer keeps
-atlas-page borrows alive through the frame only. Text draws are grouped by
-pipeline, atlas page and clip, with one instanced draw per group.
+Text, UI and mesh integrations follow the same pattern. Their source records
+belong to DeltaText, DeltaXAML or Engine; only GPU resources and pass commands
+belong to Render.
 
-## Compute input
+## Compute and readback
 
-`IComputeDevice` accepts device-local storage buffers, staging uploads,
-host-visible readback, canonical shader artifacts, dispatch dimensions and
-dirty record ranges. The normal pipeline entry point is
-`CreateComputePipeline(IShaderArtifact)`. The raw SPIR-V overload is an explicit
-low-level import and accepts only the producer-owned `DeltaShader.Contract.ShaderAbi`;
-there is no Render-owned compute metadata model. `IComputePipeline.Abi` exposes
-that same canonical ABI. Storage layout is std430. Zero-sized dispatches are a
-successful no-op; invalid ranges, foreign handles and disposed resources are
-rejected.
+A compute feature composes the former standalone workflow from graph
+primitives:
+
+```text
+transfer pass: UploadBuffer(input)
+compute pass:  BindBuffer + PushConstants + Dispatch
+readback:      ReadbackBuffer(output range)
+execute
+CopyReadback(result, destination)
+```
+
+Repeated `UploadBuffer` commands are the range/batch API. The contract does not
+also define `UploadRanges` or an application-specific dirty-record method.
+Only `CopyReadback` may wait for the GPU; ordinary execution remains
+asynchronous with respect to CPU work.
+
+## Persistent and transient resources
+
+Use session creation methods for data that survives more than one graph build.
+Import those handles in each build. Use builder creation methods for transient
+data whose lifetime is confined to the current graph; Render may alias their
+memory when lifetimes do not overlap.
+
+Release persistent handles explicitly. Disposing the session releases every
+remaining resource. Graph-local handles and readback handles expire at the
+next build.
+
+## Shaders
+
+Raster and compute pass descriptions accept canonical
+`DeltaShader.Contract` artifacts. Render validates `ShaderAbi`, constructs and
+caches Vulkan pipelines internally, and binds resources by the producer-owned
+`ShaderBinding`. User code never creates a public pipeline object.

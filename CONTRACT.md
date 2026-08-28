@@ -1,109 +1,183 @@
 # DeltaRender cross-project contract
 
-This is the canonical cross-project contract supplied by DeltaRender. It is
-the graph-first renderer-facing API for the engine and editor, not an internal
-description of the RenderGraph implementation. The contract is Vulkan-only;
-SDL3 supplies the window/surface bridge and MoltenVK supplies the macOS Vulkan
-portability layer.
+This is the complete cross-project contract supplied by DeltaRender. The only
+supported GPU execution model is the Vulkan RenderGraph declared by the flat
+sources in `src/Contract`. A window, an offscreen target and a compute-only
+session use the same interfaces and the same Vulkan executor.
 
-The declarations live in one flat folder one level above the
-`DeltaRender` project. The project contains no implementation beside the
-contract assembly:
+The contract assembly is `DeltaRender`; public CLR namespaces are
+`Delta.Render` and `Delta.Render.RenderGraph`. Vulkan, SDL3 and MoltenVK objects
+never cross this boundary.
 
-```text
-src/Contract/*.cs
-```
+## Ownership
 
-There are no contract subfolders. The project identity is `DeltaRender`; the
-public CLR namespace for this contract is `Delta.Render`. Implementation
-namespaces remain private to the renderer modules.
-
-## Producer and consumers
-
-- **Producer/implementer:** `DeltaRender` (`DeltaRender` contracts and
-  `DeltaRender.Vulkan` implementation).
+- **Producer and implementer:** DeltaRender.
 - **Direct consumers:** DeltaEngine render features and DeltaEditor
-  composition/adapters.
-- **Upstream producers consumed here:** `DeltaShader.Contract` artifacts,
-  `DeltaXAML.Contract` display data and `DeltaText.Contract` shaped/glyph
-  data.
+  composition.
+- **Shader input:** final `DeltaShader.Contract` artifacts and `ShaderAbi`.
+- **UI/text input:** consumer adapters translate `DeltaXAML.Contract` and
+  `DeltaText.Contract` values into ordinary graph resources and passes.
 
-Consumers adapt to these types; they must not publish a second renderer ABI,
-copy Vulkan handles into their own public model or make Render poll input,
-parse XAML/C#, shape text or own ECS storage.
+The renderer owns resources, target acquisition, synchronization, command
+recording, submission, readback staging and presentation. Engine owns frame
+policy and all clocks. The contract contains no `DeltaTime`.
 
-## Contract surface
+## Complete public surface
 
-The flat `Contract` folder contains the following public areas:
+### Session and persistent resources
 
-- **Window/lifecycle:** `IRenderWindowFactory`, `IRenderWindow`,
-  `IRenderFrameSession`, `WindowConfiguration` and `WindowMetrics`.
-- **RenderGraph:** `IRenderGraph`, `IRenderGraphBuilder`,
-  `IRenderFeature`, raster/compute/transfer pass interfaces, command contexts,
-  resource descriptions and graph-local handles.
-- **Resources and views:** persistent/imported handles, transient graph
-  handles, `RenderView`, `RenderViewport`, `PixelRect`, attachments and usage
-  flags.
-- **Shader handoff:** `IShaderArtifact`, `IGraphicsShaderProgram` and the
-  resolved `ShaderAbi` from `DeltaShader.Contract`. Render consumes final
-  SPIR-V plus ABI; it does not consume GLSL, Roslyn state, live generic values
-  or compiler manifests.
-- **Compute:** storage buffers, uploads/readback, dispatch and dirty-record
-  application. Raw SPIR-V import is an explicit low-level overload and still
-  requires the canonical `ShaderAbi`.
-- **Text/UI:** renderer-owned atlas/page upload contracts, glyph instances,
-  UI rectangles, clip records, text submissions and borrowed UI frame views.
-  DeltaText remains renderer-neutral; atlas packing, UV assignment, staging,
-  descriptors and batching belong to Render.
-- **Diagnostics:** `RenderDiagnostic`, `RenderDiagnosticBag` and lifecycle/
-  creation results.
+`IRenderFrameSession` is the sole renderer lifetime boundary:
 
-## Frame and graph flow
+```csharp
+public interface IRenderFrameSession : IAsyncDisposable
+{
+    RenderDeviceCapabilities Capabilities { get; }
+    RenderTargetHandle Target { get; }
 
-```text
-Engine/editor extraction
-  -> feature.Submit(data)
-  -> graph.Build(frame, features)
-  -> feature.AddPasses(graph, context)
-  -> graph derives dependencies and Vulkan synchronization
-  -> pass.Record(commandContext)
-  -> graph.Execute()
-  -> present
+    IRenderGraph CreateRenderGraph();
+
+    RenderBufferHandle CreateBuffer(in RenderBufferDescription description);
+    RenderTextureHandle CreateTexture(in RenderTextureDescription description);
+    RenderSamplerHandle CreateSampler(in RenderSamplerDescription description);
+
+    void Release(RenderBufferHandle buffer);
+    void Release(RenderTextureHandle texture);
+    void Release(RenderSamplerHandle sampler);
+
+    void ResizeTarget(in PixelExtent extent);
+}
 ```
 
-`IRenderFeature.Submit` replaces feature data; it does not perform GPU work.
-Features declare resource reads/writes before recording. The Vulkan executor
-owns pass ordering, resource lifetime, barriers and command recording.
+`Target` has three meanings without three interfaces:
 
-`IRenderFrameSession.CreateRenderGraph()` returns a graph using the same
-session device, queues and lifetime. Consumers do not access raw Vulkan
-handles. The graph owns the complete frame lifecycle: target acquisition,
-recording, submission and presentation.
+| Session | `Target` | Execute epilogue |
+|---|---|---|
+| Compute-only headless | invalid | submit only |
+| Offscreen graphics | valid offscreen target | submit only |
+| Windowed | valid presentable target | acquire, submit, present |
 
-`RenderGraphFrame` contains frame identity and one or more `RenderView` values.
-Each view owns a surface handle, viewport and pixel-space `PixelRect`, so a
-frame may target multiple surfaces. No Render contract carries `DeltaTime` or
-defines a clock.
+`ResizeTarget` is valid only for sessions with a target. Multi-window
+composition uses one session per target; the first contract deliberately does
+not expose an array of views or surfaces.
 
-There is no separate direct frame-submission or packet API in this
-cross-project contract. UI, text, mesh and compute work enters through graph
-features and pass-owned submission data; `IRenderGraph.Execute()` performs the
-single submission path.
+Persistent handles are session-owned and generation-checked. Graph-local
+handles are compact build-local indices and expire at the next `Build`.
 
-## Ownership and lifetime
+### Graph lifecycle
 
-- Render owns Vulkan images, buffers, samplers, descriptors, staging memory,
-  pipeline caches and disposal.
-- UI/text producers own their source objects and payloads; adapters copy or
-  borrow them for exactly one frame according to the documented API.
-- Borrowed packets, graph handles and UI frame views expire at their stated
-  frame/build/mutation boundary and must not be retained.
-- Engine owns event polling, scheduling and time domains. DeltaXAML owns
-  retained UI/layout. DeltaText owns shaping and glyph-image generation.
+```csharp
+public interface IRenderGraph
+{
+    void Build(ulong frameNumber, ReadOnlySpan<IRenderFeature> features);
+    RenderGraphExecutionResult Execute();
+    int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination);
+}
 
-## Non-goals
+public interface IRenderFeature
+{
+    void AddPasses(IRenderGraphBuilder graph, ulong frameNumber);
+}
+```
 
-This contract does not expose Vulkan command-buffer types, allocator details,
-render-pass implementation, ECS chunks/rows, XAML controls, text shaping
-internals, GLSL source or shader compiler state. Such details belong in
-`INTERNAL.md` and implementation code.
+Features own or borrow their submitted domain data. `Build` asks them to add
+passes; it does not retain the feature span. `Execute` compiles and records the
+declared graph, then returns `Submitted`, `NoWork`, `Failed` or `DeviceLost`
+with shared `Delta.Diagnostics` values.
+
+`CopyReadback` is the only operation that may wait for GPU completion. Normal
+windowed and headless execution does not wait for a queue to become idle.
+Readback handles belong to the last successful build and are invalidated by the
+next build.
+
+### Graph builder
+
+`IRenderGraphBuilder` contains only primitives that cannot be reconstructed
+safely outside Render:
+
+- import the session target or persistent buffer/texture;
+- create a transient buffer/texture;
+- add raster, compute or transfer passes;
+- declare attachment and resource access;
+- request a buffer or texture readback.
+
+Readback is explicit because CPU visibility, staging ownership and completion
+cannot be expressed by ordinary GPU copy commands. All other batching remains
+consumer composition: repeated `UploadBuffer` calls express dirty ranges, and
+ordinary passes express fullscreen, UI, text, mesh and compute work.
+
+### Pass recording
+
+```text
+IRasterPass   -> IRasterCommandContext
+IComputePass  -> IComputeCommandContext
+ITransferPass -> ITransferCommandContext
+```
+
+Raster commands set viewport/scissor, bind vertex/index/shader resources and
+draw. Compute commands bind shader resources, write push constants and
+dispatch. Transfer commands copy or upload buffers and textures. Resource use
+is declared on the builder before `Record`, so Render can derive ordering,
+lifetimes, layouts and Vulkan barriers before command recording.
+
+Pass and pipeline descriptions consume only final DeltaShader artifacts:
+
+```text
+RasterPipelineDescription  -> IGraphicsShaderProgram
+ComputePassDescription     -> IShaderArtifact(stage = Compute)
+```
+
+Pipeline objects and cache keys are renderer-owned. They are not public
+handles and are never created by a feature.
+
+## Compute coverage
+
+The graph contract covers every supported former direct-compute operation:
+
+```text
+Create persistent storage       -> session.CreateBuffer
+Upload one or many ranges        -> transfer pass + UploadBuffer calls
+Bind descriptor resources       -> compute context BindBuffer/BindTexture
+Push ABI bytes                   -> compute context PushConstants
+Dispatch                         -> compute context Dispatch
+GPU ordering/barriers            -> declared UseBuffer/UseTexture dependencies
+Read result on CPU               -> builder.ReadbackBuffer + graph.CopyReadback
+Query Vulkan limits              -> session.Capabilities
+Apply dirty renderer records     -> consumer forms upload ranges
+No-op dispatch                   -> graph execution status NoWork
+```
+
+Raw SPIR-V overloads do not belong here. DeltaShader owns construction of the
+final artifact; DeltaRender consumes `IShaderArtifact` and does not publish a
+second shader import model.
+
+## Deliberately excluded
+
+The contract has no direct frame packet, begin/end frame pair, standalone
+compute device, public pipeline factory, fullscreen helper, text pipeline,
+atlas device, UI render batch, render-record journal, surface handle, view
+array or generic feature submission facade.
+
+These shapes either duplicate graph composition or expose one adapter's
+internal data. In particular:
+
+- fullscreen is a raster pass followed by `Draw(3)`;
+- UI, text and meshes are feature-owned pass data;
+- dirty uploads are repeated transfer commands;
+- compute is a compute pass plus optional transfer/readback passes;
+- pipeline creation is derived from pass descriptions and cached internally;
+- presentation is selected by the session target, not by a second API.
+
+No consumer may recreate one of these removed paths as a public compatibility
+facade. The migration is defined in [MIGRATION.md](MIGRATION.md).
+
+## Lifetime rules
+
+- Session handles remain valid until released or the session is disposed.
+- Graph-local handles remain valid only until the next `Build`.
+- Feature and pass objects may be reused; their borrowed payloads must remain
+  valid through `Execute`.
+- Upload spans are copied into renderer-owned staging during recording.
+- Readback becomes available only after a successful `Execute`; copying it may
+  wait for the producing submission.
+- The session is the only disposer of Vulkan resources. A handle does not own a
+  native resource by itself.

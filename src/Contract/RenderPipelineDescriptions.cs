@@ -2,7 +2,7 @@ using Delta.Shader.Contract;
 
 namespace Delta.Render.RenderGraph;
 
-public enum PrimitiveTopology
+public enum PrimitiveTopology : byte
 {
     TriangleList,
     TriangleStrip,
@@ -10,20 +10,20 @@ public enum PrimitiveTopology
     PointList,
 }
 
-public enum RasterCullMode
+public enum RasterCullMode : byte
 {
     None,
     Front,
     Back,
 }
 
-public enum RasterFrontFace
+public enum RasterFrontFace : byte
 {
     CounterClockwise,
     Clockwise,
 }
 
-public enum RenderBlendMode
+public enum RenderBlendMode : byte
 {
     Opaque,
     Alpha,
@@ -67,22 +67,6 @@ public sealed record RasterPipelineDescription
     public bool DepthWrite { get; }
 }
 
-public sealed record ComputePipelineDescription
-{
-    public ComputePipelineDescription(IShaderArtifact shader)
-    {
-        ArgumentNullException.ThrowIfNull(shader);
-        if (shader.Stage != ShaderStage.Compute)
-        {
-            throw new ArgumentException("A compute pipeline requires a compute shader artifact.", nameof(shader));
-        }
-
-        Shader = shader;
-    }
-
-    public IShaderArtifact Shader { get; }
-}
-
 public sealed record RasterPassDescription
 {
     public RasterPassDescription(string name, RasterPipelineDescription pipeline)
@@ -100,26 +84,20 @@ public sealed record RasterPassDescription
 
 public sealed record ComputePassDescription
 {
-    public ComputePassDescription(string name, ComputePipelineDescription pipeline)
+    public ComputePassDescription(string name, IShaderArtifact shader)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(pipeline);
+        ArgumentNullException.ThrowIfNull(shader);
+        if (shader.Stage != ShaderStage.Compute)
+        {
+            throw new ArgumentException("A compute pass requires a compute shader artifact.", nameof(shader));
+        }
+
         Name = name;
-        Pipeline = pipeline;
+        Shader = shader;
     }
 
     public string Name { get; }
 
-    public ComputePipelineDescription Pipeline { get; }
-}
-
-public sealed record TransferPassDescription
-{
-    public TransferPassDescription(string name)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        Name = name;
-    }
-
-    public string Name { get; }
+    public IShaderArtifact Shader { get; }
 }

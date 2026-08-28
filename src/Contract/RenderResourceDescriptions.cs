@@ -1,6 +1,6 @@
 namespace Delta.Render.RenderGraph;
 
-public enum RenderTextureFormat
+public enum RenderTextureFormat : byte
 {
     Unknown,
     R8Unorm,
@@ -38,6 +38,19 @@ public enum RenderBufferUsage
     TransferDestination = 1 << 6,
 }
 
+public enum RenderFilter : byte
+{
+    Nearest,
+    Linear,
+}
+
+public enum RenderAddressMode : byte
+{
+    Repeat,
+    MirroredRepeat,
+    ClampToEdge,
+}
+
 public readonly record struct RenderTextureDescription(
     uint Width,
     uint Height,
@@ -59,6 +72,14 @@ public readonly record struct RenderBufferDescription(
 {
     public bool IsValid => SizeInBytes > 0 && Usage != RenderBufferUsage.None;
 }
+
+public readonly record struct RenderSamplerDescription(
+    RenderFilter MinFilter = RenderFilter.Linear,
+    RenderFilter MagFilter = RenderFilter.Linear,
+    RenderFilter MipmapFilter = RenderFilter.Linear,
+    RenderAddressMode AddressU = RenderAddressMode.ClampToEdge,
+    RenderAddressMode AddressV = RenderAddressMode.ClampToEdge,
+    RenderAddressMode AddressW = RenderAddressMode.ClampToEdge);
 
 public readonly record struct ColorAttachmentDescription(
     RenderGraphTextureHandle Texture,

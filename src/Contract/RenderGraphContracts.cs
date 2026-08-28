@@ -1,23 +1,27 @@
+using Delta.Shader.Contract;
+
 namespace Delta.Render.RenderGraph;
 
 /// <summary>
-/// Builds and executes one Vulkan render graph. Implementations own resource
-/// lifetime, dependency ordering and synchronization.
+/// Builds and executes Vulkan work for one frame or one headless operation.
+/// A graph may be reused, but its graph-local handles expire on the next build.
 /// </summary>
 public interface IRenderGraph
 {
-    void Build(in RenderGraphFrame frame, ReadOnlySpan<IRenderFeature> features);
+    void Build(ulong frameNumber, ReadOnlySpan<IRenderFeature> features);
 
-    void Execute();
+    RenderGraphExecutionResult Execute();
+
+    int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination);
 }
 
 /// <summary>
-/// Mutable graph-construction surface. Handles are valid only for the graph
-/// build in which they were returned.
+/// Declares graph resources, passes and dependencies. The builder is borrowed
+/// by a feature only for the duration of that feature's AddPasses call.
 /// </summary>
 public interface IRenderGraphBuilder
 {
-    RenderGraphTextureHandle ImportSurface(RenderSurfaceHandle surface);
+    RenderGraphTextureHandle ImportTarget(RenderTargetHandle target);
 
     RenderGraphTextureHandle ImportTexture(RenderTextureHandle texture);
 
@@ -31,7 +35,7 @@ public interface IRenderGraphBuilder
 
     RenderGraphPassHandle AddComputePass(in ComputePassDescription description, IComputePass pass);
 
-    RenderGraphPassHandle AddTransferPass(in TransferPassDescription description, ITransferPass pass);
+    RenderGraphPassHandle AddTransferPass(string name, ITransferPass pass);
 
     void UseColorAttachment(
         RenderGraphPassHandle pass,
@@ -53,28 +57,19 @@ public interface IRenderGraphBuilder
         RenderGraphBufferHandle buffer,
         RenderResourceAccess access,
         RenderPipelineStages stages);
-}
 
-public interface IRenderFeatureContext
-{
-    long FrameNumber { get; }
+    RenderGraphReadbackHandle ReadbackBuffer(
+        RenderGraphBufferHandle buffer,
+        in BufferRange range);
 
-    RenderView View { get; }
+    RenderGraphReadbackHandle ReadbackTexture(
+        RenderGraphTextureHandle texture,
+        in PixelRect region);
 }
 
 public interface IRenderFeature
 {
-    void AddPasses(IRenderGraphBuilder graph, IRenderFeatureContext context);
-}
-
-/// <summary>
-/// A persistent feature receives borrowed data for the next graph build.
-/// Submit replaces the previous submission; it does not execute rendering.
-/// </summary>
-public interface IRenderFeature<TSubmission> : IRenderFeature
-    where TSubmission : struct
-{
-    void Submit(in TSubmission submission);
+    void AddPasses(IRenderGraphBuilder graph, ulong frameNumber);
 }
 
 public interface IRasterPass
@@ -148,6 +143,12 @@ public interface ITransferCommandContext
         ulong sizeInBytes,
         ulong sourceOffset = 0,
         ulong destinationOffset = 0);
+
+    void CopyTexture(
+        RenderGraphTextureHandle source,
+        in PixelRect sourceRegion,
+        RenderGraphTextureHandle destination,
+        in PixelRect destinationRegion);
 
     void UploadBuffer(
         RenderGraphBufferHandle destination,

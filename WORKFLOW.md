@@ -1,5 +1,15 @@
 # DeltaRender workflow
 
+The contract checkpoint can be checked independently while the Vulkan and
+consumer migration in `MIGRATION.md` is in progress:
+
+```bash
+dotnet build src/DeltaRender/DeltaRender.csproj -c Release \
+  --disable-build-servers -m:1 /p:UseSharedCompilation=false -v:minimal
+```
+
+After every migration phase restores its consumers, use the complete gate:
+
 ```bash
 dotnet restore DeltaRender.slnx
 dotnet build DeltaRender.slnx -c Release --no-restore \
@@ -26,14 +36,11 @@ The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The
 bounded rollback check is `./tools/test-prepare-smoke-shaders-rollback.sh`.
-`DeltaRender.Tests` also exercises window-session acquisition faults,
-reverse-order native-handle rollback, platform surface transfer and cleanup
-failures without loading Vulkan or opening a window.
-The headless UI handoff tests also cover adapter-owned record backing,
-borrowed glyph/payload lifetime, clip/order/version preservation and stale
-generation rejection. They additionally round-trip a non-default resource
-handle, nested clip nodes and non-empty command/clip/text dirty ranges through
-the canonical batch without loading Vulkan.
+Graph contract tests must cover session/resource ownership, graph-local handle
+invalidation, deterministic pass ordering, read/write hazards, readback
+lifetime and diagnostics without loading Vulkan. Vulkan tests then cover the
+same graph executor in compute-only, offscreen and windowed modes. A skipped
+native test is not a successful GPU path.
 
 ## Code metrics
 
