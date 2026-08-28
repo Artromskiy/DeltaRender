@@ -30,8 +30,9 @@ and consumers without reintroducing facades over the removed APIs.
 
 1. Rewrite `DeltaRender.MathConformance` as a compute-only graph:
    transfer upload, compute dispatch with ABI push constants, buffer readback.
-2. Replace `VulkanComputeDevice`, its storage buffers and pipeline wrappers
-   with registry resources and cached graph pipelines.
+2. Use session-owned registry resources and cached graph pipelines for
+   transfer, compute and readback passes; no standalone compute implementation
+   is part of the migrated path.
 3. Express dirty records as caller-produced `UploadBuffer` ranges; do not move
    record/entity semantics into RenderGraph.
 4. Remove direct compute tests after equivalent graph tests cover upload,
@@ -50,10 +51,8 @@ and consumers without reintroducing facades over the removed APIs.
 
 ## Phase 5 - remove legacy code
 
-Delete, rather than wrap:
+Delete, rather than wrap, any remaining compatibility implementation:
 
-- `IComputeDevice`, `IComputePipeline`, `IComputeStorageBuffer` and
-  `VulkanComputeDevice`;
 - direct frame state/packet and begin/end/submit entry points;
 - public graphics/text pipeline factories and standalone atlas device;
 - public UI/text renderer packets, dirty-record journal and batching helpers;
