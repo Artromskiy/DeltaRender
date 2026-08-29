@@ -6,9 +6,9 @@ namespace Delta.Render.Vulkan;
 
 internal sealed class VulkanResourceRegistry
 {
-    private readonly Dictionary<ulong, PersistentBuffer> _buffers = new();
-    private readonly Dictionary<ulong, PersistentTexture> _textures = new();
-    private readonly Dictionary<ulong, PersistentSampler> _samplers = new();
+    private readonly ResourceTable<PersistentBuffer> _buffers = new();
+    private readonly ResourceTable<PersistentTexture> _textures = new();
+    private readonly ResourceTable<PersistentSampler> _samplers = new();
 
     internal IEnumerable<PersistentBuffer> Buffers => _buffers.Values;
     internal IEnumerable<PersistentTexture> Textures => _textures.Values;
@@ -19,22 +19,22 @@ internal sealed class VulkanResourceRegistry
     internal void AddSampler(ulong value, PersistentSampler sampler) => _samplers.Add(value, sampler);
 
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
-        => TryGet(_buffers, handle.IsValid, handle.Value, handle.Generation, out buffer);
+        => _buffers.TryGet(handle.IsValid, handle.Value, handle.Generation, out buffer);
 
     internal bool TryGetTexture(RenderTextureHandle handle, [NotNullWhen(true)] out PersistentTexture? texture)
-        => TryGet(_textures, handle.IsValid, handle.Value, handle.Generation, out texture);
+        => _textures.TryGet(handle.IsValid, handle.Value, handle.Generation, out texture);
 
     internal bool TryGetSampler(RenderSamplerHandle handle, [NotNullWhen(true)] out PersistentSampler? sampler)
-        => TryGet(_samplers, handle.IsValid, handle.Value, handle.Generation, out sampler);
+        => _samplers.TryGet(handle.IsValid, handle.Value, handle.Generation, out sampler);
 
     internal bool TryRemoveBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
-        => TryRemove(_buffers, handle.IsValid, handle.Value, handle.Generation, out buffer);
+        => _buffers.TryRemove(handle.IsValid, handle.Value, handle.Generation, out buffer);
 
     internal bool TryRemoveTexture(RenderTextureHandle handle, [NotNullWhen(true)] out PersistentTexture? texture)
-        => TryRemove(_textures, handle.IsValid, handle.Value, handle.Generation, out texture);
+        => _textures.TryRemove(handle.IsValid, handle.Value, handle.Generation, out texture);
 
     internal bool TryRemoveSampler(RenderSamplerHandle handle, [NotNullWhen(true)] out PersistentSampler? sampler)
-        => TryRemove(_samplers, handle.IsValid, handle.Value, handle.Generation, out sampler);
+        => _samplers.TryRemove(handle.IsValid, handle.Value, handle.Generation, out sampler);
 
     internal void Clear()
     {
@@ -43,29 +43,42 @@ internal sealed class VulkanResourceRegistry
         _samplers.Clear();
     }
 
-    private static bool TryGet<T>(Dictionary<ulong, T> values, bool isValid, ulong value, uint generation, [NotNullWhen(true)] out T? resource)
-        where T : class, IVulkanResourceGeneration
+    private sealed class ResourceTable<T> where T : class, IVulkanResourceGeneration
     {
-        resource = null;
-        if (!isValid || !values.TryGetValue(value, out var candidate) || candidate.Generation != generation)
+        private readonly Dictionary<ulong, T> _values = new();
+
+        internal IEnumerable<T> Values => _values.Values;
+
+        internal void Add(ulong value, T resource)
         {
-            return false;
+            ArgumentNullException.ThrowIfNull(resource);
+            _values.Add(value, resource);
         }
 
-        resource = candidate;
-        return true;
-    }
-
-    private static bool TryRemove<T>(Dictionary<ulong, T> values, bool isValid, ulong value, uint generation, [NotNullWhen(true)] out T? resource)
-        where T : class, IVulkanResourceGeneration
-    {
-        if (!TryGet(values, isValid, value, generation, out resource))
+        internal bool TryGet(bool isValid, ulong value, uint generation, [NotNullWhen(true)] out T? resource)
         {
-            return false;
+            resource = null;
+            if (!isValid || !_values.TryGetValue(value, out var candidate) || candidate.Generation != generation)
+            {
+                return false;
+            }
+
+            resource = candidate;
+            return true;
         }
 
-        values.Remove(value);
-        return true;
+        internal bool TryRemove(bool isValid, ulong value, uint generation, [NotNullWhen(true)] out T? resource)
+        {
+            if (!TryGet(isValid, value, generation, out resource))
+            {
+                return false;
+            }
+
+            _values.Remove(value);
+            return true;
+        }
+
+        internal void Clear() => _values.Clear();
     }
 }
 

@@ -40,9 +40,18 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal static GraphResource OwnedBuffer(BufferAllocation allocation, RenderBufferDescription description) => new() { IsBuffer = true, Buffer = new PersistentBuffer(allocation, description, 0), Owns = true };
         internal void Dispose(VulkanRenderSession session)
         {
-            if (!Owns) return;
-            if (IsBuffer && Buffer is not null) session.DeferTransient(Buffer.Allocation, Buffer.Description);
-            if (IsTexture && Texture is not null) session.DeferTransient(Texture, TextureDescription);
+            if (!Owns)
+            {
+                return;
+            }
+            if (IsBuffer && Buffer is not null)
+            {
+                session.DeferTransient(Buffer.Allocation, Buffer.Description);
+            }
+            if (IsTexture && Texture is not null)
+            {
+                session.DeferTransient(Texture, TextureDescription);
+            }
             Buffer = null;
             Texture = null;
             Image = default;
@@ -55,30 +64,69 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal static ResourceState For(RenderResourceAccess access, RenderPipelineStages stages)
         {
             var stage = PipelineStageFlags.TopOfPipeBit;
-            if (stages.HasFlag(RenderPipelineStages.Transfer)) stage |= PipelineStageFlags.TransferBit;
-            if (stages.HasFlag(RenderPipelineStages.Vertex)) stage |= PipelineStageFlags.VertexShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.Fragment)) stage |= PipelineStageFlags.FragmentShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.Compute)) stage |= PipelineStageFlags.ComputeShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.ColorOutput)) stage |= PipelineStageFlags.ColorAttachmentOutputBit;
+            if (stages.HasFlag(RenderPipelineStages.Transfer))
+            {
+                stage |= PipelineStageFlags.TransferBit;
+            }
+            if (stages.HasFlag(RenderPipelineStages.Vertex))
+            {
+                stage |= PipelineStageFlags.VertexShaderBit;
+            }
+            if (stages.HasFlag(RenderPipelineStages.Fragment))
+            {
+                stage |= PipelineStageFlags.FragmentShaderBit;
+            }
+            if (stages.HasFlag(RenderPipelineStages.Compute))
+            {
+                stage |= PipelineStageFlags.ComputeShaderBit;
+            }
+            if (stages.HasFlag(RenderPipelineStages.ColorOutput))
+            {
+                stage |= PipelineStageFlags.ColorAttachmentOutputBit;
+            }
             var hasTransfer = stages.HasFlag(RenderPipelineStages.Transfer);
             var hasShader = stages.HasFlag(RenderPipelineStages.Vertex) || stages.HasFlag(RenderPipelineStages.Fragment) || stages.HasFlag(RenderPipelineStages.Compute);
             var hasColor = stages.HasFlag(RenderPipelineStages.ColorOutput);
             var hasDepth = stages.HasFlag(RenderPipelineStages.DepthStencil);
-            if (hasDepth) stage |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+            if (hasDepth)
+            {
+                stage |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+            }
 
             var accessFlags = AccessFlags.None;
             if (access.HasFlag(RenderResourceAccess.Read))
             {
-                if (hasTransfer) accessFlags |= AccessFlags.TransferReadBit;
-                if (hasShader) accessFlags |= AccessFlags.ShaderReadBit;
-                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentReadBit;
+                if (hasTransfer)
+                {
+                    accessFlags |= AccessFlags.TransferReadBit;
+                }
+                if (hasShader)
+                {
+                    accessFlags |= AccessFlags.ShaderReadBit;
+                }
+                if (hasDepth)
+                {
+                    accessFlags |= AccessFlags.DepthStencilAttachmentReadBit;
+                }
             }
             if (access.HasFlag(RenderResourceAccess.Write))
             {
-                if (hasTransfer) accessFlags |= AccessFlags.TransferWriteBit;
-                if (hasShader) accessFlags |= AccessFlags.ShaderWriteBit;
-                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentWriteBit;
-                if (hasColor) accessFlags |= AccessFlags.ColorAttachmentWriteBit;
+                if (hasTransfer)
+                {
+                    accessFlags |= AccessFlags.TransferWriteBit;
+                }
+                if (hasShader)
+                {
+                    accessFlags |= AccessFlags.ShaderWriteBit;
+                }
+                if (hasDepth)
+                {
+                    accessFlags |= AccessFlags.DepthStencilAttachmentWriteBit;
+                }
+                if (hasColor)
+                {
+                    accessFlags |= AccessFlags.ColorAttachmentWriteBit;
+                }
             }
 
             var layout = hasColor ? ImageLayout.ColorAttachmentOptimal : hasDepth ? ImageLayout.DepthStencilAttachmentOptimal : hasTransfer ? (access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.TransferDstOptimal : ImageLayout.TransferSrcOptimal) : access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal;

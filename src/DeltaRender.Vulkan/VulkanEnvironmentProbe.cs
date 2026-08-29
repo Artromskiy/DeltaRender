@@ -15,16 +15,15 @@ public static unsafe class VulkanEnvironmentProbe
         try
         {
             var vk = Vk.GetApi();
-            byte* appName = (byte*)SilkMarshal.StringToPtr("DeltaRender");
-            byte* engineName = (byte*)SilkMarshal.StringToPtr("DeltaRender");
+            byte* name = (byte*)SilkMarshal.StringToPtr("DeltaRender");
             try
             {
                 ApplicationInfo appInfo = new()
                 {
                     SType = StructureType.ApplicationInfo,
                     PNext = null,
-                    PApplicationName = appName,
-                    PEngineName = engineName,
+                    PApplicationName = name,
+                    PEngineName = name,
                     ApplicationVersion = Vk.MakeVersion(0, 0, 0),
                     EngineVersion = Vk.MakeVersion(0, 0, 0),
                     ApiVersion = Vk.Version13
@@ -54,14 +53,9 @@ public static unsafe class VulkanEnvironmentProbe
             }
             finally
             {
-                if (appName != null)
+                if (name != null)
                 {
-                    SilkMarshal.Free((nint)appName);
-                }
-
-                if (engineName != null)
-                {
-                    SilkMarshal.Free((nint)engineName);
+                    SilkMarshal.Free((nint)name);
                 }
             }
         }

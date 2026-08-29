@@ -19,8 +19,7 @@ public static class UiPanel
     [Interstage]
     public struct VertexOutput
     {
-        [Position]
-        public float4 Position;
+        public Position Position;
 
     }
 
@@ -62,7 +61,7 @@ public static class UiPanel
         var clip = new float2(
             pixel.x / context.Constants.Resolution.x * 2f - 1f,
             1f - pixel.y / context.Constants.Resolution.y * 2f);
-        return new VertexOutput { Position = new float4(clip.x, clip.y, 0f, 1f) };
+        return new VertexOutput { Position = new Position(new float4(clip.x, clip.y, 0f, 1f)) };
     }
 
     [FragmentShader]

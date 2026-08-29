@@ -18,6 +18,9 @@ internal abstract unsafe class VulkanCommandContext(VulkanRenderGraph graph, Vul
 
     public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0)
         => Graph.PushConstants(Pipeline, data, offset);
+
+    protected void BindPipeline()
+        => Graph.Bind(Pipeline);
 }
 
 internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
@@ -33,6 +36,75 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         var value = new Rect2D { Offset = new Offset2D(scissor.X, scissor.Y), Extent = new Extent2D((uint)scissor.Width, (uint)scissor.Height) };
         session.Api.CmdSetScissor(session.CommandBuffer, 0, 1, &value);
     }
+
+    internal void BindPipeline(PipelineBindPoint bindPoint, Pipeline pipeline)
+        => session.Api.CmdBindPipeline(session.CommandBuffer, bindPoint, pipeline);
+
+    internal unsafe void BindDescriptorSets(
+        PipelineBindPoint bindPoint,
+        PipelineLayout layout,
+        ReadOnlySpan<DescriptorSet> descriptorSets)
+    {
+        fixed (DescriptorSet* descriptorSetPointer = descriptorSets)
+        {
+            session.Api.CmdBindDescriptorSets(
+                session.CommandBuffer,
+                bindPoint,
+                layout,
+                0,
+                (uint)descriptorSets.Length,
+                descriptorSetPointer,
+                0,
+                null);
+        }
+    }
+
+    internal void EndRenderPass()
+        => session.Api.CmdEndRenderPass(session.CommandBuffer);
+
+    internal unsafe void BeginRenderPass(RenderPass renderPass, Framebuffer framebuffer, Extent2D extent, ClearValue* clearValues, uint clearValueCount)
+    {
+        var begin = new RenderPassBeginInfo
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = renderPass,
+            Framebuffer = framebuffer,
+            RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = extent },
+            ClearValueCount = clearValueCount,
+            PClearValues = clearValues,
+        };
+        session.Api.CmdBeginRenderPass(session.CommandBuffer, &begin, SubpassContents.Inline);
+    }
+
+    internal unsafe void PushConstants(PipelineLayout layout, ShaderStageFlags stageFlags, ReadOnlySpan<byte> data, uint offset)
+    {
+        fixed (byte* pointer = data)
+        {
+            session.Api.CmdPushConstants(session.CommandBuffer, layout, stageFlags, offset, (uint)data.Length, pointer);
+        }
+    }
+
+    internal void PipelineBarrier(
+        PipelineStageFlags sourceStage,
+        PipelineStageFlags destinationStage,
+        ReadOnlySpan<BufferMemoryBarrier> buffers,
+        ReadOnlySpan<ImageMemoryBarrier> images)
+        => session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, buffers, images);
+
+    internal unsafe void PipelineBarrier(PipelineStageFlags sourceStage, PipelineStageFlags destinationStage, in BufferMemoryBarrier barrier)
+    {
+        var value = barrier;
+        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, new ReadOnlySpan<BufferMemoryBarrier>(&value, 1), ReadOnlySpan<ImageMemoryBarrier>.Empty);
+    }
+
+    internal unsafe void PipelineBarrier(PipelineStageFlags sourceStage, PipelineStageFlags destinationStage, in ImageMemoryBarrier barrier)
+    {
+        var value = barrier;
+        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, ReadOnlySpan<BufferMemoryBarrier>.Empty, new ReadOnlySpan<ImageMemoryBarrier>(&value, 1));
+    }
+
+    internal unsafe void CopyImageToBuffer(Image source, ImageLayout layout, Silk.NET.Vulkan.Buffer destination, BufferImageCopy copy)
+        => session.Api.CmdCopyImageToBuffer(session.CommandBuffer, source, layout, destination, 1, &copy);
 
     internal void BindVertexBuffer(uint binding, Silk.NET.Vulkan.Buffer buffer, ulong offset)
         => session.Api.CmdBindVertexBuffers(session.CommandBuffer, binding, 1, &buffer, &offset);
@@ -70,18 +142,18 @@ internal sealed unsafe partial class VulkanRenderGraph
 internal sealed unsafe class VulkanRasterCommandContext(VulkanRenderGraph graph, VulkanRenderGraph.VulkanGraphPipeline? pipeline)
     : VulkanCommandContext(graph, pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.")), IRasterCommandContext
 {
-    public void SetViewport(in RenderViewport viewport) { if (!viewport.IsValid) throw new ArgumentException("Viewport is invalid.", nameof(viewport)); Graph.CommandWriter.SetViewport(viewport); }
-    public void SetScissor(in PixelRect scissor) { if (scissor.IsEmpty) throw new ArgumentException("Scissor is empty.", nameof(scissor)); Graph.CommandWriter.SetScissor(scissor); }
+    public void SetViewport(in RenderViewport viewport) { if (!viewport.IsValid) { throw new ArgumentException("Viewport is invalid.", nameof(viewport)); } Graph.CommandWriter.SetViewport(viewport); }
+    public void SetScissor(in PixelRect scissor) { if (scissor.IsEmpty) { throw new ArgumentException("Scissor is empty.", nameof(scissor)); } Graph.CommandWriter.SetScissor(scissor); }
     public void BindVertexBuffer(uint binding, RenderGraphBufferHandle buffer, ulong offset = 0) { var native = Graph.ResolveBufferAllocation(buffer).Buffer; Graph.CommandWriter.BindVertexBuffer(binding, native, offset); }
-    public void BindIndexBuffer(RenderGraphBufferHandle buffer, IndexElementFormat format, ulong offset = 0) { Graph.Bind(Pipeline); Graph.CommandWriter.BindIndexBuffer(Graph.ResolveBufferAllocation(buffer).Buffer, format, offset); }
-    public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) { Graph.Bind(Pipeline); Graph.CommandWriter.Draw(vertexCount, instanceCount, firstVertex, firstInstance); }
-    public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0) { Graph.Bind(Pipeline); Graph.CommandWriter.DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); }
+    public void BindIndexBuffer(RenderGraphBufferHandle buffer, IndexElementFormat format, ulong offset = 0) { BindPipeline(); Graph.CommandWriter.BindIndexBuffer(Graph.ResolveBufferAllocation(buffer).Buffer, format, offset); }
+    public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) { BindPipeline(); Graph.CommandWriter.Draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+    public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0) { BindPipeline(); Graph.CommandWriter.DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); }
 }
 
 internal sealed unsafe class VulkanComputeCommandContext(VulkanRenderGraph graph, VulkanRenderGraph.VulkanGraphPipeline? pipeline)
     : VulkanCommandContext(graph, pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.")), IComputeCommandContext
 {
-    public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) { if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0) return; Graph.Bind(Pipeline); Graph.CommandWriter.Dispatch(groupCountX, groupCountY, groupCountZ); }
+    public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) { if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0) { return; } BindPipeline(); Graph.CommandWriter.Dispatch(groupCountX, groupCountY, groupCountZ); }
 }
 
 internal sealed unsafe class VulkanTransferCommandContext(VulkanRenderGraph graph) : ITransferCommandContext

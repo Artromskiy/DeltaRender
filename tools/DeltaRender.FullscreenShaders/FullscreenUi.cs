@@ -18,9 +18,8 @@ public static class FullscreenUi
     [Interstage]
     public struct UiVarying
     {
-        [Position]
-        public float4 Position;
-        public float2 Uv;
+        public Position Position;
+        public Uv0 Uv;
 
         public UiVarying()
         {
@@ -51,14 +50,14 @@ public static class FullscreenUi
         var vertexIndex = ShaderBuiltins.VertexIndex;
         if (vertexIndex == 0u)
         {
-            return new UiVarying { Position = new float4(-1f, -1f, 0f, 1f), Uv = new float2(0f, 0f) };
+            return new UiVarying { Position = new Position(new float4(-1f, -1f, 0f, 1f)), Uv = new float2(0f, 0f) };
         }
         if (vertexIndex == 1u)
         {
-            return new UiVarying { Position = new float4(3f, -1f, 0f, 1f), Uv = new float2(2f, 0f) };
+            return new UiVarying { Position = new Position(new float4(3f, -1f, 0f, 1f)), Uv = new float2(2f, 0f) };
         }
 
-        return new UiVarying { Position = new float4(-1f, 3f, 0f, 1f), Uv = new float2(0f, 2f) };
+        return new UiVarying { Position = new Position(new float4(-1f, 3f, 0f, 1f)), Uv = new float2(0f, 2f) };
     }
 
     [FragmentShader("fullscreen-ui")]

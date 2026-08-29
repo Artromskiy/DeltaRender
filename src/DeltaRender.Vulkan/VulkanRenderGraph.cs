@@ -53,15 +53,27 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public RenderGraphExecutionResult Execute()
     {
         ThrowIfDisposed();
-        if (!_built) throw new InvalidOperationException("A render graph must be built before Execute.");
+        if (!_built)
+        {
+            throw new InvalidOperationException("A render graph must be built before Execute.");
+        }
+
         if (_order.Length == 0)
         {
             _built = false;
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.NoWork, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
         }
 
-        if (!_session.BeginGraphFrame()) return Failed();
-        if (_states.Length < _resources.Count) _states = new ResourceState[_resources.Count];
+        if (!_session.BeginGraphFrame())
+        {
+            return Failed();
+        }
+
+        if (_states.Length < _resources.Count)
+        {
+            _states = new ResourceState[_resources.Count];
+        }
+
         Array.Clear(_states, 0, _resources.Count);
         var states = _states;
         var rasterActive = false;
@@ -87,7 +99,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 {
                     if (rasterActive)
                     {
-                        _session.Api.CmdEndRenderPass(_session.CommandBuffer);
+                        CommandWriter.EndRenderPass();
                         rasterActive = false;
                     }
 
@@ -106,9 +118,17 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 UpdateStates(pass, states);
             }
 
-            if (rasterActive) _session.Api.CmdEndRenderPass(_session.CommandBuffer);
+            if (rasterActive)
+            {
+                CommandWriter.EndRenderPass();
+            }
+
             RecordReadbacks(states);
-            if (!_session.EndGraphFrame()) return Failed();
+            if (!_session.EndGraphFrame())
+            {
+                return Failed();
+            }
+
             _built = false;
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.Submitted, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
         }
@@ -122,15 +142,31 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination)
     {
         ThrowIfDisposed();
-        if (!readback.IsValid || readback.Value > (uint)_readbacks.Count) throw new ArgumentException("The readback handle is invalid.", nameof(readback));
+        if (!readback.IsValid || readback.Value > (uint)_readbacks.Count)
+        {
+            throw new ArgumentException("The readback handle is invalid.", nameof(readback));
+        }
+
         var request = _readbacks[(int)readback.Value - 1];
-        if (!request.Submitted) throw new InvalidOperationException("The readback is not associated with a submitted graph.");
-        if (destination.Length < request.Size) throw new ArgumentException($"The destination requires at least {request.Size} bytes.", nameof(destination));
+        if (!request.Submitted)
+        {
+            throw new InvalidOperationException("The readback is not associated with a submitted graph.");
+        }
+
+        if (destination.Length < request.Size)
+        {
+            throw new ArgumentException($"The destination requires at least {request.Size} bytes.", nameof(destination));
+        }
+
         _session.WaitForReadback();
         var staging = _session.StagingBuffer;
         void* pointer = null;
         var mapped = _session.Api.MapMemory(_session.Device, staging.Memory, request.StagingOffset, (ulong)request.Size, 0, &pointer);
-        if (mapped != Result.Success) throw new InvalidOperationException($"MapMemory(readback) failed: {mapped}");
+        if (mapped != Result.Success)
+        {
+            throw new InvalidOperationException($"MapMemory(readback) failed: {mapped}");
+        }
+
         try
         {
             new ReadOnlySpan<byte>(pointer, request.Size).CopyTo(destination);
@@ -157,7 +193,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal void DisposeGraph()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         ResetBuild();
         _disposed = true;
     }
@@ -165,35 +205,55 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public RenderGraphTextureHandle ImportTarget(RenderTargetHandle target)
     {
         ThrowIfMutable();
-        if (!_session.HasTarget || target != _session.Target) throw new InvalidOperationException("The target handle does not belong to this session.");
+        if (!_session.HasTarget || target != _session.Target)
+        {
+            throw new InvalidOperationException("The target handle does not belong to this session.");
+        }
+
         return new RenderGraphTextureHandle(AddResource(GraphResource.Target()));
     }
 
     public RenderGraphTextureHandle ImportTexture(RenderTextureHandle texture)
     {
         ThrowIfMutable();
-        if (!_session.TryGetTexture(texture, out var value)) throw new InvalidOperationException("The texture handle is unknown or stale.");
+        if (!_session.TryGetTexture(texture, out var value))
+        {
+            throw new InvalidOperationException("The texture handle is unknown or stale.");
+        }
+
         return new RenderGraphTextureHandle(AddResource(GraphResource.FromTexture(value)));
     }
 
     public RenderGraphBufferHandle ImportBuffer(RenderBufferHandle buffer)
     {
         ThrowIfMutable();
-        if (!_session.TryGetBuffer(buffer, out var value)) throw new InvalidOperationException("The buffer handle is unknown or stale.");
+        if (!_session.TryGetBuffer(buffer, out var value))
+        {
+            throw new InvalidOperationException("The buffer handle is unknown or stale.");
+        }
+
         return new RenderGraphBufferHandle(AddResource(GraphResource.FromBuffer(value)));
     }
 
     public RenderGraphTextureHandle CreateTexture(in RenderTextureDescription description)
     {
         ThrowIfMutable();
-        if (!description.IsValid) throw new ArgumentException("The transient texture description is invalid.", nameof(description));
+        if (!description.IsValid)
+        {
+            throw new ArgumentException("The transient texture description is invalid.", nameof(description));
+        }
+
         return new RenderGraphTextureHandle(AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description), description)));
     }
 
     public RenderGraphBufferHandle CreateBuffer(in RenderBufferDescription description)
     {
         ThrowIfMutable();
-        if (!description.IsValid) throw new ArgumentException("The transient buffer description is invalid.", nameof(description));
+        if (!description.IsValid)
+        {
+            throw new ArgumentException("The transient buffer description is invalid.", nameof(description));
+        }
+
         var allocation = _session.CreateTransientBuffer(description);
         return new RenderGraphBufferHandle(AddResource(GraphResource.OwnedBuffer(allocation, description)));
     }
@@ -202,7 +262,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         ThrowIfMutable();
         ArgumentNullException.ThrowIfNull(pass);
-        if (!_session.HasTarget) throw new InvalidOperationException("Raster passes require a graphics target.");
+        if (!_session.HasTarget)
+        {
+            throw new InvalidOperationException("Raster passes require a graphics target.");
+        }
+
         var pipeline = _session.GetOrCreateRasterPipeline(description.Pipeline);
 
         _passes.Add(new GraphPass(description.Name, PassKind.Raster, pipeline)
@@ -235,9 +299,17 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public void UseColorAttachment(RenderGraphPassHandle pass, uint index, in ColorAttachmentDescription attachment)
     {
         var graphPass = GetPass(pass);
-        if (graphPass.Kind != PassKind.Raster || index != 0) throw new NotSupportedException("Only color attachment index zero is supported.");
+        if (graphPass.Kind != PassKind.Raster || index != 0)
+        {
+            throw new NotSupportedException("Only color attachment index zero is supported.");
+        }
+
         var resource = GetTexture(attachment.Texture);
-        if (!resource.IsTarget) throw new NotSupportedException("Only the session-owned target can be a color attachment.");
+        if (!resource.IsTarget)
+        {
+            throw new NotSupportedException("Only the session-owned target can be a color attachment.");
+        }
+
         graphPass.Color = attachment;
         AddUse(graphPass, resource, RenderResourceAccess.Write, RenderPipelineStages.ColorOutput);
     }
@@ -245,7 +317,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public void UseDepthStencilAttachment(RenderGraphPassHandle pass, in DepthStencilAttachmentDescription attachment)
     {
         var graphPass = GetPass(pass);
-        if (graphPass.Kind != PassKind.Raster) throw new InvalidOperationException("Depth-stencil attachments can only be used by raster passes.");
+        if (graphPass.Kind != PassKind.Raster)
+        {
+            throw new InvalidOperationException("Depth-stencil attachments can only be used by raster passes.");
+        }
 
         var resource = GetTexture(attachment.Texture);
         var texture = resource.Texture ?? throw new InvalidOperationException("The depth-stencil attachment must reference a registered texture.");
@@ -283,7 +358,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         ThrowIfMutable();
         var resource = GetBuffer(buffer);
         var allocation = resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable.");
-        if (range.IsEmpty || range.Offset > allocation.AllocationSize || range.SizeInBytes > allocation.AllocationSize - range.Offset || range.SizeInBytes > int.MaxValue) throw new ArgumentException("The readback range is outside the buffer.", nameof(range));
+        if (range.IsEmpty || range.Offset > allocation.AllocationSize || range.SizeInBytes > allocation.AllocationSize - range.Offset || range.SizeInBytes > int.MaxValue)
+        {
+            throw new ArgumentException("The readback range is outside the buffer.", nameof(range));
+        }
+
         _readbacks.Add(new ReadbackRequest(resource, checked((int)range.SizeInBytes), range.Offset));
         return new RenderGraphReadbackHandle((uint)_readbacks.Count);
     }
@@ -325,8 +404,12 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal void PushConstants(VulkanGraphPipeline pipeline, ReadOnlySpan<byte> data, uint offset)
     {
-        if (data.Length == 0 || checked(offset + (uint)data.Length) > pipeline.PushConstantSize) throw new ArgumentException("Push constants exceed the pipeline ABI.", nameof(data));
-        fixed (byte* pointer = data) _session.Api.CmdPushConstants(_session.CommandBuffer, pipeline.Layout, pipeline.StageFlags, offset, (uint)data.Length, pointer);
+        if (data.Length == 0 || checked(offset + (uint)data.Length) > pipeline.PushConstantSize)
+        {
+            throw new ArgumentException("Push constants exceed the pipeline ABI.", nameof(data));
+        }
+
+        CommandWriter.PushConstants(pipeline.Layout, pipeline.StageFlags, data, offset);
     }
 
     internal BufferAllocation StagingBuffer => _session.StagingBuffer;
@@ -361,7 +444,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 }
                 };
                 var previousStages = states[request.Resource.Index].Stages;
-                _session.Api.CmdPipelineBarrier(_session.CommandBuffer, previousStages == 0 ? PipelineStageFlags.TopOfPipeBit : previousStages, PipelineStageFlags.TransferBit, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, ReadOnlySpan<BufferMemoryBarrier>.Empty, new[] { imageBarrier });
+                CommandWriter.PipelineBarrier(previousStages == 0 ? PipelineStageFlags.TopOfPipeBit : previousStages, PipelineStageFlags.TransferBit, in imageBarrier);
                 var copy = new BufferImageCopy
                 {
                     BufferOffset = offset,
@@ -371,20 +454,20 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     ImageOffset = new Offset3D(request.Region.X, request.Region.Y, 0),
                     ImageExtent = new Extent3D((uint)request.Region.Width, (uint)request.Region.Height, 1)
                 };
-                _session.Api.CmdCopyImageToBuffer(_session.CommandBuffer, image, ImageLayout.TransferSrcOptimal, staging.Buffer, 1, &copy);
+                CommandWriter.CopyImageToBuffer(image, ImageLayout.TransferSrcOptimal, staging.Buffer, copy);
             }
             else
             {
                 var buffer = request.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The buffer readback resource is unavailable.");
                 var previous = states[request.Resource.Index];
                 var sourceBarrier = new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = AccessFlags.TransferReadBit, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = buffer.Buffer, Offset = request.SourceOffset, Size = (ulong)request.Size };
-                _session.Api.CmdPipelineBarrier(_session.CommandBuffer, previous.Stages == 0 ? PipelineStageFlags.TopOfPipeBit : previous.Stages, PipelineStageFlags.TransferBit, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, new[] { sourceBarrier }, ReadOnlySpan<ImageMemoryBarrier>.Empty);
+                CommandWriter.PipelineBarrier(previous.Stages == 0 ? PipelineStageFlags.TopOfPipeBit : previous.Stages, PipelineStageFlags.TransferBit, in sourceBarrier);
                 var copy = new BufferCopy { SrcOffset = request.SourceOffset, DstOffset = offset, Size = (ulong)request.Size };
                 _session.Api.CmdCopyBuffer(_session.CommandBuffer, buffer.Buffer, staging.Buffer, 1, &copy);
             }
 
             var hostBarrier = new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = AccessFlags.TransferWriteBit, DstAccessMask = AccessFlags.HostReadBit, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = staging.Buffer, Offset = offset, Size = (ulong)request.Size };
-            _session.Api.CmdPipelineBarrier(_session.CommandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, new[] { hostBarrier }, ReadOnlySpan<ImageMemoryBarrier>.Empty);
+            CommandWriter.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, in hostBarrier);
         }
     }
 
@@ -404,8 +487,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             clearValueCount = 2;
         }
 
-        var begin = new RenderPassBeginInfo { SType = StructureType.RenderPassBeginInfo, RenderPass = _session.GraphRenderPass, Framebuffer = _session.GraphFramebuffer, RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _session.GraphExtent }, ClearValueCount = clearValueCount, PClearValues = clearValues };
-        _session.Api.CmdBeginRenderPass(_session.CommandBuffer, &begin, SubpassContents.Inline);
+        CommandWriter.BeginRenderPass(_session.GraphRenderPass, _session.GraphFramebuffer, _session.GraphExtent, clearValues, clearValueCount);
     }
 
     private void EmitBarriers(GraphPass pass, ResourceState[] states)
@@ -429,13 +511,16 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         if (buffers.Count != 0 || images.Count != 0)
         {
-            _session.Api.CmdPipelineBarrier(_session.CommandBuffer, PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
+            CommandWriter.PipelineBarrier(PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
         }
     }
 
     private static void UpdateStates(GraphPass pass, ResourceState[] states)
     {
-        foreach (var use in pass.Uses) states[use.Resource.Index] = ResourceState.For(use.Access, use.Stages);
+        foreach (var use in pass.Uses)
+        {
+            states[use.Resource.Index] = ResourceState.For(use.Access, use.Stages);
+        }
     }
 
     private int[] CompileOrder()
@@ -445,36 +530,72 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var lastWriter = new int[_resources.Count];
         var readers = new List<int>[_resources.Count];
         Array.Fill(lastWriter, -1);
-        for (var i = 0; i < edges.Length; i++) edges[i] = new HashSet<int>();
-        for (var i = 0; i < readers.Length; i++) readers[i] = new List<int>();
+        for (var i = 0; i < edges.Length; i++)
+        {
+            edges[i] = new HashSet<int>();
+        }
+
+        for (var i = 0; i < readers.Length; i++)
+        {
+            readers[i] = new List<int>();
+        }
+
         for (var passIndex = 0; passIndex < _passes.Count; passIndex++)
         {
             foreach (var use in _passes[passIndex].Uses)
             {
                 var resource = use.Resource.Index;
-                if (lastWriter[resource] >= 0) AddEdge(lastWriter[resource], passIndex, edges, indegree);
+                if (lastWriter[resource] >= 0)
+                {
+                    AddEdge(lastWriter[resource], passIndex, edges, indegree);
+                }
+
                 if (use.Access.HasFlag(RenderResourceAccess.Write))
                 {
-                    foreach (var reader in readers[resource]) AddEdge(reader, passIndex, edges, indegree);
+                    foreach (var reader in readers[resource])
+                    {
+                        AddEdge(reader, passIndex, edges, indegree);
+                    }
+
                     readers[resource].Clear();
                     lastWriter[resource] = passIndex;
                 }
-                else if (use.Access.HasFlag(RenderResourceAccess.Read)) readers[resource].Add(passIndex);
+                else if (use.Access.HasFlag(RenderResourceAccess.Read))
+                {
+                    readers[resource].Add(passIndex);
+                }
             }
         }
 
         var ready = new Queue<int>();
-        for (var i = 0; i < indegree.Length; i++) if (indegree[i] == 0) ready.Enqueue(i);
+        for (var i = 0; i < indegree.Length; i++)
+        {
+            if (indegree[i] == 0)
+            {
+                ready.Enqueue(i);
+            }
+        }
+
         var order = new int[_passes.Count];
         var count = 0;
         while (ready.Count != 0)
         {
             var current = ready.Dequeue();
             order[count++] = current;
-            foreach (var next in edges[current]) if (--indegree[next] == 0) ready.Enqueue(next);
+            foreach (var next in edges[current])
+            {
+                if (--indegree[next] == 0)
+                {
+                    ready.Enqueue(next);
+                }
+            }
         }
 
-        if (count != order.Length) throw new InvalidOperationException("Render graph contains a dependency cycle.");
+        if (count != order.Length)
+        {
+            throw new InvalidOperationException("Render graph contains a dependency cycle.");
+        }
+
         return order;
     }
 
@@ -486,16 +607,27 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         {
             if (_passes[index].Kind == PassKind.Raster)
             {
-                if (closed) throw new InvalidOperationException("Raster passes must form one contiguous render-pass segment.");
+                if (closed)
+                {
+                    throw new InvalidOperationException("Raster passes must form one contiguous render-pass segment.");
+                }
+
                 seen = true;
             }
-            else if (seen) closed = true;
+            else if (seen)
+            {
+                closed = true;
+            }
         }
     }
 
     private void ResetBuild()
     {
-        foreach (var resource in _resources) resource.Dispose(_session);
+        foreach (var resource in _resources)
+        {
+            resource.Dispose(_session);
+        }
+
         _resources.Clear();
         _passes.Clear();
         _readbacks.Clear();
@@ -527,7 +659,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         foreach (var pass in _passes)
         {
-            if (pass.Kind != PassKind.Raster) continue;
+            if (pass.Kind != PassKind.Raster)
+            {
+                continue;
+            }
+
             if (pass.PipelineDescription is not { } pipeline)
             {
                 throw new InvalidOperationException($"Raster pass '{pass.Name}' has no pipeline description.");
@@ -546,14 +682,98 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         _resources.Add(resource);
         return (uint)_resources.Count;
     }
-    private GraphResource GetTexture(RenderGraphTextureHandle handle) { if (!handle.IsValid || handle.Value > (uint)_resources.Count || !_resources[(int)handle.Value - 1].IsTexture) throw new ArgumentException("The graph texture handle is invalid.", nameof(handle)); return _resources[(int)handle.Value - 1]; }
-    private GraphResource GetBuffer(RenderGraphBufferHandle handle) { if (!handle.IsValid || handle.Value > (uint)_resources.Count || !_resources[(int)handle.Value - 1].IsBuffer) throw new ArgumentException("The graph buffer handle is invalid.", nameof(handle)); return _resources[(int)handle.Value - 1]; }
-    private GraphPass GetPass(RenderGraphPassHandle handle) { if (!handle.IsValid || handle.Value > (uint)_passes.Count) throw new ArgumentException("The graph pass handle is invalid.", nameof(handle)); return _passes[(int)handle.Value - 1]; }
-    private static void AddUse(GraphPass pass, GraphResource resource, RenderResourceAccess access, RenderPipelineStages stages) { if (access == RenderResourceAccess.None || stages == RenderPipelineStages.None) throw new ArgumentException("A graph use requires non-empty access and stages."); pass.Uses.Add(new GraphUse(resource, access, stages)); }
-    private void ThrowIfMutable() { ThrowIfDisposed(); if (_built) throw new InvalidOperationException("Graph is not mutable after a successful Build."); }
+    private GraphResource GetTexture(RenderGraphTextureHandle handle)
+        => GetResource(handle.IsValid, handle.Value, expectedTexture: true, "texture", nameof(handle));
+
+    private GraphResource GetBuffer(RenderGraphBufferHandle handle)
+        => GetResource(handle.IsValid, handle.Value, expectedTexture: false, "buffer", nameof(handle));
+
+    private GraphResource GetResource(bool isValid, uint value, bool expectedTexture, string resourceKind, string parameterName)
+    {
+        if (!isValid || value == 0 || value > (uint)_resources.Count)
+        {
+            throw new ArgumentException($"The graph {resourceKind} handle is invalid.", parameterName);
+        }
+
+        var resource = _resources[(int)value - 1];
+        if (resource.IsTexture != expectedTexture)
+        {
+            throw new ArgumentException($"The graph {resourceKind} handle is invalid.", parameterName);
+        }
+
+        return resource;
+    }
+
+    private GraphPass GetPass(RenderGraphPassHandle handle)
+    {
+        if (!handle.IsValid || handle.Value > (uint)_passes.Count)
+        {
+            throw new ArgumentException("The graph pass handle is invalid.", nameof(handle));
+        }
+        return _passes[(int)handle.Value - 1];
+    }
+
+    private static void AddUse(GraphPass pass, GraphResource resource, RenderResourceAccess access, RenderPipelineStages stages)
+    {
+        if (access == RenderResourceAccess.None || stages == RenderPipelineStages.None)
+        {
+            throw new ArgumentException("A graph use requires non-empty access and stages.");
+        }
+        pass.Uses.Add(new GraphUse(resource, access, stages));
+    }
+
+    private void ThrowIfMutable()
+    {
+        ThrowIfDisposed();
+        if (_built)
+        {
+            throw new InvalidOperationException("Graph is not mutable after a successful Build.");
+        }
+    }
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
-    private static void AddEdge(int from, int to, HashSet<int>[] edges, int[] indegree) { if (from != to && edges[from].Add(to)) indegree[to]++; }
-    private static BufferUsageFlags ToBufferUsage(RenderBufferUsage usage) { var result = BufferUsageFlags.None; if (usage.HasFlag(RenderBufferUsage.Vertex)) result |= BufferUsageFlags.VertexBufferBit; if (usage.HasFlag(RenderBufferUsage.Index)) result |= BufferUsageFlags.IndexBufferBit; if (usage.HasFlag(RenderBufferUsage.Uniform)) result |= BufferUsageFlags.UniformBufferBit; if (usage.HasFlag(RenderBufferUsage.Storage)) result |= BufferUsageFlags.StorageBufferBit; if (usage.HasFlag(RenderBufferUsage.Indirect)) result |= BufferUsageFlags.IndirectBufferBit; if (usage.HasFlag(RenderBufferUsage.TransferSource)) result |= BufferUsageFlags.TransferSrcBit; if (usage.HasFlag(RenderBufferUsage.TransferDestination)) result |= BufferUsageFlags.TransferDstBit; return result; }
+
+    private static void AddEdge(int from, int to, HashSet<int>[] edges, int[] indegree)
+    {
+        if (from != to && edges[from].Add(to))
+        {
+            indegree[to]++;
+        }
+    }
+
+    private static BufferUsageFlags ToBufferUsage(RenderBufferUsage usage)
+    {
+        var result = BufferUsageFlags.None;
+        if (usage.HasFlag(RenderBufferUsage.Vertex))
+        {
+            result |= BufferUsageFlags.VertexBufferBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.Index))
+        {
+            result |= BufferUsageFlags.IndexBufferBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.Uniform))
+        {
+            result |= BufferUsageFlags.UniformBufferBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.Storage))
+        {
+            result |= BufferUsageFlags.StorageBufferBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.Indirect))
+        {
+            result |= BufferUsageFlags.IndirectBufferBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.TransferSource))
+        {
+            result |= BufferUsageFlags.TransferSrcBit;
+        }
+        if (usage.HasFlag(RenderBufferUsage.TransferDestination))
+        {
+            result |= BufferUsageFlags.TransferDstBit;
+        }
+        return result;
+    }
     private static RenderGraphExecutionResult Failed()
         => new(RenderGraphExecutionStatus.Failed, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
 

@@ -121,8 +121,16 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private void ReclaimDeferredTransients()
     {
-        foreach (var texture in _deferredTextures) _transientTextures.Return(texture.Key, texture.Texture);
-        foreach (var allocation in _deferredBuffers) _transientBuffers.Return(allocation.Key, allocation.Allocation);
+        foreach (var texture in _deferredTextures)
+        {
+            _transientTextures.Return(texture.Key, texture.Texture);
+        }
+
+        foreach (var allocation in _deferredBuffers)
+        {
+            _transientBuffers.Return(allocation.Key, allocation.Allocation);
+        }
+
         _deferredTextures.Clear();
         _deferredBuffers.Clear();
     }
@@ -140,8 +148,15 @@ internal sealed unsafe partial class VulkanRenderSession
 
     internal void DestroyAllocation(BufferAllocation allocation)
     {
-        if (allocation.Buffer.Handle != default) Api.DestroyBuffer(Device, allocation.Buffer, null);
-        if (allocation.Memory.Handle != default) Api.FreeMemory(Device, allocation.Memory, null);
+        if (allocation.Buffer.Handle != default)
+        {
+            Api.DestroyBuffer(Device, allocation.Buffer, null);
+        }
+
+        if (allocation.Memory.Handle != default)
+        {
+            Api.FreeMemory(Device, allocation.Memory, null);
+        }
     }
 
     internal uint FindMemoryType(uint typeBits, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
@@ -149,38 +164,102 @@ internal sealed unsafe partial class VulkanRenderSession
         uint fallback = uint.MaxValue;
         for (uint index = 0; index < MemoryProperties.MemoryTypeCount; index++)
         {
-            if ((typeBits & (1u << (int)index)) == 0) continue;
+            if ((typeBits & (1u << (int)index)) == 0)
+            {
+                continue;
+            }
+
             var flags = MemoryProperties.MemoryTypes[(int)index].PropertyFlags;
-            if (!flags.HasFlag(required)) continue;
-            if (flags.HasFlag(preferred)) return index;
+            if (!flags.HasFlag(required))
+            {
+                continue;
+            }
+
+            if (flags.HasFlag(preferred))
+            {
+                return index;
+            }
+
             fallback = index;
         }
 
-        if (fallback != uint.MaxValue) return fallback;
+        if (fallback != uint.MaxValue)
+        {
+            return fallback;
+        }
+
         throw new InvalidOperationException($"No Vulkan memory type satisfies {required}.");
     }
 
     private static BufferUsageFlags ToVulkanBufferUsage(RenderBufferUsage usage)
     {
         var result = BufferUsageFlags.None;
-        if (usage.HasFlag(RenderBufferUsage.Vertex)) result |= BufferUsageFlags.VertexBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Index)) result |= BufferUsageFlags.IndexBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Uniform)) result |= BufferUsageFlags.UniformBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Storage)) result |= BufferUsageFlags.StorageBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Indirect)) result |= BufferUsageFlags.IndirectBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.TransferSource)) result |= BufferUsageFlags.TransferSrcBit;
-        if (usage.HasFlag(RenderBufferUsage.TransferDestination)) result |= BufferUsageFlags.TransferDstBit;
+        if (usage.HasFlag(RenderBufferUsage.Vertex))
+        {
+            result |= BufferUsageFlags.VertexBufferBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.Index))
+        {
+            result |= BufferUsageFlags.IndexBufferBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.Uniform))
+        {
+            result |= BufferUsageFlags.UniformBufferBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.Storage))
+        {
+            result |= BufferUsageFlags.StorageBufferBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.Indirect))
+        {
+            result |= BufferUsageFlags.IndirectBufferBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.TransferSource))
+        {
+            result |= BufferUsageFlags.TransferSrcBit;
+        }
+
+        if (usage.HasFlag(RenderBufferUsage.TransferDestination))
+        {
+            result |= BufferUsageFlags.TransferDstBit;
+        }
+
         return result;
     }
 
     private static ImageUsageFlags ToVulkanImageUsage(RenderTextureUsage usage)
     {
         var result = ImageUsageFlags.SampledBit;
-        if (usage.HasFlag(RenderTextureUsage.Storage)) result |= ImageUsageFlags.StorageBit;
-        if (usage.HasFlag(RenderTextureUsage.ColorAttachment)) result |= ImageUsageFlags.ColorAttachmentBit;
-        if (usage.HasFlag(RenderTextureUsage.DepthStencilAttachment)) result |= ImageUsageFlags.DepthStencilAttachmentBit;
-        if (usage.HasFlag(RenderTextureUsage.TransferSource)) result |= ImageUsageFlags.TransferSrcBit;
-        if (usage.HasFlag(RenderTextureUsage.TransferDestination)) result |= ImageUsageFlags.TransferDstBit;
+        if (usage.HasFlag(RenderTextureUsage.Storage))
+        {
+            result |= ImageUsageFlags.StorageBit;
+        }
+
+        if (usage.HasFlag(RenderTextureUsage.ColorAttachment))
+        {
+            result |= ImageUsageFlags.ColorAttachmentBit;
+        }
+
+        if (usage.HasFlag(RenderTextureUsage.DepthStencilAttachment))
+        {
+            result |= ImageUsageFlags.DepthStencilAttachmentBit;
+        }
+
+        if (usage.HasFlag(RenderTextureUsage.TransferSource))
+        {
+            result |= ImageUsageFlags.TransferSrcBit;
+        }
+
+        if (usage.HasFlag(RenderTextureUsage.TransferDestination))
+        {
+            result |= ImageUsageFlags.TransferDstBit;
+        }
+
         return result;
     }
 
@@ -200,17 +279,26 @@ internal sealed unsafe partial class VulkanRenderSession
         }
         catch
         {
-            if (view.Handle != default) Api.DestroyImageView(Device, view, null);
-            if (memory.Handle != default) Api.FreeMemory(Device, memory, null);
-            Api.DestroyImage(Device, image, null);
+            DestroyTexture(new PersistentTexture(image, memory, view, format, new Extent2D(description.Width, description.Height), 0) { Usage = description.Usage });
             throw;
         }
     }
 
     internal void DestroyTexture(PersistentTexture texture)
     {
-        if (texture.View.Handle != default) Api.DestroyImageView(Device, texture.View, null);
-        if (texture.Image.Handle != default) Api.DestroyImage(Device, texture.Image, null);
-        if (texture.Memory.Handle != default) Api.FreeMemory(Device, texture.Memory, null);
+        if (texture.View.Handle != default)
+        {
+            Api.DestroyImageView(Device, texture.View, null);
+        }
+
+        if (texture.Image.Handle != default)
+        {
+            Api.DestroyImage(Device, texture.Image, null);
+        }
+
+        if (texture.Memory.Handle != default)
+        {
+            Api.FreeMemory(Device, texture.Memory, null);
+        }
     }
 }

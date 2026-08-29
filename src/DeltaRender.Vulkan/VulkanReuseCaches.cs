@@ -2,7 +2,9 @@ using System.Collections.Generic;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed class VulkanPipelineCache<TKey, TValue> where TKey : notnull
+internal sealed class VulkanPipelineCache<TKey, TValue>
+    where TKey : notnull
+    where TValue : notnull
 {
     private readonly Dictionary<TKey, TValue> _values;
 
@@ -37,7 +39,9 @@ internal sealed class VulkanPipelineCache<TKey, TValue> where TKey : notnull
     internal void Clear() => _values.Clear();
 }
 
-internal sealed class VulkanTransientResourcePool<TKey, TValue> where TKey : notnull
+internal sealed class VulkanTransientResourcePool<TKey, TValue>
+    where TKey : notnull
+    where TValue : notnull
 {
     private readonly Dictionary<TKey, List<TValue>> _free = new();
     private readonly HashSet<TValue> _inPool = new();

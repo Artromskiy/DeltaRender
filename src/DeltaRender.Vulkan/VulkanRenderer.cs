@@ -173,14 +173,22 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return VulkanRenderSession.CreateCompute(this);
     }
 
-    internal Queue GetGraphicsQueue() => _graphicsQueue;
-    internal Queue GetPresentQueue() => _presentQueue;
-    internal uint GetGraphicsFamily() => _graphicsFamily;
-    internal uint GetPresentFamily() => _presentFamily;
-    internal PhysicalDevice GetPhysicalDevice() => _physicalDevice;
-    internal KhrSurface GetKhrSurface() => SurfaceExtension;
+    internal VulkanDeviceContext GetDeviceContext(bool windowed)
+    {
+        var graphicsQueue = _graphicsQueue;
+        var graphicsFamily = _graphicsFamily;
+        return new VulkanDeviceContext(
+            Api,
+            _physicalDevice,
+            Device,
+            Api.GetPhysicalDeviceMemoryProperties(_physicalDevice),
+            graphicsQueue,
+            windowed ? _presentQueue : graphicsQueue,
+            graphicsFamily,
+            windowed ? _presentFamily : graphicsFamily);
+    }
+
     internal KhrSwapchain GetKhrSwapchain() => SwapchainExtension;
-    internal Device GetDevice() => Device;
 
     private void InitializeForWindow(IVulkanWindowSurfaceSource surfaceSource, RenderDiagnosticBag diagnostics)
     {
@@ -453,25 +461,37 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     private unsafe bool TryGetGraphicsQueueFamily(PhysicalDevice physicalDevice, out uint graphicsFamily)
     {
         graphicsFamily = uint.MaxValue;
-        uint queueFamilyCount = 0;
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, null);
-        if (queueFamilyCount == 0)
+        var families = GetQueueFamilyProperties(physicalDevice);
+        if (families.Length == 0)
         {
             return false;
         }
 
-        var families = new QueueFamilyProperties[(int)queueFamilyCount];
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families);
-        for (uint i = 0; i < queueFamilyCount; i++)
+        for (var i = 0; i < families.Length; i++)
         {
-            if (families[(int)i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+            if (families[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
             {
-                graphicsFamily = i;
+                graphicsFamily = (uint)i;
                 return true;
             }
         }
 
         return false;
+    }
+
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
+    private unsafe QueueFamilyProperties[] GetQueueFamilyProperties(PhysicalDevice physicalDevice)
+    {
+        uint queueFamilyCount = 0;
+        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, null);
+        if (queueFamilyCount == 0)
+        {
+            return Array.Empty<QueueFamilyProperties>();
+        }
+
+        var families = new QueueFamilyProperties[(int)queueFamilyCount];
+        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families);
+        return families;
     }
 
     [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
@@ -487,26 +507,22 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             return false;
         }
 
-        uint queueFamilyCount = 0;
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, null);
-        if (queueFamilyCount == 0)
+        var queueFamilies = GetQueueFamilyProperties(physicalDevice);
+        if (queueFamilies.Length == 0)
         {
             return false;
         }
 
-        var queueFamilies = new QueueFamilyProperties[(int)queueFamilyCount];
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies);
-
         bool hasGraphics = false;
         bool hasPresent = false;
-        for (uint i = 0; i < queueFamilyCount; i++)
+        for (var i = 0; i < queueFamilies.Length; i++)
         {
-            if (!hasGraphics && queueFamilies[(int)i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+            if (!hasGraphics && queueFamilies[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
             {
                 hasGraphics = true;
             }
 
-            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(physicalDevice, i, surface, out var canPresent);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(physicalDevice, (uint)i, surface, out var canPresent);
             if (!hasPresent && canPresent)
             {
                 hasPresent = true;
@@ -575,31 +591,27 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             return false;
         }
 
-        uint queueFamilyCount = 0;
-        Api.GetPhysicalDeviceQueueFamilyProperties(_physicalDevice, &queueFamilyCount, null);
-        if (queueFamilyCount == 0)
+        var families = GetQueueFamilyProperties(_physicalDevice);
+        if (families.Length == 0)
         {
             diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", "No queue families were reported.");
             return false;
         }
 
-        var families = new QueueFamilyProperties[(int)queueFamilyCount];
-        Api.GetPhysicalDeviceQueueFamilyProperties(_physicalDevice, &queueFamilyCount, families);
-
         uint graphicsFamily = uint.MaxValue;
         uint presentFamily = uint.MaxValue;
 
-        for (uint i = 0; i < queueFamilyCount; i++)
+        for (var i = 0; i < families.Length; i++)
         {
-            if (families[(int)i].QueueFlags.HasFlag(QueueFlags.GraphicsBit) && graphicsFamily == uint.MaxValue)
+            if (families[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit) && graphicsFamily == uint.MaxValue)
             {
-                graphicsFamily = i;
+                graphicsFamily = (uint)i;
             }
 
-            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(_physicalDevice, i, surface, out var canPresent);
+            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(_physicalDevice, (uint)i, surface, out var canPresent);
             if (canPresent && presentFamily == uint.MaxValue)
             {
-                presentFamily = i;
+                presentFamily = (uint)i;
             }
         }
 
@@ -612,64 +624,22 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         _graphicsFamily = graphicsFamily;
         _presentFamily = presentFamily;
 
-        var queueFamilies = graphicsFamily == presentFamily
-            ? new[] { graphicsFamily }
-            : new[] { graphicsFamily, presentFamily };
-
-        var queuePriorities = new float[queueFamilies.Length];
-        for (var i = 0; i < queuePriorities.Length; i++)
-        {
-            queuePriorities[i] = 1.0f;
-        }
-
         var deviceExtensions = new List<string> { KhrSwapchain.ExtensionName };
-        if (DeviceSupportsSwapchainExtensions(_physicalDevice, "VK_KHR_portability_subset"))
+        AddPortabilitySubsetExtensionIfSupported(deviceExtensions, diagnostics);
+
+        if (!TryCreateLogicalDevice(
+                _physicalDevice,
+                graphicsFamily,
+                presentFamily,
+                includePresentFamily: true,
+                deviceExtensions.ToArray(),
+                diagnostics,
+                out var device))
         {
-            deviceExtensions.Add("VK_KHR_portability_subset");
-            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-PORTABILITY", "VK_KHR_portability_subset enabled on the selected device.");
+            return false;
         }
 
-        var queueCreateInfos = new DeviceQueueCreateInfo[queueFamilies.Length];
-        fixed (float* pQueuePriority = queuePriorities)
-        {
-            for (var i = 0; i < queueFamilies.Length; i++)
-            {
-                queueCreateInfos[i] = new DeviceQueueCreateInfo
-                {
-                    SType = StructureType.DeviceQueueCreateInfo,
-                    QueueFamilyIndex = queueFamilies[i],
-                    QueueCount = 1,
-                    PQueuePriorities = pQueuePriority + i
-                };
-            }
-
-            fixed (DeviceQueueCreateInfo* pQueueCreateInfos = queueCreateInfos)
-            {
-                DeviceCreateInfo createInfo = new()
-                {
-                    SType = StructureType.DeviceCreateInfo,
-                    QueueCreateInfoCount = (uint)queueCreateInfos.Length,
-                    PQueueCreateInfos = pQueueCreateInfos,
-                    PEnabledFeatures = null,
-                    EnabledExtensionCount = (uint)deviceExtensions.Count,
-                    PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(deviceExtensions.ToArray()),
-                    EnabledLayerCount = 0,
-                    Flags = 0,
-                };
-
-                var result = Api.CreateDevice(_physicalDevice, createInfo, null, out var device);
-                SilkMarshal.Free((nint)createInfo.PpEnabledExtensionNames);
-
-                if (result != Result.Success)
-                {
-                    diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"CreateDevice failed: {result}");
-                    return false;
-                }
-
-                Device = device;
-            }
-        }
-
+        Device = device;
         _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
         _presentQueue = Api.GetDeviceQueue(Device, _presentFamily, 0);
 
@@ -686,46 +656,100 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             return false;
         }
 
-        var queuePriority = 1f;
-        var queueCreateInfo = new DeviceQueueCreateInfo
-        {
-            SType = StructureType.DeviceQueueCreateInfo,
-            QueueFamilyIndex = _graphicsFamily,
-            QueueCount = 1,
-            PQueuePriorities = &queuePriority
-        };
-
         var deviceExtensions = new List<string>();
-        if (DeviceSupportsSwapchainExtensions(_physicalDevice, "VK_KHR_portability_subset"))
+        AddPortabilitySubsetExtensionIfSupported(deviceExtensions, diagnostics);
+
+        if (!TryCreateLogicalDevice(
+                _physicalDevice,
+                _graphicsFamily,
+                _graphicsFamily,
+                includePresentFamily: false,
+                deviceExtensions.ToArray(),
+                diagnostics,
+                out var device))
         {
-            deviceExtensions.Add("VK_KHR_portability_subset");
-            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-PORTABILITY", "VK_KHR_portability_subset enabled on the selected headless device.");
+            return false;
         }
 
-        var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(deviceExtensions.ToArray());
+        Device = device;
+        _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
+        _presentQueue = _graphicsQueue;
+        diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Headless logical device created.");
+        return true;
+    }
+
+    private void AddPortabilitySubsetExtensionIfSupported(List<string> deviceExtensions, RenderDiagnosticBag diagnostics)
+    {
+        const string portabilitySubsetExtension = "VK_KHR_portability_subset";
+        if (!DeviceSupportsSwapchainExtensions(_physicalDevice, portabilitySubsetExtension))
+        {
+            return;
+        }
+
+        deviceExtensions.Add(portabilitySubsetExtension);
+        diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-PORTABILITY", "VK_KHR_portability_subset enabled on the selected device.");
+    }
+
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family pointers and native extension arrays that the analyzer cannot model.")]
+    private unsafe bool TryCreateLogicalDevice(
+        PhysicalDevice physicalDevice,
+        uint graphicsFamily,
+        uint presentFamily,
+        bool includePresentFamily,
+        string[] deviceExtensions,
+        RenderDiagnosticBag diagnostics,
+        out Device device)
+    {
+        device = default;
+        Span<uint> queueFamilies = stackalloc uint[2];
+        queueFamilies[0] = graphicsFamily;
+        var queueFamilyCount = 1;
+        if (includePresentFamily && presentFamily != graphicsFamily)
+        {
+            queueFamilies[queueFamilyCount++] = presentFamily;
+        }
+
+        var queuePriorities = new float[queueFamilyCount];
+        Array.Fill(queuePriorities, 1.0f);
+        var queueCreateInfos = new DeviceQueueCreateInfo[queueFamilyCount];
+        var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(deviceExtensions);
         try
         {
-            var createInfo = new DeviceCreateInfo
+            fixed (float* priorityPointer = queuePriorities)
+            fixed (DeviceQueueCreateInfo* queueCreateInfoPointer = queueCreateInfos)
             {
-                SType = StructureType.DeviceCreateInfo,
-                QueueCreateInfoCount = 1,
-                PQueueCreateInfos = &queueCreateInfo,
-                PEnabledFeatures = null,
-                EnabledExtensionCount = (uint)deviceExtensions.Count,
-                PpEnabledExtensionNames = extensionPointers,
-                EnabledLayerCount = 0,
-                PpEnabledLayerNames = null,
-                Flags = 0
-            };
+                for (var i = 0; i < queueFamilyCount; i++)
+                {
+                    queueCreateInfos[i] = new DeviceQueueCreateInfo
+                    {
+                        SType = StructureType.DeviceQueueCreateInfo,
+                        QueueFamilyIndex = queueFamilies[i],
+                        QueueCount = 1,
+                        PQueuePriorities = priorityPointer + i,
+                    };
+                }
 
-            var result = Api.CreateDevice(_physicalDevice, createInfo, null, out var device);
-            if (result != Result.Success)
-            {
+                var createInfo = new DeviceCreateInfo
+                {
+                    SType = StructureType.DeviceCreateInfo,
+                    QueueCreateInfoCount = (uint)queueFamilyCount,
+                    PQueueCreateInfos = queueCreateInfoPointer,
+                    PEnabledFeatures = null,
+                    EnabledExtensionCount = (uint)deviceExtensions.Length,
+                    PpEnabledExtensionNames = extensionPointers,
+                    EnabledLayerCount = 0,
+                    Flags = 0,
+                };
+                var result = Api.CreateDevice(physicalDevice, createInfo, null, out device);
+                if (result == Result.Success)
+                {
+                    return true;
+                }
+
                 diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"CreateDevice failed: {result}");
+                device = default;
                 return false;
             }
-
-            Device = device;
         }
         finally
         {
@@ -734,11 +758,6 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 SilkMarshal.Free((nint)extensionPointers);
             }
         }
-
-        _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
-        _presentQueue = _graphicsQueue;
-        diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Headless logical device created.");
-        return true;
     }
 
     [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface format and present-mode counts through unsafe out pointers that the analyzer cannot model.")]

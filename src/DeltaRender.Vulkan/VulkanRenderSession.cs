@@ -19,6 +19,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly bool _windowed;
     private readonly bool _hasTarget;
     private readonly KhrSwapchain? _swapchainExtension;
+    private readonly PhysicalDevice _physicalDevice;
     private readonly Queue _graphicsQueue;
     private readonly Queue _presentQueue;
     private readonly Device _device;
@@ -69,12 +70,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _windowed = windowed;
         _hasTarget = true;
         _surface = surfaceLease is null ? default : new SurfaceKHR { Handle = surfaceLease.Handle };
-        _device = renderer.GetDevice();
-        _graphicsQueue = renderer.GetGraphicsQueue();
-        _presentQueue = renderer.GetPresentQueue();
-        _graphicsFamily = renderer.GetGraphicsFamily();
-        _presentFamily = renderer.GetPresentFamily();
-        _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+        var deviceContext = renderer.GetDeviceContext(windowed);
+        _physicalDevice = deviceContext.PhysicalDevice;
+        _device = deviceContext.Device;
+        _graphicsQueue = deviceContext.GraphicsQueue;
+        _presentQueue = deviceContext.PresentQueue;
+        _graphicsFamily = deviceContext.GraphicsFamily;
+        _presentFamily = deviceContext.PresentFamily;
+        _memoryProperties = deviceContext.MemoryProperties;
         _extent = new Extent2D(Math.Max(1u, metrics.Width), Math.Max(1u, metrics.Height));
 
         RenderPass renderPass = default;
@@ -111,9 +114,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 headless = CreateHeadlessTarget(_extent, renderPass);
             }
 
-            VulkanCall.Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out fence), "CreateFence");
-            VulkanCall.Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out commandPool), "CreateCommandPool");
-            VulkanCall.Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out commandBuffer), "AllocateCommandBuffer");
+            var commandResources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
+            fence = commandResources.Fence;
+            commandPool = commandResources.CommandPool;
+            commandBuffer = commandResources.CommandBuffer;
 
             _renderPass = renderPass;
             _commandPool = commandPool;
@@ -145,26 +149,59 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _windowed = false;
         _surfaceLease = null;
         _surface = default;
-        _device = renderer.GetDevice();
-        _graphicsQueue = renderer.GetGraphicsQueue();
-        _presentQueue = _graphicsQueue;
-        _graphicsFamily = renderer.GetGraphicsFamily();
-        _presentFamily = _graphicsFamily;
-        _memoryProperties = renderer.Api.GetPhysicalDeviceMemoryProperties(renderer.GetPhysicalDevice());
+        var deviceContext = renderer.GetDeviceContext(windowed: false);
+        _physicalDevice = deviceContext.PhysicalDevice;
+        _device = deviceContext.Device;
+        _graphicsQueue = deviceContext.GraphicsQueue;
+        _presentQueue = deviceContext.PresentQueue;
+        _graphicsFamily = deviceContext.GraphicsFamily;
+        _presentFamily = deviceContext.PresentFamily;
+        _memoryProperties = deviceContext.MemoryProperties;
         _format = Format.R8G8B8A8Unorm;
         _renderPass = default;
         _swapchainExtension = null;
 
-        VulkanCall.Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out _frameFence), "CreateFence");
-        VulkanCall.Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out _commandPool), "CreateCommandPool");
+        var commandResources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
+        _frameFence = commandResources.Fence;
+        _commandPool = commandResources.CommandPool;
+        _commandBuffer = commandResources.CommandBuffer;
+    }
+
+    private static (Fence Fence, CommandPool CommandPool, CommandBuffer CommandBuffer) CreateCommandResources(Vk api, Device device, uint graphicsFamily)
+    {
+        Fence fence = default;
+        CommandPool commandPool = default;
+        CommandBuffer commandBuffer = default;
         try
         {
-            VulkanCall.Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = _commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out _commandBuffer), "AllocateCommandBuffer");
+            VulkanCall.Ensure(api.CreateFence(device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out fence), "CreateFence");
+            VulkanCall.Ensure(api.CreateCommandPool(device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out commandPool), "CreateCommandPool");
+            VulkanCall.Ensure(api.AllocateCommandBuffers(device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out commandBuffer), "AllocateCommandBuffer");
+            return (fence, commandPool, commandBuffer);
         }
         catch
         {
-            renderer.Api.DestroyCommandPool(_device, _commandPool, null);
+            DestroyCommandResources(api, device, fence, commandPool, commandBuffer);
             throw;
+        }
+    }
+
+    private static unsafe void DestroyCommandResources(Vk api, Device device, Fence fence, CommandPool commandPool, CommandBuffer commandBuffer)
+    {
+        if (commandBuffer.Handle != default && commandPool.Handle != default)
+        {
+            var value = commandBuffer;
+            api.FreeCommandBuffers(device, commandPool, 1, &value);
+        }
+
+        if (commandPool.Handle != default)
+        {
+            api.DestroyCommandPool(device, commandPool, null);
+        }
+
+        if (fence.Handle != default)
+        {
+            api.DestroyFence(device, fence, null);
         }
     }
 
@@ -191,7 +228,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            var limits = _renderer.Api.GetPhysicalDeviceProperties(_renderer.GetPhysicalDevice()).Limits;
+            var limits = Api.GetPhysicalDeviceProperties(_physicalDevice).Limits;
             return new RenderDeviceCapabilities(
                 limits.MaxStorageBufferRange,
                 limits.MinStorageBufferOffsetAlignment,
@@ -284,9 +321,9 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     public void Release(RenderSamplerHandle sampler)
     {
-        if (_resources.TryRemoveSampler(sampler, out var resource) && resource.Sampler.Handle != default)
+        if (_resources.TryRemoveSampler(sampler, out var resource))
         {
-            _renderer.Api.DestroySampler(_device, resource.Sampler, null);
+            DestroySampler(resource);
         }
     }
 
@@ -329,7 +366,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     internal Vk Api => _renderer.Api;
     internal Device Device => _device;
-    internal PhysicalDevice PhysicalDevice => _renderer.GetPhysicalDevice();
+    internal PhysicalDevice PhysicalDevice => _physicalDevice;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
     internal Queue GraphicsQueue => _graphicsQueue;
     internal Queue PresentQueue => _presentQueue;
@@ -349,13 +386,21 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_hasTarget)
         {
-            if (texture is not null) throw new InvalidOperationException("A compute-only session cannot configure a depth-stencil attachment.");
+            if (texture is not null)
+            {
+                throw new InvalidOperationException("A compute-only session cannot configure a depth-stencil attachment.");
+            }
+
             return;
         }
 
         var depthTexture = texture;
         var hasAttachment = depthTexture is not null;
-        if (!hasAttachment && !_hasDepthStencilAttachment) return;
+        if (!hasAttachment && !_hasDepthStencilAttachment)
+        {
+            return;
+        }
+
         if (hasAttachment)
         {
             if (depthTexture is null || depthTexture.View.Handle == default || depthTexture.Image.Handle == default)
@@ -420,7 +465,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         catch
         {
             DestroySwapchainViews(Api, Device, nextViews, nextFramebuffers);
-            if (nextTargetFramebuffer.Handle != default) Api.DestroyFramebuffer(Device, nextTargetFramebuffer, null);
+            if (nextTargetFramebuffer.Handle != default)
+            {
+                Api.DestroyFramebuffer(Device, nextTargetFramebuffer, null);
+            }
+
             Api.DestroyRenderPass(Device, nextRenderPass, null);
             throw;
         }
@@ -435,7 +484,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             Api.DestroyFramebuffer(Device, _targetFramebuffer, null);
         }
 
-        if (_renderPass.Handle != default) Api.DestroyRenderPass(Device, _renderPass, null);
+        if (_renderPass.Handle != default)
+        {
+            Api.DestroyRenderPass(Device, _renderPass, null);
+        }
+
         _renderPass = nextRenderPass;
         _swapchainViews = nextViews;
         _swapchainFramebuffers = nextFramebuffers;
@@ -461,7 +514,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private void DestroyRasterPipelines()
     {
-        foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(this);
+        foreach (var pipeline in _rasterPipelines.Values)
+        {
+            pipeline.Dispose(this);
+        }
+
         _rasterPipelines.Clear();
     }
 
@@ -469,27 +526,22 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         => _computePipelines.GetOrCreate(artifact, () => VulkanRenderGraph.VulkanGraphPipeline.CreateCompute(this, artifact));
 
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
-    {
-        buffer = null;
-        return _resources.TryGetBuffer(handle, out buffer);
-    }
+        => _resources.TryGetBuffer(handle, out buffer);
 
     internal bool TryGetTexture(RenderTextureHandle handle, [NotNullWhen(true)] out PersistentTexture? texture)
-    {
-        texture = null;
-        return _resources.TryGetTexture(handle, out texture);
-    }
+        => _resources.TryGetTexture(handle, out texture);
 
-    internal bool TryGetSampler(RenderSamplerHandle handle, out PersistentSampler? sampler)
-    {
-        sampler = null;
-        return _resources.TryGetSampler(handle, out sampler);
-    }
+    internal bool TryGetSampler(RenderSamplerHandle handle, [NotNullWhen(true)] out PersistentSampler? sampler)
+        => _resources.TryGetSampler(handle, out sampler);
 
     internal bool BeginGraphFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_recording) return false;
+        if (_recording)
+        {
+            return false;
+        }
+
         WaitForFrame();
         ReclaimDeferredTransients();
         _stagingCursor = 0;
@@ -497,20 +549,35 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
             var result = swapchainExtension.AcquireNextImage(Device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref _activeImage);
-            if (result is not Result.Success and not Result.SuboptimalKhr) return false;
-            if (_activeImage >= (uint)_swapchainFramebuffers.Length) throw new InvalidOperationException("Vulkan returned an invalid swapchain image index.");
+            if (result is not Result.Success and not Result.SuboptimalKhr)
+            {
+                return false;
+            }
+
+            if (_activeImage >= (uint)_swapchainFramebuffers.Length)
+            {
+                throw new InvalidOperationException("Vulkan returned an invalid swapchain image index.");
+            }
         }
 
         VulkanCall.Ensure(Api.ResetCommandBuffer(_commandBuffer, 0), "ResetCommandBuffer");
         var begin = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
-        if (Api.BeginCommandBuffer(_commandBuffer, begin) != Result.Success) return false;
+        if (Api.BeginCommandBuffer(_commandBuffer, begin) != Result.Success)
+        {
+            return false;
+        }
+
         _recording = true;
         return true;
     }
 
     internal bool EndGraphFrame()
     {
-        if (!_recording) return false;
+        if (!_recording)
+        {
+            return false;
+        }
+
         try
         {
             VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
@@ -528,7 +595,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
                 var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
                 var result = swapchainExtension.QueuePresent(_presentQueue, present);
-                if (result is not Result.Success and not Result.SuboptimalKhr and not Result.ErrorOutOfDateKhr) throw new InvalidOperationException($"QueuePresent failed: {result}.");
+                if (result is not Result.Success and not Result.SuboptimalKhr and not Result.ErrorOutOfDateKhr)
+                {
+                    throw new InvalidOperationException($"QueuePresent failed: {result}.");
+                }
             }
             else
             {
@@ -599,7 +669,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     public ValueTask DisposeAsync()
     {
-        if (_disposed) return ValueTask.CompletedTask;
+        if (_disposed)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _graph?.DisposeGraph();
         _disposed = true;
         Api.DeviceWaitIdle(Device);
@@ -616,14 +690,42 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         ReclaimDeferredTransients();
         _transientTextures.Drain(DestroyTexture);
         _transientBuffers.Drain(DestroyAllocation);
-        foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(this);
-        foreach (var pipeline in _computePipelines.Values) pipeline.Dispose(this);
+        foreach (var pipeline in _rasterPipelines.Values)
+        {
+            pipeline.Dispose(this);
+        }
+
+        foreach (var pipeline in _computePipelines.Values)
+        {
+            pipeline.Dispose(this);
+        }
+
         _rasterPipelines.Clear();
         _computePipelines.Clear();
-        foreach (var item in _resources.Samplers) if (item.Sampler.Handle != default) Api.DestroySampler(Device, item.Sampler, null);
-        foreach (var item in _resources.Textures) DestroyTexture(item);
-        foreach (var item in _resources.Buffers) DestroyAllocation(item.Allocation);
+        foreach (var item in _resources.Samplers)
+        {
+            DestroySampler(item);
+        }
+
+        foreach (var item in _resources.Textures)
+        {
+            DestroyTexture(item);
+        }
+
+        foreach (var item in _resources.Buffers)
+        {
+            DestroyAllocation(item.Allocation);
+        }
+
         _resources.Clear();
+    }
+
+    private void DestroySampler(PersistentSampler sampler)
+    {
+        if (sampler.Sampler.Handle != default)
+        {
+            Api.DestroySampler(Device, sampler.Sampler, null);
+        }
     }
 
     private void DisposeStaging()
@@ -645,8 +747,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
                 swapchainExtension.DestroySwapchain(Device, _swapchain, null);
             }
-            if (_imageAvailable.Handle != default) Api.DestroySemaphore(Device, _imageAvailable, null);
-            if (_renderComplete.Handle != default) Api.DestroySemaphore(Device, _renderComplete, null);
+            DestroySemaphore(_imageAvailable);
+            DestroySemaphore(_renderComplete);
         }
         else if (_hasTarget)
         {
@@ -656,13 +758,31 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private void DisposeCommandResources()
     {
-        if (_frameFence.Handle != default) Api.DestroyFence(Device, _frameFence, null);
-        if (_commandBuffer.Handle != default) FreeCommandBuffer(_commandPool, _commandBuffer);
-        if (_commandPool.Handle != default) Api.DestroyCommandPool(Device, _commandPool, null);
-        if (_renderPass.Handle != default) Api.DestroyRenderPass(Device, _renderPass, null);
+        DestroyCommandResources(Api, Device, _frameFence, _commandPool, _commandBuffer);
+
+        if (_renderPass.Handle != default)
+        {
+            Api.DestroyRenderPass(Device, _renderPass, null);
+        }
     }
 
-    private uint NextGeneration() => _nextGeneration++ == 0 ? _nextGeneration++ : _nextGeneration - 1;
+    private void DestroySemaphore(Silk.NET.Vulkan.Semaphore semaphore)
+    {
+        if (semaphore.Handle != default)
+        {
+            Api.DestroySemaphore(Device, semaphore, null);
+        }
+    }
+
+    private uint NextGeneration()
+    {
+        if (_nextGeneration == 0)
+        {
+            _nextGeneration = 1;
+        }
+
+        return _nextGeneration++;
+    }
 
     private void EnsureStaging(ulong required)
     {

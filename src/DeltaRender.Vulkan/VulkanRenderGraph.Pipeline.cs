@@ -52,10 +52,7 @@ internal sealed unsafe partial class VulkanRenderGraph
 
             var resource = graph.ResolveBuffer(handle);
             var allocation = resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable.");
-            if (offset > allocation.AllocationSize)
-            {
-                throw new ArgumentOutOfRangeException(nameof(offset));
-            }
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(offset, allocation.AllocationSize, nameof(offset));
 
             var range = sizeInBytes == 0 ? allocation.AllocationSize - offset : sizeInBytes;
             if (range == 0 || range > allocation.AllocationSize - offset)
@@ -113,16 +110,13 @@ internal sealed unsafe partial class VulkanRenderGraph
                 }
             }
 
-            graph.Session.Api.CmdBindPipeline(graph.Session.CommandBuffer, BindPoint, Pipeline);
+            graph.CommandWriter.BindPipeline(BindPoint, Pipeline);
             if (_descriptorSets.Length == 0)
             {
                 return;
             }
 
-            fixed (DescriptorSet* descriptorSetPointer = _descriptorSets)
-            {
-                graph.Session.Api.CmdBindDescriptorSets(graph.Session.CommandBuffer, BindPoint, Layout, 0, (uint)_descriptorSets.Length, descriptorSetPointer, 0, null);
-            }
+            graph.CommandWriter.BindDescriptorSets(BindPoint, Layout, _descriptorSets);
         }
 
         private int FindBinding(ShaderBinding binding)
@@ -141,7 +135,11 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal static VulkanGraphPipeline CreateCompute(VulkanRenderSession session, IShaderArtifact artifact)
         {
             ArgumentNullException.ThrowIfNull(artifact);
-            if (artifact.Stage != ShaderStage.Compute) throw new ArgumentException("A compute pipeline requires a compute artifact.", nameof(artifact));
+            if (artifact.Stage != ShaderStage.Compute)
+            {
+                throw new ArgumentException("A compute pipeline requires a compute artifact.", nameof(artifact));
+            }
+
             return CreateComputeCore(session, artifact);
         }
 
@@ -162,14 +160,9 @@ internal sealed unsafe partial class VulkanRenderGraph
             {
                 module = CreateShaderModule(session, artifact.Spirv);
                 var ranges = NativePushRanges(artifact.Abi.PushConstants, ShaderStageFlags.ComputeBit, out var size);
-                fixed (DescriptorSetLayout* layoutPointer = layouts)
-                fixed (PushConstantRange* pushPointer = ranges)
-                {
-                    var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = (uint)layouts.Length, PSetLayouts = layoutPointer, PushConstantRangeCount = (uint)ranges.Length, PPushConstantRanges = pushPointer };
-                    VulkanCall.Ensure(session.Api.CreatePipelineLayout(session.Device, info, null, out pipelineLayout), "CreatePipelineLayout(compute)");
-                }
+                pipelineLayout = CreatePipelineLayout(session, layouts, ranges, "CreatePipelineLayout(compute)");
 
-                var name = Encoding.UTF8.GetBytes(artifact.EntryPoint + "\0");
+                var name = EncodeEntryPoint(artifact.EntryPoint);
                 fixed (byte* namePointer = name)
                 {
                     var stage = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.ComputeBit, Module = module, PName = namePointer };
@@ -183,14 +176,12 @@ internal sealed unsafe partial class VulkanRenderGraph
             }
             catch
             {
-                if (pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, pipeline, null);
-                if (pipelineLayout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, pipelineLayout, null);
-                DestroyDescriptorState(session, layouts, pool);
+                DestroyPipelineState(session, pipeline, pipelineLayout, layouts, pool);
                 throw;
             }
             finally
             {
-                if (module.Handle != default) session.Api.DestroyShaderModule(session.Device, module, null);
+                DestroyShaderModule(session, module);
             }
         }
 
@@ -208,15 +199,10 @@ internal sealed unsafe partial class VulkanRenderGraph
                 vertex = CreateShaderModule(session, program.Vertex.Spirv);
                 fragment = CreateShaderModule(session, program.Fragment.Spirv);
                 var pushRanges = program.Vertex.Abi.PushConstants.Count > 0 ? NativePushRanges(program.Vertex.Abi.PushConstants, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, out var pushSize) : NativePushRanges(program.Fragment.Abi.PushConstants, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, out pushSize);
-                fixed (DescriptorSetLayout* layoutPointer = layouts)
-                fixed (PushConstantRange* pushPointer = pushRanges)
-                {
-                    var layoutInfo = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = (uint)layouts.Length, PSetLayouts = layoutPointer, PushConstantRangeCount = (uint)pushRanges.Length, PPushConstantRanges = pushPointer };
-                    VulkanCall.Ensure(session.Api.CreatePipelineLayout(session.Device, layoutInfo, null, out pipelineLayout), "CreatePipelineLayout(raster)");
-                }
+                pipelineLayout = CreatePipelineLayout(session, layouts, pushRanges, "CreatePipelineLayout(raster)");
 
-                var vertexName = Encoding.UTF8.GetBytes(program.Vertex.EntryPoint + "\0");
-                var fragmentName = Encoding.UTF8.GetBytes(program.Fragment.EntryPoint + "\0");
+                var vertexName = EncodeEntryPoint(program.Vertex.EntryPoint);
+                var fragmentName = EncodeEntryPoint(program.Fragment.EntryPoint);
                 var vertexBindings = CreateVertexBindings(program.Vertex.Abi.VertexBuffers);
                 var vertexAttributes = CreateVertexAttributes(program.Vertex.Abi.VertexInputs, program.Vertex.Abi.VertexBuffers);
                 fixed (byte* vertexPointer = vertexName)
@@ -263,24 +249,28 @@ internal sealed unsafe partial class VulkanRenderGraph
             }
             catch
             {
-                if (pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, pipeline, null);
-                if (pipelineLayout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, pipelineLayout, null);
-                DestroyDescriptorState(session, layouts, pool);
+                DestroyPipelineState(session, pipeline, pipelineLayout, layouts, pool);
                 throw;
             }
             finally
             {
-                if (vertex.Handle != default) session.Api.DestroyShaderModule(session.Device, vertex, null);
-                if (fragment.Handle != default) session.Api.DestroyShaderModule(session.Device, fragment, null);
+                DestroyShaderModule(session, vertex);
+                DestroyShaderModule(session, fragment);
             }
         }
 
         private static List<ShaderResourceBinding> MergeResources(IGraphicsShaderProgram program)
         {
             var resources = new List<ShaderResourceBinding>(program.Vertex.Abi.Resources);
+            var bindings = new HashSet<ShaderBinding>();
+            foreach (var resource in resources)
+            {
+                bindings.Add(resource.Binding);
+            }
+
             foreach (var resource in program.Fragment.Abi.Resources)
             {
-                if (!resources.Any(item => item.Binding == resource.Binding))
+                if (bindings.Add(resource.Binding))
                 {
                     resources.Add(resource);
                 }
@@ -388,12 +378,27 @@ internal sealed unsafe partial class VulkanRenderGraph
 
         internal void Dispose(VulkanRenderSession session)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
-            if (Pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, Pipeline, null);
-            if (Layout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, Layout, null);
+            if (Pipeline.Handle != default)
+            {
+                session.Api.DestroyPipeline(session.Device, Pipeline, null);
+            }
+
+            if (Layout.Handle != default)
+            {
+                session.Api.DestroyPipelineLayout(session.Device, Layout, null);
+            }
+
             DestroyDescriptorState(session, _layouts, _pool);
         }
+
+        private static byte[] EncodeEntryPoint(string entryPoint)
+            => Encoding.UTF8.GetBytes(entryPoint + "\0");
 
         private static ShaderModule CreateShaderModule(VulkanRenderSession session, ReadOnlySpan<byte> bytes)
         {
@@ -412,9 +417,17 @@ internal sealed unsafe partial class VulkanRenderGraph
             var result = new List<GraphBinding>(resources.Count);
             foreach (var resource in resources)
             {
-                if (resource.DescriptorCount != 1) throw new ArgumentException("The graph supports one descriptor per binding.");
+                if (resource.DescriptorCount != 1)
+                {
+                    throw new ArgumentException("The graph supports one descriptor per binding.");
+                }
+
                 maxSet = Math.Max(maxSet, checked((int)resource.Binding.Set));
-                if (result.Any(item => item.Binding == resource.Binding)) continue;
+                if (result.Any(item => item.Binding == resource.Binding))
+                {
+                    continue;
+                }
+
                 result.Add(new GraphBinding(resource.Binding, ToDescriptorType(resource.Kind), ToStageFlags(resource.Stages)));
             }
 
@@ -424,7 +437,11 @@ internal sealed unsafe partial class VulkanRenderGraph
         private static void CreateDescriptorState(VulkanRenderSession session, GraphBinding[] bindings, int maxSet, out DescriptorSetLayout[] layouts, out DescriptorPool pool, out DescriptorSet[] descriptorSets)
         {
             var setCount = maxSet + 1;
-            if (setCount > session.MaxBoundDescriptorSets) throw new InvalidOperationException("Shader descriptor sets exceed device limits.");
+            if (setCount > session.MaxBoundDescriptorSets)
+            {
+                throw new InvalidOperationException("Shader descriptor sets exceed device limits.");
+            }
+
             layouts = new DescriptorSetLayout[setCount];
             pool = default;
             descriptorSets = Array.Empty<DescriptorSet>();
@@ -465,10 +482,66 @@ internal sealed unsafe partial class VulkanRenderGraph
             }
         }
 
+        private static void DestroyPipelineState(
+            VulkanRenderSession session,
+            Pipeline pipeline,
+            PipelineLayout pipelineLayout,
+            DescriptorSetLayout[] layouts,
+            DescriptorPool pool)
+        {
+            if (pipeline.Handle != default)
+            {
+                session.Api.DestroyPipeline(session.Device, pipeline, null);
+            }
+
+            if (pipelineLayout.Handle != default)
+            {
+                session.Api.DestroyPipelineLayout(session.Device, pipelineLayout, null);
+            }
+
+            DestroyDescriptorState(session, layouts, pool);
+        }
+
+        private static void DestroyShaderModule(VulkanRenderSession session, ShaderModule module)
+        {
+            if (module.Handle != default)
+            {
+                session.Api.DestroyShaderModule(session.Device, module, null);
+            }
+        }
+
         private static void DestroyDescriptorState(VulkanRenderSession session, DescriptorSetLayout[] layouts, DescriptorPool pool)
         {
-            if (pool.Handle != default) session.Api.DestroyDescriptorPool(session.Device, pool, null);
-            for (var i = layouts.Length - 1; i >= 0; i--) if (layouts[i].Handle != default) session.Api.DestroyDescriptorSetLayout(session.Device, layouts[i], null);
+            if (pool.Handle != default)
+            {
+                session.Api.DestroyDescriptorPool(session.Device, pool, null);
+            }
+
+            for (var i = layouts.Length - 1; i >= 0; i--)
+            {
+                if (layouts[i].Handle != default)
+                {
+                    session.Api.DestroyDescriptorSetLayout(session.Device, layouts[i], null);
+                }
+            }
+        }
+
+        private static PipelineLayout CreatePipelineLayout(VulkanRenderSession session, DescriptorSetLayout[] layouts, PushConstantRange[] ranges, string operation)
+        {
+            fixed (DescriptorSetLayout* layoutPointer = layouts)
+            fixed (PushConstantRange* pushPointer = ranges)
+            {
+                var info = new PipelineLayoutCreateInfo
+                {
+                    SType = StructureType.PipelineLayoutCreateInfo,
+                    SetLayoutCount = (uint)layouts.Length,
+                    PSetLayouts = layoutPointer,
+                    PushConstantRangeCount = (uint)ranges.Length,
+                    PPushConstantRanges = pushPointer,
+                };
+                VulkanCall.Ensure(session.Api.CreatePipelineLayout(session.Device, info, null, out var pipelineLayout), operation);
+                return pipelineLayout;
+            }
         }
 
         private static PushConstantRange[] NativePushRanges(IReadOnlyList<ShaderPushConstantRange> ranges, ShaderStageFlags flags, out uint size)
@@ -478,7 +551,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         }
 
         private static uint GetPushSize(IReadOnlyList<ShaderPushConstantRange> ranges) => ranges.Count == 0 ? 0 : ranges.Max(range => checked(range.Offset + range.Size));
-        private static ShaderStageFlags ToStageFlags(ShaderStageMask stages) { var result = ShaderStageFlags.None; if (stages.HasFlag(ShaderStageMask.Compute)) result |= ShaderStageFlags.ComputeBit; if (stages.HasFlag(ShaderStageMask.Vertex)) result |= ShaderStageFlags.VertexBit; if (stages.HasFlag(ShaderStageMask.Fragment)) result |= ShaderStageFlags.FragmentBit; return result; }
+        private static ShaderStageFlags ToStageFlags(ShaderStageMask stages) { var result = ShaderStageFlags.None; if (stages.HasFlag(ShaderStageMask.Compute)) { result |= ShaderStageFlags.ComputeBit; } if (stages.HasFlag(ShaderStageMask.Vertex)) { result |= ShaderStageFlags.VertexBit; } if (stages.HasFlag(ShaderStageMask.Fragment)) { result |= ShaderStageFlags.FragmentBit; } return result; }
         private static DescriptorType ToDescriptorType(ShaderResourceKind kind) => kind switch { ShaderResourceKind.StorageBuffer => DescriptorType.StorageBuffer, ShaderResourceKind.UniformBuffer => DescriptorType.UniformBuffer, ShaderResourceKind.SampledTexture or ShaderResourceKind.CombinedTextureSampler => DescriptorType.CombinedImageSampler, _ => throw new ArgumentException("Unsupported shader resource kind.") };
         private static CompareOp ToCompareOp(RenderCompareOperation operation) => operation switch
         {

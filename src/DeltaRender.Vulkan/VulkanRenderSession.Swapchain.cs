@@ -12,7 +12,11 @@ internal sealed unsafe partial class VulkanRenderSession
     private void RecreateSwapchain(Extent2D extent)
     {
         var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
-        if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes)) throw new InvalidOperationException("The Vulkan surface no longer has swapchain support.");
+        if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
+        {
+            throw new InvalidOperationException("The Vulkan surface no longer has swapchain support.");
+        }
+
         DestroySwapchainViews(Api, Device, _swapchainViews, _swapchainFramebuffers);
         swapchainExtension.DestroySwapchain(Device, _swapchain, null);
         _format = ChooseSurfaceFormat(formats);
@@ -37,10 +41,7 @@ internal sealed unsafe partial class VulkanRenderSession
         }
         catch
         {
-            if (framebuffer.Handle != default) Api.DestroyFramebuffer(Device, framebuffer, null);
-            if (view.Handle != default) Api.DestroyImageView(Device, view, null);
-            if (memory.Handle != default) Api.FreeMemory(Device, memory, null);
-            Api.DestroyImage(Device, image, null);
+            DestroyHeadlessTarget(Api, Device, new HeadlessTarget(image, memory, view, framebuffer));
             throw;
         }
     }
@@ -52,31 +53,71 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private static void DestroyHeadlessTarget(Vk api, Device device, HeadlessTarget target)
     {
-        if (target.Framebuffer.Handle != default) api.DestroyFramebuffer(device, target.Framebuffer, null);
-        if (target.View.Handle != default) api.DestroyImageView(device, target.View, null);
-        if (target.Image.Handle != default) api.DestroyImage(device, target.Image, null);
-        if (target.Memory.Handle != default) api.FreeMemory(device, target.Memory, null);
+        if (target.Framebuffer.Handle != default)
+        {
+            api.DestroyFramebuffer(device, target.Framebuffer, null);
+        }
+
+        if (target.View.Handle != default)
+        {
+            api.DestroyImageView(device, target.View, null);
+        }
+
+        if (target.Image.Handle != default)
+        {
+            api.DestroyImage(device, target.Image, null);
+        }
+
+        if (target.Memory.Handle != default)
+        {
+            api.FreeMemory(device, target.Memory, null);
+        }
     }
 
     private static void DestroyPartial(Vk api, Device device, KhrSwapchain? swapchainExtension, RenderPass renderPass, SwapchainKHR swapchain, ImageView[] views, Framebuffer[] framebuffers, HeadlessTarget target, VulkanSemaphore imageAvailable, VulkanSemaphore renderComplete, Fence fence, CommandPool commandPool, CommandBuffer commandBuffer)
     {
         DestroySwapchainViews(api, device, views, framebuffers);
-        if (swapchain.Handle != default && swapchainExtension is not null) swapchainExtension.DestroySwapchain(device, swapchain, null);
-        DestroyHeadlessTarget(api, device, target);
-        if (imageAvailable.Handle != default) api.DestroySemaphore(device, imageAvailable, null);
-        if (renderComplete.Handle != default) api.DestroySemaphore(device, renderComplete, null);
-        if (fence.Handle != default) api.DestroyFence(device, fence, null);
-        if (commandBuffer.Handle != default && commandPool.Handle != default) { var value = commandBuffer; api.FreeCommandBuffers(device, commandPool, 1, &value); }
-        if (commandPool.Handle != default) api.DestroyCommandPool(device, commandPool, null);
-        if (renderPass.Handle != default) api.DestroyRenderPass(device, renderPass, null);
-    }
+        if (swapchain.Handle != default && swapchainExtension is not null)
+        {
+            swapchainExtension.DestroySwapchain(device, swapchain, null);
+        }
 
-    private void FreeCommandBuffer(CommandPool pool, CommandBuffer buffer) { var value = buffer; Api.FreeCommandBuffers(Device, pool, 1, &value); }
+        DestroyHeadlessTarget(api, device, target);
+        if (imageAvailable.Handle != default)
+        {
+            api.DestroySemaphore(device, imageAvailable, null);
+        }
+
+        if (renderComplete.Handle != default)
+        {
+            api.DestroySemaphore(device, renderComplete, null);
+        }
+
+        DestroyCommandResources(api, device, fence, commandPool, commandBuffer);
+
+        if (renderPass.Handle != default)
+        {
+            api.DestroyRenderPass(device, renderPass, null);
+        }
+    }
 
     private static void DestroySwapchainViews(Vk api, Device device, ImageView[] views, Framebuffer[] framebuffers)
     {
-        for (var i = framebuffers.Length - 1; i >= 0; i--) if (framebuffers[i].Handle != default) api.DestroyFramebuffer(device, framebuffers[i], null);
-        for (var i = views.Length - 1; i >= 0; i--) if (views[i].Handle != default) api.DestroyImageView(device, views[i], null);
+        for (var i = framebuffers.Length - 1; i >= 0; i--)
+        {
+            if (framebuffers[i].Handle != default)
+            {
+                api.DestroyFramebuffer(device, framebuffers[i], null);
+            }
+        }
+
+        for (var i = views.Length - 1; i >= 0; i--)
+        {
+            if (views[i].Handle != default)
+            {
+                api.DestroyImageView(device, views[i], null);
+            }
+        }
     }
 
     private static (ImageView[] Views, Framebuffer[] Framebuffers) CreateSwapchainViews(Vk api, KhrSwapchain extension, Device device, Extent2D extent, RenderPass renderPass, SwapchainKHR swapchain, Format format, ImageView depthView = default, bool hasDepthStencil = false)
@@ -127,7 +168,11 @@ internal sealed unsafe partial class VulkanRenderSession
         var depth = new AttachmentReference { Attachment = 1, Layout = ImageLayout.DepthStencilAttachmentOptimal };
         var depthStages = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
         var subpass = new SubpassDescription { PipelineBindPoint = PipelineBindPoint.Graphics, ColorAttachmentCount = 1, PColorAttachments = &color };
-        if (hasDepthStencil) subpass.PDepthStencilAttachment = &depth;
+        if (hasDepthStencil)
+        {
+            subpass.PDepthStencilAttachment = &depth;
+        }
+
         var dependency = new SubpassDependency { SrcSubpass = Vk.SubpassExternal, DstSubpass = 0, SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstAccessMask = AccessFlags.ColorAttachmentWriteBit | (hasDepthStencil ? AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit : AccessFlags.None) };
         var info = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, SubpassCount = 1, PSubpasses = &subpass, DependencyCount = 1, PDependencies = &dependency };
         VulkanCall.Ensure(api.CreateRenderPass(device, info, null, out var renderPass), "CreateRenderPass");
@@ -138,7 +183,11 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         var attachments = stackalloc ImageView[2];
         attachments[0] = colorView;
-        if (hasDepthStencil) attachments[1] = depthView;
+        if (hasDepthStencil)
+        {
+            attachments[1] = depthView;
+        }
+
         var info = new FramebufferCreateInfo { SType = StructureType.FramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, Width = extent.Width, Height = extent.Height, Layers = 1 };
         VulkanCall.Ensure(api.CreateFramebuffer(device, info, null, out var framebuffer), operation);
         return framebuffer;
@@ -147,7 +196,11 @@ internal sealed unsafe partial class VulkanRenderSession
     private SwapchainKHR CreateSwapchain(SurfaceKHR surface, Extent2D extent, SurfaceCapabilitiesKHR capabilities, SurfaceFormatKHR[] formats, PresentModeKHR[] modes)
     {
         var imageCount = Math.Max(2u, capabilities.MinImageCount);
-        if (capabilities.MaxImageCount != 0) imageCount = Math.Min(imageCount, capabilities.MaxImageCount);
+        if (capabilities.MaxImageCount != 0)
+        {
+            imageCount = Math.Min(imageCount, capabilities.MaxImageCount);
+        }
+
         var queueFamilies = new[] { _graphicsFamily, _presentFamily };
         fixed (uint* familyPointer = queueFamilies)
         {
@@ -177,7 +230,14 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private static Format ChooseSurfaceFormat(ReadOnlySpan<SurfaceFormatKHR> formats)
     {
-        foreach (var item in formats) if (item.Format == Format.B8G8R8A8Unorm && item.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr) return item.Format;
+        foreach (var item in formats)
+        {
+            if (item.Format == Format.B8G8R8A8Unorm && item.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
+            {
+                return item.Format;
+            }
+        }
+
         return formats.Length == 0 ? Format.B8G8R8A8Unorm : formats[0].Format;
     }
 
@@ -188,5 +248,4 @@ internal sealed unsafe partial class VulkanRenderSession
     private static ImageAspectFlags ToAspectMask(RenderTextureFormat format) => format switch { RenderTextureFormat.D32Float => ImageAspectFlags.DepthBit, RenderTextureFormat.D24UnormS8UInt => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, _ => ImageAspectFlags.ColorBit };
     private static SampleCountFlags ToSampleCount(uint samples) => samples switch { 1 => SampleCountFlags.Count1Bit, 2 => SampleCountFlags.Count2Bit, 4 => SampleCountFlags.Count4Bit, 8 => SampleCountFlags.Count8Bit, _ => throw new ArgumentOutOfRangeException(nameof(samples)) };
     private static SamplerAddressMode ToAddressMode(RenderAddressMode mode) => mode switch { RenderAddressMode.Repeat => SamplerAddressMode.Repeat, RenderAddressMode.MirroredRepeat => SamplerAddressMode.MirroredRepeat, _ => SamplerAddressMode.ClampToEdge };
-    private static BufferUsageFlags ToVulkanBufferUsageFlags(RenderBufferUsage usage) => ToVulkanBufferUsage(usage);
 }

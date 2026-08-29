@@ -10,6 +10,8 @@ internal static class SpirvEntryPointReader
     private const uint VertexExecutionModel = 0;
     private const uint FragmentExecutionModel = 4;
     private const uint ComputeExecutionModel = 5;
+    private const int SpirvHeaderBytes = sizeof(uint) * 5;
+    private const int SpirvWordBytes = sizeof(uint);
 
     public static string ReadComputeEntryPoint(ReadOnlySpan<byte> spirv)
         => ReadEntryPoint(spirv, ComputeExecutionModel, "compute");
@@ -19,7 +21,7 @@ internal static class SpirvEntryPointReader
 
     private static string ReadEntryPoint(ReadOnlySpan<byte> spirv, uint requestedExecutionModel, string stageName)
     {
-        if (spirv.Length < 20 || (spirv.Length & 3) != 0)
+        if (spirv.Length < SpirvHeaderBytes || (spirv.Length & (SpirvWordBytes - 1)) != 0)
         {
             throw new ArgumentException("SPIR-V must contain a five-word header and be word aligned.", nameof(spirv));
         }
@@ -30,12 +32,12 @@ internal static class SpirvEntryPointReader
         }
 
         string? entryPoint = null;
-        for (var offset = 20; offset < spirv.Length;)
+        for (var offset = SpirvHeaderBytes; offset < spirv.Length;)
         {
             var instruction = BinaryPrimitives.ReadUInt32LittleEndian(spirv[offset..]);
             var wordCount = (int)(instruction >> 16);
             var opcode = (ushort)(instruction & 0xffff);
-            if (wordCount < 1 || offset > spirv.Length - (wordCount * 4))
+            if (wordCount < 1 || offset > spirv.Length - (wordCount * SpirvWordBytes))
             {
                 throw new ArgumentException("SPIR-V contains a truncated instruction.", nameof(spirv));
             }
@@ -47,7 +49,7 @@ internal static class SpirvEntryPointReader
                     throw new ArgumentException("SPIR-V OpEntryPoint instruction is truncated.", nameof(spirv));
                 }
 
-                var instructionBytes = spirv.Slice(offset + 4, (wordCount - 1) * 4);
+                var instructionBytes = spirv.Slice(offset + SpirvWordBytes, (wordCount - 1) * SpirvWordBytes);
                 var executionModel = BinaryPrimitives.ReadUInt32LittleEndian(instructionBytes);
                 if (executionModel == requestedExecutionModel)
                 {
@@ -73,7 +75,7 @@ internal static class SpirvEntryPointReader
                 }
             }
 
-            offset += wordCount * 4;
+            offset += wordCount * SpirvWordBytes;
         }
 
         return entryPoint ?? throw new ArgumentException($"SPIR-V does not contain a {stageName} entry point.", nameof(spirv));
