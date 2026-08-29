@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Delta.Maths;
 using Delta.Shader;
 
@@ -6,7 +5,6 @@ namespace Delta.Render.FullscreenShaders;
 
 public static class FullscreenUi
 {
-    [SuppressMessage("Design", "CA1051", Justification = "Shader ABI fields are emitted by Delta.Shader.")]
     public struct UiPushConstants
     {
         public float2 Resolution = default;
