@@ -1,0 +1,52 @@
+{
+  "Stage": 2,
+  "SourceEntryPointName": "mesh",
+  "EntryPointName": "main",
+  "TargetProfile": "vulkan1.2",
+  "GlslVersion": "460",
+  "SpirvVersion": "1.5",
+  "StorageLayout": "std430",
+  "LocalSizeX": 0,
+  "LocalSizeY": 0,
+  "LocalSizeZ": 0,
+  "Resources": [],
+  "Inputs": [
+    {
+      "Name": "Position",
+      "ParameterName": "Position",
+      "GlslName": "gl_FragCoord",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "FragmentPosition"
+    },
+    {
+      "Name": "Normal",
+      "ParameterName": "Normal",
+      "GlslName": "Normal",
+      "GlslType": "vec3",
+      "Location": 0,
+      "Builtin": null
+    },
+    {
+      "Name": "Uv",
+      "ParameterName": "Uv",
+      "GlslName": "Uv",
+      "GlslType": "vec2",
+      "Location": 1,
+      "Builtin": null
+    }
+  ],
+  "VertexInputs": [],
+  "VertexBufferBindings": [],
+  "Outputs": [
+    {
+      "Name": "FragmentColor",
+      "ParameterName": "return",
+      "GlslName": "fragColor",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "FragmentColor"
+    }
+  ],
+  "PushConstants": []
+}

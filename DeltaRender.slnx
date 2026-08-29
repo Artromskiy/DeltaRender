@@ -2,6 +2,7 @@
   <Project Path="samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj" />
   <Project Path="samples/DeltaRender.ShaderSandbox/DeltaRender.ShaderSandbox.csproj" />
   <Project Path="samples/DeltaRender.HeadlessShaderPlayground/DeltaRender.HeadlessShaderPlayground.csproj" />
+  <Project Path="samples/DeltaRender.MeshSample/DeltaRender.MeshSample.csproj" />
   <Project Path="src/DeltaRender/DeltaRender.csproj" />
   <Project Path="src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />
   <Project Path="src/DeltaRender.Text/DeltaRender.Text.csproj" />

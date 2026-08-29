@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "SixLabors.Fonts": {
+        "type": "Transitive",
+        "resolved": "3.1.0-fork.cadda774",
+        "contentHash": "melkZCD43nHQiY1WTbVxy1+J/YwJ61S9bwPun1UNHBi4iYuIgQSGzP6oJYdaA3bFBZHw6RsByyD4scyfnUUcAw=="
+      },
+      "delta.diagnostics.contract": {
+        "type": "Project"
+      },
+      "deltamaths": {
+        "type": "Project"
+      },
+      "deltarender": {
+        "type": "Project",
+        "dependencies": {
+          "Delta.Diagnostics.Contract": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltashader": {
+        "type": "Project"
+      },
+      "deltashader.contract": {
+        "type": "Project"
+      },
+      "deltashader.text": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaShader": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltatext": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "SixLabors.Fonts": "[3.1.0-fork.cadda774, )"
+        }
+      }
+    },
+    "net10.0/osx-arm64": {}
+  }
+}

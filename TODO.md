@@ -26,21 +26,32 @@ and synchronization instead of implementing a private submission path.
 - [x] Graph `Build`/`Execute`, dependency ordering, barriers, layout changes,
   staging upload and explicit readback exist. These are the common execution
   primitives used by text, UI and compute features.
-- [ ] Transient allocation reuse and pipeline-cache reuse still need bounded
-  evidence and any remaining implementation work. Do not claim this as a
-  performance guarantee yet.
-- [ ] Full compute/offscreen/windowed acceptance still needs a single recorded
-  gate; targeted tests alone do not prove all three modes.
+- [x] Session-owned descriptor-keyed transient pools and pipeline-cache reuse
+  are implemented; headless tests cover warm hits, descriptor isolation,
+  double-return rejection and drain ownership. This is reuse/lifetime evidence,
+  not a performance guarantee or native timing result.
 
 ### P1 - producer migration
 
 Purpose: producers describe work as graph features so ordering, barriers and
 resource lifetime are decided in one place.
 
-- [ ] Maths conformance must use transfer -> compute -> readback graph passes;
-  the CPU bundle and ShaderAbi remain producer-owned.
-- [ ] Fullscreen and mesh samples must use raster graph passes and a
-  session-owned target, not synthetic surfaces.
+- [x] `tools/DeltaRender.MathConformance/Program.cs` uses the graph-only
+  transfer -> compute -> readback path: `CreateComputeSession`,
+  `CreateRenderGraph`, `GraphConformanceFeature` with an upload transfer pass,
+  an `IComputePass`, `ReadbackBuffer`, then `Build` -> `Execute` ->
+  `CopyReadback` and CPU comparison. The CPU bundle and `ShaderAbi` remain
+  producer-owned; this is source/headless evidence, not a completed GPU gate.
+- [x] Existing fullscreen samples (`ShaderSandbox`, `HeadlessShaderPlayground`
+  and the fullscreen smoke mode) use raster graph passes with a
+  session-owned `session.Target`; their feature/pass state and feature span are
+  created before the frame loop. Headless artifact/probe tests provide the
+  non-window evidence for this route.
+- [x] `samples/DeltaRender.MeshSample` uses the raster graph/session-target path:
+  session-owned vertex/index buffers are uploaded by a transfer pass and drawn
+  by one indexed raster pass. The checked-in descriptor-free mesh pair is
+  loaded as canonical `ShaderArtifact` data; native execution remains a
+  separate evidence gate.
 - [x] `DeltaRender.Text.TextRenderFeature` now emits ordinary transfer + raster
   graph passes for its bounded text slice.
 - [x] DeltaRender.XAML consumes the text feature through a neutral adapter
@@ -65,14 +76,20 @@ contract and not in DeltaXAML.
   commands; preserve mixed visual/text `A-B-A` order through one transfer stage
   and one raster pass per contiguous text segment or visual command. GPU
   material/dirty upload reuse remains a separate shader/resource milestone.
-- [x] Support the current rectangle/solid/image/text path first. Rounded
-  shapes, stroke, gradients and non-rectangular clips require explicit shader
-  artifacts and must not silently fall back.
-- [ ] Add remaining headless evidence for borrowed lifetime, paint-only updates,
-  registry cache hits and zero-allocation unchanged frames. Current tests cover
-  synchronous order copy, nested rectangular clips, deterministic cycle
-  diagnostics, unsupported paint rejection and resource registration; warm-frame
-  allocation and native submission remain separate acceptance work.
+- [x] Pack solid/rounded/border rectangle bounds, fill, stroke, corner radius
+  and resolution through generated `DeltaShader.UI` typed helpers, using the
+  producer's cached ABI accessors and reusable feature-owned storage. A
+  mismatched or unknown program is rejected with a deterministic diagnostic.
+- [x] Support the current solid/rounded/image/text path when the matching
+  generated rectangle artifact is supplied. Gradients and non-rectangular
+  clips still require explicit shader artifacts and must not silently fall
+  back.
+- [x] Headless evidence for borrowed lifetime, paint-only updates, registry cache
+  hits and zero-allocation unchanged frames is covered. Tests include synchronous
+  order copy, nested rectangular clips, deterministic cycle diagnostics,
+  unsupported paint rejection, resource registration and rejection of borrowed
+  frame access after feature disposal. Native submission remains separate
+  acceptance work.
 
 ### P1 - DeltaRender.Text: reusable implementation slice
 
@@ -101,104 +118,83 @@ reusable by UI or another feature without copying producer or shader ABI types.
 - [x] Effective clips are intersected with the current viewport, and the
   feature exposes a resize update without rebuilding the atlas.
 
-### P1 - DeltaRender.Text: acceptance still open
+### P1 - DeltaRender.Text: remaining integration work
 
 Purpose: these items are required before the text path can claim complete
 DeltaXAML/editor integration rather than only a reusable Render-side feature.
 
-- [ ] Add the synchronous borrowed `UiDisplayList` -> feature storage adapter
-  outside this project. It must flatten effective clips while the `ref struct`
-  borrow is valid and must not pass XAML types into Render.Text.
-- [ ] Define device-loss/reinitialization and transactional multi-page atlas
-  replacement. The current implementation intentionally has one bounded page
-  and fails deterministically when it is full.
+- [x] Add the synchronous borrowed `UiDisplayList` -> feature storage adapter
+  in `src/DeltaRender.XAML/`. It flattens effective clips while the `ref struct`
+  borrow is valid and passes only shaped text and neutral values into
+  `DeltaRender.Text`.
+- [x] Implement transactional bounded multi-page atlas allocation and page-level
+  LRU recycling. Recycled pages invalidate their cached placements, retain their
+  session-owned texture handles and return to the dirty upload set.
+- [ ] Define device-loss/reinitialization and atlas replacement. This remains
+  open because `IRenderFrameSession` has no device-loss reinitialization operation.
 - [ ] Obtain an approved producer identity/delta contract. Frozen `UiTextDraw`
   has no Owner, OwnerGeneration or Version; object references and hashes are not
   valid substitutes. Current fallback is full instance re-encoding.
-- [ ] Resolve mixed visual/text ordering. Separate `Visuals` and `Text` spans
-  cannot prove a general A-B-A order; the canonical producer contract must
-  provide or constrain that ordering.
-- [ ] Add bounded headless tests for first upload, cache hit without upload,
+- [x] Resolve mixed visual/text ordering through the canonical `Order` span;
+  the XAML adapter preserves arbitrary visual/text interleaving while the
+  text feature batches only adjacent text entries.
+- [x] Add bounded headless tests for first upload, cache hit without upload,
   format isolation, UV/plane metrics, clip/order/lifetime behavior, resize and
-  warm-frame allocations. Existing Render tests do not cover TextRenderFeature.
-- [ ] Add a bounded native text smoke only after the producer adapter and final
-  shader artifact are available. A skipped native run is not a pass.
+  feature-level warm-frame allocations. Existing tests cover first upload,
+  cache-hit without upload, changed payload upload, resize reuse, atlas format
+  selection, packed UV/plane metrics, page allocation/recycling, page-aware
+  upload/binding and allocation failure cleanup. New tests cover
+  viewport-intersected effective clips, compatible adjacent batching with
+  non-adjacent `A-B-A` clip order, and the `Clear` borrowed-run boundary. After
+  reusable cache-hit warm-up, `PrepareComposite`, composite recording and
+  `Clear` allocate zero bytes, and unchanged frames register no transfer pass.
+  The feature-owned raster description is cached; Core/native graph allocation
+  evidence remains open. Nested clip hierarchy is resolved by the XAML adapter
+  before this feature receives its effective clip.
 
 ### P2 - legacy removal gate
 
 Purpose: remove competing ownership only after active producers are migrated;
 otherwise deletion would turn an incomplete migration into a broken build.
 
-- [ ] Remove standalone compute device/storage/pipeline implementations after
-  Maths conformance is graph-only.
-- [ ] Remove direct frame state/packet and begin/end/submit implementations
-  after all consumers use `IRenderGraph.Build/Execute`.
-- [ ] Remove public pipeline/text-atlas factories and old UI/text packet models
-  after their graph replacements are active.
-- [ ] Remove obsolete tests, samples and docs only after replacement paths and
-  migration search are clean.
+- [x] Remove standalone compute device/storage/pipeline implementations. The
+  migration search found no active implementation or caller; Maths conformance
+  uses the graph-only path.
+- [x] Remove direct frame state/packet and begin/end/submit implementations. No
+  active source, sample or tool uses those entry points.
+- [x] Remove public pipeline/text-atlas factories and old UI/text packet models.
+  No active symbols remain; current UI and text features submit graph passes.
+- [x] Remove obsolete tests, samples and docs after replacement paths are
+  active. Remaining migration wording is retained as plan/history, not an
+  active API reference.
 
-## P0 - one Vulkan session and graph executor
+## Remaining project migration gates
 
-- [ ] Implement one internal `VulkanRenderSession` for compute-only, offscreen
-  and windowed modes.
-- [ ] Implement session capabilities, target, persistent buffers/textures/
-  samplers, generation-checked release and target resize.
-- [ ] Implement graph build storage, deterministic scheduling, transient
-  lifetime reuse, barriers, cached pipelines, staging and explicit readback.
-- [ ] Ensure ordinary execution never waits for queue idle; only
-  `CopyReadback` may wait for its producing submission.
+The detailed status sections above are authoritative; this section keeps only
+the still-open project-level gates and avoids repeating completed work.
 
-## P1 - migrate every producer
-
-- [ ] Rewrite Maths conformance to transfer + compute + readback graph passes.
-- [ ] Rewrite fullscreen and mesh samples as raster graph passes.
-- [ ] Rewrite DeltaRender.Text atlas uploads and glyph draws as graph passes.
-- [ ] Rewrite DeltaRender.XAML UI submission as graph features without a
-  second frame packet.
-
-## P1 - DeltaRender.Text integration acceptance
-
-The current [DeltaRender.Text contract](docs/TEXT_CONTRACT.md) and
-[internal design](docs/TEXT_INTERNAL.md) describe the first bounded
-`TextRenderFeature` implementation and the remaining acceptance work. Complete
-this slice without adding a second text or frame contract:
-
-- [ ] Add a concrete submission path from borrowed
-  `Delta.XAML.Contract.UiDisplayList` into reusable feature-owned storage;
-  document the synchronous consume/copy lifetime because `UiDisplayList` is a
-  `ref struct` and `IRenderFeature.AddPasses` has no frame-data parameter.
-- [ ] Create persistent atlas pages, samplers and instance buffers through
-  `IRenderFrameSession`, import them into each graph build, and define
-  resize/device-loss/dispose behavior.
-- [ ] Resolve the missing producer identity contract before claiming
-  incremental text updates: the frozen `UiTextDraw` currently carries no
-  XAML `Owner`, `OwnerGeneration` or text `Version`. Do not fabricate these
-  from object references or hashes; either consume an approved producer delta
-  or explicitly document full instance re-encoding as the current fallback.
-- [ ] Preserve ordering across visual and text commands. Separate
-  `UiDisplayList.Visuals` and `UiDisplayList.Text` spans do not encode a mixed
-  order; do not claim general `A-B-A` preservation until the ordering semantics
-  are resolved by the canonical contract or explicitly constrained.
-- [ ] Include `FontInstanceId` plus generation, glyph ID, pixels-per-em,
-  image mode/encoding, distance range, color palette and padding policy in the
-  atlas key. Preserve `ShapedGlyph` offsets, advances, clusters and
-  `GlyphImage.PlaneBounds` when encoding instances.
-- [ ] Use format-specific shader paths and validation for Coverage/SDF R8,
-  MSDF RGB and premultiplied-sRGB color glyphs; pass distance range and color
-  semantics through the canonical `DeltaShader.Contract` artifact.
-- [ ] Add bounded headless tests for first insert/upload, cache hit without
-  upload, page-generation recycling, multi-page and nested-clip batches,
-  mixed ordering, borrowed lifetime, and zero allocations after warm-up.
-
-## P2 - delete legacy surface
-
-- [ ] Remove standalone compute device/storage/pipeline implementations.
-- [ ] Remove direct frame state/packet and begin/end/submit implementations.
-- [ ] Remove public pipeline/text-atlas factories and renderer-owned UI/text
-  packet models.
-- [ ] Remove obsolete tests, samples and documentation after their graph
-  replacements are active.
+- [x] Add transient allocation reuse and pipeline-cache reuse with bounded
+  headless evidence; native resource lifetime remains session-owned. Native
+  allocation timing is not claimed without a Vulkan run.
+- [x] Introduce a graph-first mesh sample. `DeltaRender.MeshSample` uses
+  `IRenderFrameSession -> CreateRenderGraph -> AddTransferPass/AddRasterPass`,
+  `session.Target`, persistent session buffers, and `DrawIndexed`; it does not
+  use a synthetic surface or direct Vulkan submission. A native render/readback
+  run remains open because this bounded slice does not execute GPU tests.
+- [x] Implement bounded multi-page atlas allocation/recycling for
+  `DeltaRender.Text`; device-loss/reinitialization remains open because the
+  session contract has no reinitialization operation.
+- [ ] Obtain an approved producer identity/delta path for incremental text
+  updates; until then full instance re-encoding is the documented fallback.
+- [x] Complete feature-level text warm-frame allocation evidence. After two
+  reusable cache-hit warm-up cycles, `PrepareComposite`, composite recording
+  and `Clear` allocate zero bytes, and unchanged frames register no transfer
+  pass. Nested clip hierarchy is resolved by the XAML adapter; ordering and
+  page recycling have bounded evidence. Core/native graph allocation evidence
+  remains open.
+- [x] Remove superseded compute/frame/pipeline/text packet implementations,
+  tests and docs. The detailed P2 gate above records no active legacy symbols;
+  remaining migration wording is plan/history, not an active API reference.
 
 ## Deferred
 

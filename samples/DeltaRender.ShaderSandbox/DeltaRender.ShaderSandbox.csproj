@@ -15,7 +15,7 @@
     <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
     <ProjectReference Include="../../../DeltaDiagnostics/src/Delta.Diagnostics.Contract/Delta.Diagnostics.Contract.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
-    <ProjectReference Include="../../tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

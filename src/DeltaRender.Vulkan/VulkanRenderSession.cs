@@ -34,10 +34,12 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private readonly Dictionary<ulong, PersistentBuffer> _buffers = new();
     private readonly Dictionary<ulong, PersistentTexture> _textures = new();
     private readonly Dictionary<ulong, PersistentSampler> _samplers = new();
-    private readonly Dictionary<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
-    private readonly List<BufferAllocation> _deferredBuffers = new();
-    private readonly List<PersistentTexture> _deferredTextures = new();
+    private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly VulkanPipelineCache<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly VulkanTransientResourcePool<TransientBufferKey, BufferAllocation> _transientBuffers = new();
+    private readonly VulkanTransientResourcePool<TransientTextureKey, PersistentTexture> _transientTextures = new();
+    private readonly List<DeferredBuffer> _deferredBuffers = new();
+    private readonly List<DeferredTexture> _deferredTextures = new();
     private VulkanRenderGraph? _graph;
 
     private SwapchainKHR _swapchain;
@@ -449,13 +451,8 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
     {
-        if (!_rasterPipelines.TryGetValue(description.ShaderProgram, out var pipeline))
-        {
-            pipeline = VulkanRenderGraph.VulkanGraphPipeline.CreateRaster(this, description);
-            _rasterPipelines.Add(description.ShaderProgram, pipeline);
-        }
-
-        return pipeline;
+        var copy = description;
+        return _rasterPipelines.GetOrCreate(copy.ShaderProgram, () => VulkanRenderGraph.VulkanGraphPipeline.CreateRaster(this, copy));
     }
 
     private bool IsSameDepthDescription(in DepthStencilAttachmentDescription description)
@@ -471,15 +468,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     }
 
     internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateComputePipeline(IShaderArtifact artifact)
-    {
-        if (!_computePipelines.TryGetValue(artifact, out var pipeline))
-        {
-            pipeline = VulkanRenderGraph.VulkanGraphPipeline.CreateCompute(this, artifact);
-            _computePipelines.Add(artifact, pipeline);
-        }
-
-        return pipeline;
-    }
+        => _computePipelines.GetOrCreate(artifact, () => VulkanRenderGraph.VulkanGraphPipeline.CreateCompute(this, artifact));
 
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
     {
@@ -533,24 +522,53 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    internal PersistentTexture CreateTransientTexture(in RenderTextureDescription description) => CreateNativeTexture(description);
-
-    internal void DeferTransient(BufferAllocation allocation)
+    internal BufferAllocation CreateTransientBuffer(in RenderBufferDescription description)
     {
-        if (VulkanBufferAllocation.IsLive(in allocation)) _deferredBuffers.Add(allocation);
+        var key = new TransientBufferKey(description.SizeInBytes, description.Usage);
+        var copy = description;
+        return _transientBuffers.Acquire(key, () => CreateNativeBuffer(copy.SizeInBytes, ToVulkanBufferUsage(copy.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit));
     }
 
-    internal void DeferTransient(PersistentTexture texture)
+    internal PersistentTexture CreateTransientTexture(in RenderTextureDescription description)
     {
-        if (texture.Image.Handle != default) _deferredTextures.Add(texture);
+        var key = new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage);
+        var copy = description;
+        return _transientTextures.Acquire(key, () => CreateNativeTexture(copy));
+    }
+
+    internal void DeferTransient(BufferAllocation allocation, in RenderBufferDescription description)
+    {
+        if (VulkanBufferAllocation.IsLive(in allocation))
+        {
+            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage)));
+        }
+    }
+
+    internal void DeferTransient(PersistentTexture texture, in RenderTextureDescription description)
+    {
+        if (texture.Image.Handle != default)
+        {
+            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage)));
+        }
     }
 
     private void ReclaimDeferredTransients()
     {
-        foreach (var texture in _deferredTextures) DestroyTexture(texture);
-        foreach (var allocation in _deferredBuffers) DestroyAllocation(allocation);
+        foreach (var texture in _deferredTextures) _transientTextures.Return(texture.Key, texture.Texture);
+        foreach (var allocation in _deferredBuffers) _transientBuffers.Return(allocation.Key, allocation.Allocation);
         _deferredTextures.Clear();
         _deferredBuffers.Clear();
+    }
+
+    internal void ReclaimDeferredTransientsForBuild()
+    {
+        if (_deferredTextures.Count == 0 && _deferredBuffers.Count == 0)
+        {
+            return;
+        }
+
+        WaitForFrame();
+        ReclaimDeferredTransients();
     }
 
     internal void DestroyAllocation(BufferAllocation allocation)
@@ -693,6 +711,8 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         _disposed = true;
         Api.DeviceWaitIdle(Device);
         ReclaimDeferredTransients();
+        _transientTextures.Drain(DestroyTexture);
+        _transientBuffers.Drain(DestroyAllocation);
         foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(this);
         foreach (var pipeline in _computePipelines.Values) pipeline.Dispose(this);
         _rasterPipelines.Clear();
@@ -1037,6 +1057,10 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
 
     private readonly record struct HeadlessTarget(Image Image, DeviceMemory Memory, ImageView View, Framebuffer Framebuffer);
+    private readonly record struct TransientBufferKey(ulong SizeInBytes, RenderBufferUsage Usage);
+    private readonly record struct TransientTextureKey(uint Width, uint Height, RenderTextureFormat Format, uint MipLevels, uint Layers, uint Samples, RenderTextureUsage Usage);
+    private readonly record struct DeferredBuffer(BufferAllocation Allocation, TransientBufferKey Key);
+    private readonly record struct DeferredTexture(PersistentTexture Texture, TransientTextureKey Key);
 }
 
 internal sealed class PersistentBuffer

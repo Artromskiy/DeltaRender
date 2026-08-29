@@ -1,0 +1,130 @@
+{
+  "Stage": 1,
+  "SourceEntryPointName": "mesh",
+  "EntryPointName": "main",
+  "TargetProfile": "vulkan1.2",
+  "GlslVersion": "460",
+  "SpirvVersion": "1.5",
+  "StorageLayout": "std430",
+  "LocalSizeX": 0,
+  "LocalSizeY": 0,
+  "LocalSizeZ": 0,
+  "Resources": [],
+  "Inputs": [],
+  "VertexInputs": [
+    {
+      "Name": "vertex_Position",
+      "ParameterName": "Position",
+      "GlslName": "vertex_Position",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Binding": 0,
+      "ByteOffset": 0,
+      "InputRate": 0,
+      "ByteSize": 16,
+      "Alignment": 4,
+      "FormatHint": "VK_FORMAT_R32G32B32A32_SFLOAT"
+    },
+    {
+      "Name": "vertex_Normal",
+      "ParameterName": "Normal",
+      "GlslName": "vertex_Normal",
+      "GlslType": "vec3",
+      "Location": 1,
+      "Binding": 0,
+      "ByteOffset": 16,
+      "InputRate": 0,
+      "ByteSize": 12,
+      "Alignment": 4,
+      "FormatHint": "VK_FORMAT_R32G32B32_SFLOAT"
+    },
+    {
+      "Name": "vertex_Uv",
+      "ParameterName": "Uv",
+      "GlslName": "vertex_Uv",
+      "GlslType": "vec2",
+      "Location": 2,
+      "Binding": 0,
+      "ByteOffset": 28,
+      "InputRate": 0,
+      "ByteSize": 8,
+      "Alignment": 4,
+      "FormatHint": "VK_FORMAT_R32G32_SFLOAT"
+    }
+  ],
+  "VertexBufferBindings": [
+    {
+      "Binding": 0,
+      "Stride": 36,
+      "InputRate": 0,
+      "Attributes": [
+        {
+          "Name": "vertex_Position",
+          "ParameterName": "Position",
+          "GlslName": "vertex_Position",
+          "GlslType": "vec4",
+          "Location": 0,
+          "Binding": 0,
+          "ByteOffset": 0,
+          "InputRate": 0,
+          "ByteSize": 16,
+          "Alignment": 4,
+          "FormatHint": "VK_FORMAT_R32G32B32A32_SFLOAT"
+        },
+        {
+          "Name": "vertex_Normal",
+          "ParameterName": "Normal",
+          "GlslName": "vertex_Normal",
+          "GlslType": "vec3",
+          "Location": 1,
+          "Binding": 0,
+          "ByteOffset": 16,
+          "InputRate": 0,
+          "ByteSize": 12,
+          "Alignment": 4,
+          "FormatHint": "VK_FORMAT_R32G32B32_SFLOAT"
+        },
+        {
+          "Name": "vertex_Uv",
+          "ParameterName": "Uv",
+          "GlslName": "vertex_Uv",
+          "GlslType": "vec2",
+          "Location": 2,
+          "Binding": 0,
+          "ByteOffset": 28,
+          "InputRate": 0,
+          "ByteSize": 8,
+          "Alignment": 4,
+          "FormatHint": "VK_FORMAT_R32G32_SFLOAT"
+        }
+      ]
+    }
+  ],
+  "Outputs": [
+    {
+      "Name": "Position",
+      "ParameterName": "Position",
+      "GlslName": "gl_Position",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "Position"
+    },
+    {
+      "Name": "Normal",
+      "ParameterName": "Normal",
+      "GlslName": "Normal",
+      "GlslType": "vec3",
+      "Location": 0,
+      "Builtin": null
+    },
+    {
+      "Name": "Uv",
+      "ParameterName": "Uv",
+      "GlslName": "Uv",
+      "GlslType": "vec2",
+      "Location": 1,
+      "Builtin": null
+    }
+  ],
+  "PushConstants": []
+}

@@ -28,6 +28,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     {
         ThrowIfDisposed();
         ResetBuild();
+        _session.ReclaimDeferredTransientsForBuild();
         try
         {
             for (var index = 0; index < features.Length; index++)
@@ -186,14 +187,14 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     {
         ThrowIfMutable();
         if (!description.IsValid) throw new ArgumentException("The transient texture description is invalid.", nameof(description));
-        return AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description)));
+        return AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description), description));
     }
 
     public RenderGraphBufferHandle CreateBuffer(in RenderBufferDescription description)
     {
         ThrowIfMutable();
         if (!description.IsValid) throw new ArgumentException("The transient buffer description is invalid.", nameof(description));
-        var allocation = _session.CreateNativeBuffer(description.SizeInBytes, ToBufferUsage(description.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
+        var allocation = _session.CreateTransientBuffer(description);
         return AddBuffer(GraphResource.OwnedBuffer(allocation, description));
     }
 
@@ -570,17 +571,18 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         internal Image Image;
         internal PersistentBuffer? Buffer;
         internal PersistentTexture? Texture;
+        internal RenderTextureDescription TextureDescription;
         internal ImageAspectFlags AspectMask => IsTarget || Texture is null ? ImageAspectFlags.ColorBit : Texture.Format == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : Texture.Format == Format.D32Sfloat ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
         internal static GraphResource Target() => new() { IsTexture = true, IsTarget = true };
         internal static GraphResource FromTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image };
-        internal static GraphResource OwnedTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image, Owns = true };
+        internal static GraphResource OwnedTexture(PersistentTexture texture, RenderTextureDescription description) => new() { IsTexture = true, Texture = texture, TextureDescription = description, Image = texture.Image, Owns = true };
         internal static GraphResource FromBuffer(PersistentBuffer buffer) => new() { IsBuffer = true, Buffer = buffer };
         internal static GraphResource OwnedBuffer(BufferAllocation allocation, RenderBufferDescription description) => new() { IsBuffer = true, Buffer = new PersistentBuffer(allocation, description, 0), Owns = true };
         internal void Dispose(VulkanRenderSession session)
         {
             if (!Owns) return;
-            if (IsBuffer && Buffer is not null) session.DeferTransient(Buffer.Allocation);
-            if (IsTexture && Texture is not null) session.DeferTransient(Texture);
+            if (IsBuffer && Buffer is not null) session.DeferTransient(Buffer.Allocation, Buffer.Description);
+            if (IsTexture && Texture is not null) session.DeferTransient(Texture, TextureDescription);
             Buffer = null;
             Texture = null;
             Image = default;
@@ -835,13 +837,24 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
 
                 var vertexName = Encoding.UTF8.GetBytes(program.Vertex.EntryPoint + "\0");
                 var fragmentName = Encoding.UTF8.GetBytes(program.Fragment.EntryPoint + "\0");
+                var vertexBindings = CreateVertexBindings(program.Vertex.Abi.VertexBuffers);
+                var vertexAttributes = CreateVertexAttributes(program.Vertex.Abi.VertexInputs, program.Vertex.Abi.VertexBuffers);
                 fixed (byte* vertexPointer = vertexName)
                 fixed (byte* fragmentPointer = fragmentName)
+                fixed (VertexInputBindingDescription* bindingPointer = vertexBindings)
+                fixed (VertexInputAttributeDescription* attributePointer = vertexAttributes)
                 {
                     var stages = stackalloc PipelineShaderStageCreateInfo[2];
                     stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vertex, PName = vertexPointer };
                     stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fragment, PName = fragmentPointer };
-                    var vertexInput = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
+                    var vertexInput = new PipelineVertexInputStateCreateInfo
+                    {
+                        SType = StructureType.PipelineVertexInputStateCreateInfo,
+                        VertexBindingDescriptionCount = (uint)vertexBindings.Length,
+                        PVertexBindingDescriptions = bindingPointer,
+                        VertexAttributeDescriptionCount = (uint)vertexAttributes.Length,
+                        PVertexAttributeDescriptions = attributePointer,
+                    };
                     var assembly = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = ToTopology(description.Topology) };
                     var viewport = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
                     var rasterization = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, PolygonMode = PolygonMode.Fill, CullMode = ToCullMode(description.CullMode), FrontFace = description.FrontFace == RasterFrontFace.Clockwise ? FrontFace.Clockwise : FrontFace.CounterClockwise, LineWidth = 1 };
@@ -882,6 +895,103 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
                 if (vertex.Handle != default) session.Api.DestroyShaderModule(session.Device, vertex, null);
                 if (fragment.Handle != default) session.Api.DestroyShaderModule(session.Device, fragment, null);
             }
+        }
+
+        private static VertexInputBindingDescription[] CreateVertexBindings(IReadOnlyList<ShaderVertexBufferLayout> layouts)
+        {
+            var result = new VertexInputBindingDescription[layouts.Count];
+            for (var index = 0; index < layouts.Count; index++)
+            {
+                var layout = layouts[index];
+                result[index] = new VertexInputBindingDescription
+                {
+                    Binding = layout.Binding,
+                    Stride = layout.Stride,
+                    InputRate = layout.InputRate switch
+                    {
+                        ShaderVertexInputRate.Vertex => VertexInputRate.Vertex,
+                        ShaderVertexInputRate.Instance => VertexInputRate.Instance,
+                        _ => throw new ArgumentOutOfRangeException(nameof(layouts), layout.InputRate, "Unknown vertex input rate."),
+                    },
+                };
+            }
+
+            return result;
+        }
+
+        private static VertexInputAttributeDescription[] CreateVertexAttributes(
+            IReadOnlyList<ShaderVertexInput> inputs,
+            IReadOnlyList<ShaderVertexBufferLayout> layouts)
+        {
+            var result = new VertexInputAttributeDescription[inputs.Count];
+            for (var index = 0; index < inputs.Count; index++)
+            {
+                var input = inputs[index];
+                var stride = 0u;
+                var found = false;
+                for (var layoutIndex = 0; layoutIndex < layouts.Count; layoutIndex++)
+                {
+                    if (layouts[layoutIndex].Binding == input.Binding)
+                    {
+                        stride = layouts[layoutIndex].Stride;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    throw new ArgumentException($"Vertex input location {input.Location} refers to undeclared binding {input.Binding}.", nameof(inputs));
+                }
+
+                var byteSize = GetVertexValueByteSize(input.Type);
+                if (input.ByteOffset > stride || byteSize > stride - input.ByteOffset)
+                {
+                    throw new ArgumentException($"Vertex input location {input.Location} exceeds binding {input.Binding} stride {stride}.", nameof(inputs));
+                }
+
+                result[index] = new VertexInputAttributeDescription
+                {
+                    Location = input.Location,
+                    Binding = input.Binding,
+                    Format = ToVertexFormat(input.Type),
+                    Offset = input.ByteOffset,
+                };
+            }
+
+            return result;
+        }
+
+        private static uint GetVertexValueByteSize(ShaderValueType type)
+        {
+            if (type.Kind is not (ShaderValueKind.FloatingPoint or ShaderValueKind.SignedInteger or ShaderValueKind.UnsignedInteger) ||
+                type.BitWidth != 32 || type.Columns != 1 || type.VectorSize is < 1 or > 4)
+            {
+                throw new NotSupportedException($"Vertex input type {type} is not supported by the Vulkan raster path.");
+            }
+
+            return checked(type.VectorSize * sizeof(uint));
+        }
+
+        private static Format ToVertexFormat(ShaderValueType type)
+        {
+            _ = GetVertexValueByteSize(type);
+            return (type.Kind, type.VectorSize) switch
+            {
+                (ShaderValueKind.FloatingPoint, 1) => Format.R32Sfloat,
+                (ShaderValueKind.FloatingPoint, 2) => Format.R32G32Sfloat,
+                (ShaderValueKind.FloatingPoint, 3) => Format.R32G32B32Sfloat,
+                (ShaderValueKind.FloatingPoint, 4) => Format.R32G32B32A32Sfloat,
+                (ShaderValueKind.SignedInteger, 1) => Format.R32Sint,
+                (ShaderValueKind.SignedInteger, 2) => Format.R32G32Sint,
+                (ShaderValueKind.SignedInteger, 3) => Format.R32G32B32Sint,
+                (ShaderValueKind.SignedInteger, 4) => Format.R32G32B32A32Sint,
+                (ShaderValueKind.UnsignedInteger, 1) => Format.R32Uint,
+                (ShaderValueKind.UnsignedInteger, 2) => Format.R32G32Uint,
+                (ShaderValueKind.UnsignedInteger, 3) => Format.R32G32B32Uint,
+                (ShaderValueKind.UnsignedInteger, 4) => Format.R32G32B32A32Uint,
+                _ => throw new NotSupportedException($"Vertex input type {type} is not supported by the Vulkan raster path."),
+            };
         }
 
         internal void Dispose(VulkanRenderSession session)

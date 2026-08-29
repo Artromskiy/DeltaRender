@@ -47,7 +47,7 @@ On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
 Tool-specific shader regeneration is documented in
-[tools/DeltaRender.UiShaders/README.md](tools/DeltaRender.UiShaders/README.md).
+[tools/DeltaRender.UIShaders/README.md](tools/DeltaRender.UIShaders/README.md).
 The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The
