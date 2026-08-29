@@ -23,6 +23,40 @@ the contract or add a compatibility facade while executing this list.
 - [ ] Rewrite DeltaRender.XAML UI submission as graph features without a
   second frame packet.
 
+## P1 - DeltaRender.Text integration acceptance
+
+The current [DeltaRender.Text contract](docs/TEXT_CONTRACT.md) and
+[internal design](docs/TEXT_INTERNAL.md) describe the first bounded
+`TextRenderFeature` implementation and the remaining acceptance work. Complete
+this slice without adding a second text or frame contract:
+
+- [ ] Add a concrete submission path from borrowed
+  `Delta.XAML.Contract.UiDisplayList` into reusable feature-owned storage;
+  document the synchronous consume/copy lifetime because `UiDisplayList` is a
+  `ref struct` and `IRenderFeature.AddPasses` has no frame-data parameter.
+- [ ] Create persistent atlas pages, samplers and instance buffers through
+  `IRenderFrameSession`, import them into each graph build, and define
+  resize/device-loss/dispose behavior.
+- [ ] Resolve the missing producer identity contract before claiming
+  incremental text updates: the frozen `UiTextDraw` currently carries no
+  XAML `Owner`, `OwnerGeneration` or text `Version`. Do not fabricate these
+  from object references or hashes; either consume an approved producer delta
+  or explicitly document full instance re-encoding as the current fallback.
+- [ ] Preserve ordering across visual and text commands. Separate
+  `UiDisplayList.Visuals` and `UiDisplayList.Text` spans do not encode a mixed
+  order; do not claim general `A-B-A` preservation until the ordering semantics
+  are resolved by the canonical contract or explicitly constrained.
+- [ ] Include `FontInstanceId` plus generation, glyph ID, pixels-per-em,
+  image mode/encoding, distance range, color palette and padding policy in the
+  atlas key. Preserve `ShapedGlyph` offsets, advances, clusters and
+  `GlyphImage.PlaneBounds` when encoding instances.
+- [ ] Use format-specific shader paths and validation for Coverage/SDF R8,
+  MSDF RGB and premultiplied-sRGB color glyphs; pass distance range and color
+  semantics through the canonical `DeltaShader.Contract` artifact.
+- [ ] Add bounded headless tests for first insert/upload, cache hit without
+  upload, page-generation recycling, multi-page and nested-clip batches,
+  mixed ordering, borrowed lifetime, and zero allocations after warm-up.
+
 ## P2 - delete legacy surface
 
 - [ ] Remove standalone compute device/storage/pipeline implementations.

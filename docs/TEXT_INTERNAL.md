@@ -5,37 +5,32 @@ data flow for the `DeltaRender.Text` adapter and is not a public API.
 
 ## Current state
 
-The project is a dependency and documentation boundary. The first runtime
-implementation belongs here rather than in `Delta.Render` or
-`Delta.Render.Vulkan`. No text shaping or Vulkan resource code is added to the
-Core project by creating this project.
+`TextRenderFeature` is the small reusable implementation in this project. It
+consumes DeltaText values synchronously during graph build, owns a bounded CPU
+atlas and reusable GPU instance buffer, and emits ordinary transfer/raster
+graph passes. It is deliberately not a display-list adapter and has no
+producer owner/version model.
 
 ## Internal stages
 
-The implementation should remain a short pipeline:
+The implementation remains a short pipeline:
 
-1. Consume already shaped DeltaText glyphs and validate their image request,
-   encoding, dimensions and metrics.
-2. Resolve a renderer-owned atlas cache entry using all raster-affecting
-   identity: font instance, glyph ID, pixels-per-em, image mode, encoding,
-   distance range and any padding policy.
-3. Copy pixels into a format-isolated page allocator. Coverage/SDF R8 pages and
-   MSDF RGB pages must never share storage or descriptors.
-4. Encode compact glyph instances into a reusable storage buffer and record
-   only dirty atlas and instance ranges as transfer work.
-5. Build stable ordered batches keyed by text pipeline, atlas page and clip.
-   Compatible adjacent items may share one instanced draw; producer order is
-   always authoritative.
-6. Add ordinary graph resource uses and raster/transfer passes. The graph owns
-   dependency ordering, barriers, layout transitions and submission.
+1. `AddRun` queues already shaped values without retaining source strings.
+2. Glyph images are cached by exact font generation, glyph ID, size, mode,
+   encoding, distance range, color palette and feature padding.
+3. Validated pixels are copied into one format-specific bounded page.
+4. Compact instances use a private 48-byte GPU layout and a reusable grow-only
+   array.
+5. One transfer pass uploads the changed page and current instances; one raster
+   pass draws adjacent clip batches with instancing.
 
 ## Atlas ownership
 
-The atlas cache owns CPU page metadata and renderer-owned pixel storage. A page
-has a format, packing cursor, generation and last-use information. Recycling a
-bounded page resets its allocator and invalidates every handle from the old
-generation before accepting new glyphs. Cache hits update page usage as well as
-entry usage.
+The feature owns CPU page metadata and renderer-owned pixel storage. The first
+slice has one page and deterministic shelf packing. It rejects overflow rather
+than silently evicting or replacing a live Vulkan image. Future multi-page
+support must add explicit generation invalidation rather than exposing native
+handles.
 
 The Vulkan side receives page uploads through the existing session/graph
 resource path. It must not expose `VkImage`, `VkImageView`, `VkSampler` or
@@ -49,10 +44,9 @@ re-encode the required data, then release the old allocation only after the new
 resource is ready. A failed growth leaves no destroyed handle in the owner and
 allows a later retry.
 
-Dirty ranges are validated, coalesced when adjacent or overlapping, and copied
-through the graph's transfer pass. Empty work produces no upload command. The
-implementation must not allocate one object, staging buffer or draw command per
-glyph.
+The page is uploaded once when it changes, while the reusable instance storage
+is uploaded once per non-empty feature build. The implementation must not
+allocate one object, staging buffer or draw command per glyph.
 
 ## Shader and graph boundary
 
@@ -76,7 +70,7 @@ Input polling, frame clocks and XAML lifetime remain outside this project.
 
 ## Verification obligations
 
-The headless tests for the eventual implementation should cover:
+The remaining headless tests should cover:
 
 - first atlas insert and dirty upload;
 - cache hit without re-upload;

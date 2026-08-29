@@ -9,6 +9,27 @@ the `DeltaRender.Text` project; it does not replace or copy the producer-owned
 `DeltaRender.Text` is the adapter layer between `Delta.Text.Contract` values
 and the neutral `Delta.Render.RenderGraph` contract.
 
+The reusable entry point is `Delta.Render.Text.TextRenderFeature`:
+
+```csharp
+using var text = new TextRenderFeature(
+    session,
+    textService,
+    textShaderProgram,
+    new PixelExtent(width, height));
+
+text.AddRun(shapedText, originX, originY, color, clip);
+graph.Build(frameNumber, features); // the feature is in features
+graph.Execute();
+text.Clear(); // after Execute, before queueing the next frame
+```
+
+`AddRun` accepts already shaped `ShapedText`; it does not accept source strings
+and does not perform shaping. During graph build it synchronously consumes the
+shaped value, copies glyph pixels into the adapter-owned atlas and encodes
+compact instances. The shaped value and its glyph memory must remain valid
+until `Execute` completes.
+
 ```text
 Delta.Text.Contract
   ITextService / ShapedText / GlyphImage
@@ -21,10 +42,10 @@ The project references `Delta.Render` and `Delta.Text` only. It must not add a
 dependency from `Delta.Render` or `Delta.Render.Vulkan` back to `Delta.Text`.
 It has no dependency on DeltaXAML, DeltaEngine or DeltaECS.
 
-The current project scaffold adds no standalone public glyph DTO. Existing
-DeltaText values remain the sole source of shaping, glyph identity, metrics and
-CPU image data. Any future public entry point must be a deliberately approved
-adapter boundary and must not copy the DeltaText contract into another model.
+The feature adds no standalone public glyph DTO. Existing DeltaText values
+remain the sole source of shaping, glyph identity, metrics and CPU image data.
+The feature itself is the deliberately narrow adapter boundary and does not
+copy the DeltaText contract into another model.
 
 ## Input
 
@@ -49,8 +70,8 @@ GPU-facing work is represented by normal graph resources and passes:
 
 - a renderer-owned atlas page image and sampled-image descriptor;
 - a renderer-owned glyph-instance storage buffer;
-- transfer uploads for new or dirty atlas/instance ranges;
-- raster draws grouped by compatible pipeline, atlas page and clip.
+- one bounded atlas upload when the page changes and one instance upload;
+- raster draws grouped by adjacent compatible clip batches on the page.
 
 UI rectangles and text remain in one frame submission. The adapter preserves
 producer order; grouping must not reorder an `A-B-A` sequence merely to reduce
@@ -65,14 +86,16 @@ does not publish a second shader ABI or hard-code generated shader names.
 - DeltaText owns fonts, shaping state and the source `GlyphImage` payload.
 - DeltaRender.Text copies pixels and metrics into renderer-owned atlas/cache
   storage before the producer borrow expires.
-- The Vulkan session owns image, image-view, sampler, descriptor, buffer and
-  staging lifetimes. The adapter never exposes native handles.
-- Atlas/page and GPU-instance references are generation-checked; a recycled
-  page invalidates old references.
-- A borrowed frame/display-list view is used only during its documented frame
-  lifetime and is not retained across `Prepare`, cache mutation or dispose.
-- Disposal is idempotent. Partial page, descriptor or staging creation must
-  roll back in reverse order without replacing the original exception.
+- The session creates and owns native image, image-view, sampler, descriptor,
+  buffer and staging lifetimes. The feature owns valid session handles and
+  releases them idempotently; it never exposes native handles.
+- The first implementation has one bounded persistent page per feature. A glyph
+  that does not fit fails deterministically and asks the caller to create a
+  larger feature; it does not silently evict or grow a live image.
+- A borrowed shaped value is used only during the documented build/execute
+  lifetime and is not retained after `Clear` or dispose.
+- Partial resource creation rolls back in reverse order without replacing the
+  original exception.
 
 ## Required validation
 
@@ -82,12 +105,14 @@ The adapter rejects before graph recording:
 - unsupported image encodings or a mode/format mismatch;
 - non-finite positions, metrics, colors or distance parameters;
 - stale, foreign or disposed atlas/page references;
-- a pipeline/artifact whose manifest does not match the required text stages,
-  descriptors or instance layout;
+- a pipeline/artifact whose manifest has no unique read-only vertex storage
+  buffer or fragment sampled/combined image resource;
 - a clip or target that cannot be represented by the current pass.
 
 Missing advanced features must be an explicit diagnostic, not a silent fallback
-to a different shader or atlas format.
+to a different shader or atlas format. The supplied shader manifest remains the
+authority for descriptor bindings; the feature does not know generated wrapper
+names or duplicate ShaderAbi declarations.
 
 ## Deliberate exclusions
 
@@ -97,4 +122,7 @@ This project does not own:
 - strings, XAML layout, hit testing, caret/selection or ECS records;
 - Vulkan/SDL handles or window/event polling;
 - a second frame packet, direct-submit API or standalone compute device;
-- a duplicate `GlyphImage`, `ShapedGlyph` or ShaderAbi model.
+- a duplicate `GlyphImage`, `ShapedGlyph` or ShaderAbi model;
+- a complete borrowed `UiDisplayList` adapter or cross-producer visual/text
+  ordering policy. A future XAML adapter must flatten its effective clips and
+  call this feature synchronously without passing XAML types here.
