@@ -8,7 +8,7 @@ using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
+internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 {
     private static long _nextTarget;
     private static long _nextResource;
@@ -31,9 +31,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private readonly Fence _frameFence;
     private readonly VulkanSemaphore _imageAvailable;
     private readonly VulkanSemaphore _renderComplete;
-    private readonly Dictionary<ulong, PersistentBuffer> _buffers = new();
-    private readonly Dictionary<ulong, PersistentTexture> _textures = new();
-    private readonly Dictionary<ulong, PersistentSampler> _samplers = new();
+    private readonly VulkanResourceRegistry _resources = new();
     private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanPipelineCache<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanTransientResourcePool<TransientBufferKey, BufferAllocation> _transientBuffers = new();
@@ -103,8 +101,8 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
                 renderPass = CreateRenderPass(renderer.Api, _device, _format, ImageLayout.PresentSrcKhr);
                 swapchain = CreateSwapchain(_surface, _extent, capabilities, formats, modes);
                 (views, framebuffers) = CreateSwapchainViews(renderer.Api, _swapchainExtension, _device, _extent, renderPass, swapchain, _format);
-                Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out imageAvailable), "CreateSemaphore(image available)");
-                Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out renderComplete), "CreateSemaphore(render complete)");
+                VulkanCall.Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out imageAvailable), "CreateSemaphore(image available)");
+                VulkanCall.Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out renderComplete), "CreateSemaphore(render complete)");
             }
             else
             {
@@ -113,9 +111,9 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
                 headless = CreateHeadlessTarget(_extent, renderPass);
             }
 
-            Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out fence), "CreateFence");
-            Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out commandPool), "CreateCommandPool");
-            Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out commandBuffer), "AllocateCommandBuffer");
+            VulkanCall.Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out fence), "CreateFence");
+            VulkanCall.Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out commandPool), "CreateCommandPool");
+            VulkanCall.Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out commandBuffer), "AllocateCommandBuffer");
 
             _renderPass = renderPass;
             _commandPool = commandPool;
@@ -157,11 +155,11 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         _renderPass = default;
         _swapchainExtension = null;
 
-        Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out _frameFence), "CreateFence");
-        Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out _commandPool), "CreateCommandPool");
+        VulkanCall.Ensure(renderer.Api.CreateFence(_device, new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit }, null, out _frameFence), "CreateFence");
+        VulkanCall.Ensure(renderer.Api.CreateCommandPool(_device, new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _graphicsFamily, Flags = CommandPoolCreateFlags.ResetCommandBufferBit }, null, out _commandPool), "CreateCommandPool");
         try
         {
-            Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = _commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out _commandBuffer), "AllocateCommandBuffer");
+            VulkanCall.Ensure(renderer.Api.AllocateCommandBuffers(_device, new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = _commandPool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 }, out _commandBuffer), "AllocateCommandBuffer");
         }
         catch
         {
@@ -228,7 +226,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         var allocation = CreateNativeBuffer(description.SizeInBytes, ToVulkanBufferUsage(description.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
         var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
         var generation = NextGeneration();
-        _buffers.Add(value, new PersistentBuffer(allocation, description, generation));
+        _resources.AddBuffer(value, new PersistentBuffer(allocation, description, generation));
         return new RenderBufferHandle(value, generation);
     }
 
@@ -243,7 +241,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         var texture = CreateNativeTexture(description);
         var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
         var generation = NextGeneration();
-        _textures.Add(value, texture with { Generation = generation });
+        _resources.AddTexture(value, texture with { Generation = generation });
         return new RenderTextureHandle(value, generation);
     }
 
@@ -261,16 +259,16 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             AddressModeW = ToAddressMode(description.AddressW),
             MaxLod = 1
         };
-        Ensure(_renderer.Api.CreateSampler(_device, samplerInfo, null, out var sampler), "CreateSampler");
+        VulkanCall.Ensure(_renderer.Api.CreateSampler(_device, samplerInfo, null, out var sampler), "CreateSampler");
         var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
         var generation = NextGeneration();
-        _samplers.Add(value, new PersistentSampler(sampler, generation));
+        _resources.AddSampler(value, new PersistentSampler(sampler, generation));
         return new RenderSamplerHandle(value, generation);
     }
 
     public void Release(RenderBufferHandle buffer)
     {
-        if (TryRemove(_buffers, buffer, out var resource))
+        if (_resources.TryRemoveBuffer(buffer, out var resource))
         {
             DestroyAllocation(resource.Allocation);
         }
@@ -278,7 +276,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     public void Release(RenderTextureHandle texture)
     {
-        if (TryRemove(_textures, texture, out var resource))
+        if (_resources.TryRemoveTexture(texture, out var resource))
         {
             DestroyTexture(resource);
         }
@@ -286,7 +284,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     public void Release(RenderSamplerHandle sampler)
     {
-        if (TryRemove(_samplers, sampler, out var resource) && resource.Sampler.Handle != default)
+        if (_resources.TryRemoveSampler(sampler, out var resource) && resource.Sampler.Handle != default)
         {
             _renderer.Api.DestroySampler(_device, resource.Sampler, null);
         }
@@ -473,124 +471,19 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
     {
         buffer = null;
-        if (!handle.IsValid || !_buffers.TryGetValue(handle.Value, out var candidate) || candidate.Generation != handle.Generation) return false;
-        buffer = candidate;
-        return true;
+        return _resources.TryGetBuffer(handle, out buffer);
     }
 
     internal bool TryGetTexture(RenderTextureHandle handle, [NotNullWhen(true)] out PersistentTexture? texture)
     {
         texture = null;
-        if (!handle.IsValid || !_textures.TryGetValue(handle.Value, out var candidate) || candidate.Generation != handle.Generation) return false;
-        texture = candidate;
-        return true;
+        return _resources.TryGetTexture(handle, out texture);
     }
 
     internal bool TryGetSampler(RenderSamplerHandle handle, out PersistentSampler? sampler)
     {
         sampler = null;
-        if (!handle.IsValid || !_samplers.TryGetValue(handle.Value, out var candidate) || candidate.Generation != handle.Generation) return false;
-        sampler = candidate;
-        return true;
-    }
-
-    internal BufferAllocation CreateNativeBuffer(ulong size, BufferUsageFlags usage, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
-    {
-        var info = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = Math.Max(4, size), Usage = usage, SharingMode = SharingMode.Exclusive };
-        Ensure(Api.CreateBuffer(Device, info, null, out var buffer), "CreateBuffer");
-        try
-        {
-            var requirements = Api.GetBufferMemoryRequirements(Device, buffer);
-            var type = FindMemoryType(requirements.MemoryTypeBits, required, preferred);
-            var properties = MemoryProperties.MemoryTypes[(int)type].PropertyFlags;
-            Ensure(Api.AllocateMemory(Device, new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type }, null, out var memory), "AllocateBufferMemory");
-            try
-            {
-                Ensure(Api.BindBufferMemory(Device, buffer, memory, 0), "BindBufferMemory");
-                return new BufferAllocation(buffer, memory, requirements.Size, properties);
-            }
-            catch
-            {
-                Api.FreeMemory(Device, memory, null);
-                throw;
-            }
-        }
-        catch
-        {
-            Api.DestroyBuffer(Device, buffer, null);
-            throw;
-        }
-    }
-
-    internal BufferAllocation CreateTransientBuffer(in RenderBufferDescription description)
-    {
-        var key = new TransientBufferKey(description.SizeInBytes, description.Usage);
-        var copy = description;
-        return _transientBuffers.Acquire(key, () => CreateNativeBuffer(copy.SizeInBytes, ToVulkanBufferUsage(copy.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit));
-    }
-
-    internal PersistentTexture CreateTransientTexture(in RenderTextureDescription description)
-    {
-        var key = new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage);
-        var copy = description;
-        return _transientTextures.Acquire(key, () => CreateNativeTexture(copy));
-    }
-
-    internal void DeferTransient(BufferAllocation allocation, in RenderBufferDescription description)
-    {
-        if (VulkanBufferAllocation.IsLive(in allocation))
-        {
-            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage)));
-        }
-    }
-
-    internal void DeferTransient(PersistentTexture texture, in RenderTextureDescription description)
-    {
-        if (texture.Image.Handle != default)
-        {
-            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage)));
-        }
-    }
-
-    private void ReclaimDeferredTransients()
-    {
-        foreach (var texture in _deferredTextures) _transientTextures.Return(texture.Key, texture.Texture);
-        foreach (var allocation in _deferredBuffers) _transientBuffers.Return(allocation.Key, allocation.Allocation);
-        _deferredTextures.Clear();
-        _deferredBuffers.Clear();
-    }
-
-    internal void ReclaimDeferredTransientsForBuild()
-    {
-        if (_deferredTextures.Count == 0 && _deferredBuffers.Count == 0)
-        {
-            return;
-        }
-
-        WaitForFrame();
-        ReclaimDeferredTransients();
-    }
-
-    internal void DestroyAllocation(BufferAllocation allocation)
-    {
-        if (allocation.Buffer.Handle != default) Api.DestroyBuffer(Device, allocation.Buffer, null);
-        if (allocation.Memory.Handle != default) Api.FreeMemory(Device, allocation.Memory, null);
-    }
-
-    internal uint FindMemoryType(uint typeBits, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
-    {
-        uint fallback = uint.MaxValue;
-        for (uint index = 0; index < MemoryProperties.MemoryTypeCount; index++)
-        {
-            if ((typeBits & (1u << (int)index)) == 0) continue;
-            var flags = MemoryProperties.MemoryTypes[(int)index].PropertyFlags;
-            if (!flags.HasFlag(required)) continue;
-            if (flags.HasFlag(preferred)) return index;
-            fallback = index;
-        }
-
-        if (fallback != uint.MaxValue) return fallback;
-        throw new InvalidOperationException($"No Vulkan memory type satisfies {required}.");
+        return _resources.TryGetSampler(handle, out sampler);
     }
 
     internal bool BeginGraphFrame()
@@ -608,7 +501,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             if (_activeImage >= (uint)_swapchainFramebuffers.Length) throw new InvalidOperationException("Vulkan returned an invalid swapchain image index.");
         }
 
-        Ensure(Api.ResetCommandBuffer(_commandBuffer, 0), "ResetCommandBuffer");
+        VulkanCall.Ensure(Api.ResetCommandBuffer(_commandBuffer, 0), "ResetCommandBuffer");
         var begin = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
         if (Api.BeginCommandBuffer(_commandBuffer, begin) != Result.Success) return false;
         _recording = true;
@@ -620,16 +513,16 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         if (!_recording) return false;
         try
         {
-            Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
+            VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
             var commandBuffer = _commandBuffer;
-            Ensure(Api.ResetFences(Device, 1, _frameFence), "ResetFence");
+            VulkanCall.Ensure(Api.ResetFences(Device, 1, _frameFence), "ResetFence");
             if (_windowed)
             {
                 var waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
                 var imageAvailable = _imageAvailable;
                 var renderComplete = _renderComplete;
                 var submit = new SubmitInfo { SType = StructureType.SubmitInfo, WaitSemaphoreCount = 1, PWaitSemaphores = &imageAvailable, PWaitDstStageMask = &waitStage, CommandBufferCount = 1, PCommandBuffers = &commandBuffer, SignalSemaphoreCount = 1, PSignalSemaphores = &renderComplete };
-                Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit(window)");
+                VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit(window)");
                 var swapchain = _swapchain;
                 var imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
@@ -640,7 +533,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             else
             {
                 var submit = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &commandBuffer };
-                Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit");
+                VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit");
             }
 
             return true;
@@ -655,7 +548,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     internal void WaitForFrame()
     {
-        Ensure(Api.WaitForFences(Device, 1, _frameFence, true, ulong.MaxValue), "WaitForFence");
+        VulkanCall.Ensure(Api.WaitForFences(Device, 1, _frameFence, true, ulong.MaxValue), "WaitForFence");
     }
 
     internal void WaitForReadback() => WaitForFrame();
@@ -670,7 +563,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         var offset = Align(_stagingCursor, 4);
         EnsureStaging(checked(offset + (ulong)data.Length));
         void* pointer = null;
-        Ensure(Api.MapMemory(Device, _staging.Memory, offset, (ulong)data.Length, 0, &pointer), "MapMemory(staging upload)");
+        VulkanCall.Ensure(Api.MapMemory(Device, _staging.Memory, offset, (ulong)data.Length, 0, &pointer), "MapMemory(staging upload)");
         try
         {
             data.CopyTo(new Span<byte>(pointer, data.Length));
@@ -683,7 +576,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
                     Offset = 0,
                     Size = (nuint)_staging.AllocationSize
                 };
-                Ensure(Api.FlushMappedMemoryRanges(Device, 1, &range), "FlushMappedMemoryRanges(staging upload)");
+                VulkanCall.Ensure(Api.FlushMappedMemoryRanges(Device, 1, &range), "FlushMappedMemoryRanges(staging upload)");
             }
         }
         finally
@@ -710,6 +603,16 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         _graph?.DisposeGraph();
         _disposed = true;
         Api.DeviceWaitIdle(Device);
+        DisposePersistentResources();
+        DisposeStaging();
+        DisposeTargetResources();
+        DisposeCommandResources();
+        _surfaceLease?.TryRelease(out _);
+        return ValueTask.CompletedTask;
+    }
+
+    private void DisposePersistentResources()
+    {
         ReclaimDeferredTransients();
         _transientTextures.Drain(DestroyTexture);
         _transientBuffers.Drain(DestroyAllocation);
@@ -717,18 +620,23 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         foreach (var pipeline in _computePipelines.Values) pipeline.Dispose(this);
         _rasterPipelines.Clear();
         _computePipelines.Clear();
-        foreach (var item in _samplers.Values) if (item.Sampler.Handle != default) Api.DestroySampler(Device, item.Sampler, null);
-        foreach (var item in _textures.Values) DestroyTexture(item);
-        foreach (var item in _buffers.Values) DestroyAllocation(item.Allocation);
-        _samplers.Clear();
-        _textures.Clear();
-        _buffers.Clear();
+        foreach (var item in _resources.Samplers) if (item.Sampler.Handle != default) Api.DestroySampler(Device, item.Sampler, null);
+        foreach (var item in _resources.Textures) DestroyTexture(item);
+        foreach (var item in _resources.Buffers) DestroyAllocation(item.Allocation);
+        _resources.Clear();
+    }
+
+    private void DisposeStaging()
+    {
         if (VulkanBufferAllocation.IsLive(in _staging))
         {
             DestroyAllocation(_staging);
             _staging = default;
         }
+    }
 
+    private void DisposeTargetResources()
+    {
         if (_windowed)
         {
             DestroySwapchainViews(_renderer.Api, Device, _swapchainViews, _swapchainFramebuffers);
@@ -744,13 +652,14 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         {
             DestroyHeadlessTarget(new HeadlessTarget(_targetImage, _targetMemory, _targetView, _targetFramebuffer));
         }
+    }
 
+    private void DisposeCommandResources()
+    {
         if (_frameFence.Handle != default) Api.DestroyFence(Device, _frameFence, null);
         if (_commandBuffer.Handle != default) FreeCommandBuffer(_commandPool, _commandBuffer);
         if (_commandPool.Handle != default) Api.DestroyCommandPool(Device, _commandPool, null);
         if (_renderPass.Handle != default) Api.DestroyRenderPass(Device, _renderPass, null);
-        _surfaceLease?.TryRelease(out _);
-        return ValueTask.CompletedTask;
     }
 
     private uint NextGeneration() => _nextGeneration++ == 0 ? _nextGeneration++ : _nextGeneration - 1;
@@ -783,279 +692,6 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     private static ulong Align(ulong value, ulong alignment) => checked((value + alignment - 1) / alignment * alignment);
 
-    private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderBufferHandle handle, [NotNullWhen(true)] out T? value) where T : class
-    {
-        value = null;
-        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentBuffer)(object)candidate).Generation != handle.Generation)
-        {
-            return false;
-        }
-
-        values.Remove(handle.Value);
-        value = candidate;
-        return true;
-    }
-
-    private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderTextureHandle handle, [NotNullWhen(true)] out T? value) where T : class
-    {
-        value = null;
-        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentTexture)(object)candidate).Generation != handle.Generation)
-        {
-            return false;
-        }
-
-        values.Remove(handle.Value);
-        value = candidate;
-        return true;
-    }
-
-    private static bool TryRemove<T>(Dictionary<ulong, T> values, RenderSamplerHandle handle, [NotNullWhen(true)] out T? value) where T : class
-    {
-        value = null;
-        if (!handle.IsValid || !values.TryGetValue(handle.Value, out var candidate) || candidate is null || ((PersistentSampler)(object)candidate).Generation != handle.Generation)
-        {
-            return false;
-        }
-
-        values.Remove(handle.Value);
-        value = candidate;
-        return true;
-    }
-
-    private static BufferUsageFlags ToVulkanBufferUsage(RenderBufferUsage usage)
-    {
-        var result = BufferUsageFlags.None;
-        if (usage.HasFlag(RenderBufferUsage.Vertex)) result |= BufferUsageFlags.VertexBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Index)) result |= BufferUsageFlags.IndexBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Uniform)) result |= BufferUsageFlags.UniformBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Storage)) result |= BufferUsageFlags.StorageBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.Indirect)) result |= BufferUsageFlags.IndirectBufferBit;
-        if (usage.HasFlag(RenderBufferUsage.TransferSource)) result |= BufferUsageFlags.TransferSrcBit;
-        if (usage.HasFlag(RenderBufferUsage.TransferDestination)) result |= BufferUsageFlags.TransferDstBit;
-        return result;
-    }
-
-    private PersistentTexture CreateNativeTexture(RenderTextureDescription description)
-    {
-        var format = ToVulkanFormat(description.Format);
-        var usage = ImageUsageFlags.SampledBit;
-        if (description.Usage.HasFlag(RenderTextureUsage.Storage)) usage |= ImageUsageFlags.StorageBit;
-        if (description.Usage.HasFlag(RenderTextureUsage.ColorAttachment)) usage |= ImageUsageFlags.ColorAttachmentBit;
-        if (description.Usage.HasFlag(RenderTextureUsage.DepthStencilAttachment)) usage |= ImageUsageFlags.DepthStencilAttachmentBit;
-        if (description.Usage.HasFlag(RenderTextureUsage.TransferSource)) usage |= ImageUsageFlags.TransferSrcBit;
-        if (description.Usage.HasFlag(RenderTextureUsage.TransferDestination)) usage |= ImageUsageFlags.TransferDstBit;
-        var info = new ImageCreateInfo { SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = format, Extent = new Extent3D(description.Width, description.Height, 1), MipLevels = description.MipLevels, ArrayLayers = description.Layers, Samples = ToSampleCount(description.Samples), Tiling = ImageTiling.Optimal, Usage = usage, SharingMode = SharingMode.Exclusive, InitialLayout = ImageLayout.Undefined };
-        Ensure(Api.CreateImage(Device, info, null, out var image), "CreateImage");
-        DeviceMemory memory = default;
-        ImageView view = default;
-        try
-        {
-            var requirements = Api.GetImageMemoryRequirements(Device, image);
-            var type = FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
-            Ensure(Api.AllocateMemory(Device, new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type }, null, out memory), "AllocateImageMemory");
-            Ensure(Api.BindImageMemory(Device, image, memory, 0), "BindImageMemory");
-            Ensure(Api.CreateImageView(Device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = image, ViewType = ImageViewType.Type2D, Format = format, SubresourceRange = new ImageSubresourceRange { AspectMask = ToAspectMask(description.Format), BaseMipLevel = 0, LevelCount = description.MipLevels, BaseArrayLayer = 0, LayerCount = description.Layers } }, null, out view), "CreateImageView");
-            return new PersistentTexture(image, memory, view, format, new Extent2D(description.Width, description.Height), 0) { Usage = description.Usage };
-        }
-        catch
-        {
-            if (view.Handle != default) Api.DestroyImageView(Device, view, null);
-            if (memory.Handle != default) Api.FreeMemory(Device, memory, null);
-            Api.DestroyImage(Device, image, null);
-            throw;
-        }
-    }
-
-    internal void DestroyTexture(PersistentTexture texture)
-    {
-        if (texture.View.Handle != default) Api.DestroyImageView(Device, texture.View, null);
-        if (texture.Image.Handle != default) Api.DestroyImage(Device, texture.Image, null);
-        if (texture.Memory.Handle != default) Api.FreeMemory(Device, texture.Memory, null);
-    }
-
-    private void RecreateSwapchain(Extent2D extent)
-    {
-        var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
-        if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes)) throw new InvalidOperationException("The Vulkan surface no longer has swapchain support.");
-        DestroySwapchainViews(Api, Device, _swapchainViews, _swapchainFramebuffers);
-        swapchainExtension.DestroySwapchain(Device, _swapchain, null);
-        _format = ChooseSurfaceFormat(formats);
-        _swapchain = CreateSwapchain(_surface, extent, capabilities, formats, modes);
-        (_swapchainViews, _swapchainFramebuffers) = CreateSwapchainViews(Api, swapchainExtension, Device, extent, _renderPass, _swapchain, _format, _depthView, _hasDepthStencilAttachment);
-        _extent = extent;
-    }
-
-    private HeadlessTarget CreateHeadlessTarget(Extent2D extent, RenderPass renderPass)
-    {
-        var info = new ImageCreateInfo { SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = _format, Extent = new Extent3D(extent.Width, extent.Height, 1), MipLevels = 1, ArrayLayers = 1, Samples = SampleCountFlags.Count1Bit, Tiling = ImageTiling.Optimal, Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit, SharingMode = SharingMode.Exclusive, InitialLayout = ImageLayout.Undefined };
-        Ensure(Api.CreateImage(Device, info, null, out var image), "CreateImage(target)");
-        DeviceMemory memory = default;
-        ImageView view = default;
-        Framebuffer framebuffer = default;
-        try
-        {
-            var requirements = Api.GetImageMemoryRequirements(Device, image);
-            var type = FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
-            Ensure(Api.AllocateMemory(Device, new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type }, null, out memory), "AllocateMemory(target)");
-            Ensure(Api.BindImageMemory(Device, image, memory, 0), "BindImageMemory(target)");
-            Ensure(Api.CreateImageView(Device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = image, ViewType = ImageViewType.Type2D, Format = _format, SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 } }, null, out view), "CreateImageView(target)");
-            framebuffer = CreateFramebuffer(Api, Device, renderPass, view, default, false, extent, "CreateFramebuffer(target)");
-            return new HeadlessTarget(image, memory, view, framebuffer);
-        }
-        catch
-        {
-            if (framebuffer.Handle != default) Api.DestroyFramebuffer(Device, framebuffer, null);
-            if (view.Handle != default) Api.DestroyImageView(Device, view, null);
-            if (memory.Handle != default) Api.FreeMemory(Device, memory, null);
-            Api.DestroyImage(Device, image, null);
-            throw;
-        }
-    }
-
-    private void DestroyHeadlessTarget(HeadlessTarget target)
-    {
-        if (target.Framebuffer.Handle != default) Api.DestroyFramebuffer(Device, target.Framebuffer, null);
-        if (target.View.Handle != default) Api.DestroyImageView(Device, target.View, null);
-        if (target.Image.Handle != default) Api.DestroyImage(Device, target.Image, null);
-        if (target.Memory.Handle != default) Api.FreeMemory(Device, target.Memory, null);
-    }
-
-    private static void DestroyPartial(Vk api, Device device, KhrSwapchain? swapchainExtension, RenderPass renderPass, SwapchainKHR swapchain, ImageView[] views, Framebuffer[] framebuffers, HeadlessTarget target, VulkanSemaphore imageAvailable, VulkanSemaphore renderComplete, Fence fence, CommandPool commandPool, CommandBuffer commandBuffer)
-    {
-        DestroySwapchainViews(api, device, views, framebuffers);
-        if (swapchain.Handle != default && swapchainExtension is not null) swapchainExtension.DestroySwapchain(device, swapchain, null);
-        if (target.Framebuffer.Handle != default) api.DestroyFramebuffer(device, target.Framebuffer, null);
-        if (target.View.Handle != default) api.DestroyImageView(device, target.View, null);
-        if (target.Image.Handle != default) api.DestroyImage(device, target.Image, null);
-        if (target.Memory.Handle != default) api.FreeMemory(device, target.Memory, null);
-        if (imageAvailable.Handle != default) api.DestroySemaphore(device, imageAvailable, null);
-        if (renderComplete.Handle != default) api.DestroySemaphore(device, renderComplete, null);
-        if (fence.Handle != default) api.DestroyFence(device, fence, null);
-        if (commandBuffer.Handle != default && commandPool.Handle != default) { var value = commandBuffer; api.FreeCommandBuffers(device, commandPool, 1, &value); }
-        if (commandPool.Handle != default) api.DestroyCommandPool(device, commandPool, null);
-        if (renderPass.Handle != default) api.DestroyRenderPass(device, renderPass, null);
-    }
-
-    private void FreeCommandBuffer(CommandPool pool, CommandBuffer buffer) { var value = buffer; Api.FreeCommandBuffers(Device, pool, 1, &value); }
-
-    private static void DestroySwapchainViews(Vk api, Device device, ImageView[] views, Framebuffer[] framebuffers)
-    {
-        for (var i = framebuffers.Length - 1; i >= 0; i--) if (framebuffers[i].Handle != default) api.DestroyFramebuffer(device, framebuffers[i], null);
-        for (var i = views.Length - 1; i >= 0; i--) if (views[i].Handle != default) api.DestroyImageView(device, views[i], null);
-    }
-
-    private static (ImageView[] Views, Framebuffer[] Framebuffers) CreateSwapchainViews(Vk api, KhrSwapchain extension, Device device, Extent2D extent, RenderPass renderPass, SwapchainKHR swapchain, Format format, ImageView depthView = default, bool hasDepthStencil = false)
-    {
-        uint count = 0;
-        Ensure(extension.GetSwapchainImages(device, swapchain, &count, null), "GetSwapchainImages(count)");
-        var images = new Image[count];
-        Ensure(extension.GetSwapchainImages(device, swapchain, &count, images), "GetSwapchainImages");
-        var views = new ImageView[images.Length];
-        var framebuffers = new Framebuffer[images.Length];
-        try
-        {
-            for (var i = 0; i < images.Length; i++)
-            {
-                Ensure(api.CreateImageView(device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = images[i], ViewType = ImageViewType.Type2D, Format = format, SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 } }, null, out views[i]), "CreateSwapchainImageView");
-                framebuffers[i] = CreateFramebuffer(api, device, renderPass, views[i], depthView, hasDepthStencil, extent, "CreateSwapchainFramebuffer");
-            }
-
-            return (views, framebuffers);
-        }
-        catch
-        {
-            DestroySwapchainViews(api, device, views, framebuffers);
-            throw;
-        }
-    }
-
-    private static RenderPass CreateRenderPass(
-        Vk api,
-        Device device,
-        Format format,
-        ImageLayout finalLayout,
-        bool hasDepthStencil = false,
-        Format depthFormat = default,
-        AttachmentLoadOp depthLoadOp = AttachmentLoadOp.DontCare,
-        AttachmentStoreOp depthStoreOp = AttachmentStoreOp.DontCare,
-        AttachmentLoadOp stencilLoadOp = AttachmentLoadOp.DontCare,
-        AttachmentStoreOp stencilStoreOp = AttachmentStoreOp.DontCare)
-    {
-        var attachments = stackalloc AttachmentDescription[2];
-        attachments[0] = new AttachmentDescription { Format = format, Samples = SampleCountFlags.Count1Bit, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, StencilLoadOp = AttachmentLoadOp.DontCare, StencilStoreOp = AttachmentStoreOp.DontCare, InitialLayout = ImageLayout.Undefined, FinalLayout = finalLayout };
-        if (hasDepthStencil)
-        {
-            attachments[1] = new AttachmentDescription { Format = depthFormat, Samples = SampleCountFlags.Count1Bit, LoadOp = depthLoadOp, StoreOp = depthStoreOp, StencilLoadOp = stencilLoadOp, StencilStoreOp = stencilStoreOp, InitialLayout = depthLoadOp == AttachmentLoadOp.Load || stencilLoadOp == AttachmentLoadOp.Load ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.Undefined, FinalLayout = ImageLayout.DepthStencilAttachmentOptimal };
-        }
-
-        var color = new AttachmentReference { Attachment = 0, Layout = ImageLayout.ColorAttachmentOptimal };
-        var depth = new AttachmentReference { Attachment = 1, Layout = ImageLayout.DepthStencilAttachmentOptimal };
-        var depthStages = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
-        var subpass = new SubpassDescription { PipelineBindPoint = PipelineBindPoint.Graphics, ColorAttachmentCount = 1, PColorAttachments = &color };
-        if (hasDepthStencil) subpass.PDepthStencilAttachment = &depth;
-        var dependency = new SubpassDependency { SrcSubpass = Vk.SubpassExternal, DstSubpass = 0, SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstAccessMask = AccessFlags.ColorAttachmentWriteBit | (hasDepthStencil ? AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit : AccessFlags.None) };
-        var info = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, SubpassCount = 1, PSubpasses = &subpass, DependencyCount = 1, PDependencies = &dependency };
-        Ensure(api.CreateRenderPass(device, info, null, out var renderPass), "CreateRenderPass");
-        return renderPass;
-    }
-
-    private static Framebuffer CreateFramebuffer(Vk api, Device device, RenderPass renderPass, ImageView colorView, ImageView depthView, bool hasDepthStencil, Extent2D extent, string operation)
-    {
-        var attachments = stackalloc ImageView[2];
-        attachments[0] = colorView;
-        if (hasDepthStencil) attachments[1] = depthView;
-        var info = new FramebufferCreateInfo { SType = StructureType.FramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, Width = extent.Width, Height = extent.Height, Layers = 1 };
-        Ensure(api.CreateFramebuffer(device, info, null, out var framebuffer), operation);
-        return framebuffer;
-    }
-
-    private SwapchainKHR CreateSwapchain(SurfaceKHR surface, Extent2D extent, SurfaceCapabilitiesKHR capabilities, SurfaceFormatKHR[] formats, PresentModeKHR[] modes)
-    {
-        var imageCount = Math.Max(2u, capabilities.MinImageCount);
-        if (capabilities.MaxImageCount != 0) imageCount = Math.Min(imageCount, capabilities.MaxImageCount);
-        var queueFamilies = new[] { _graphicsFamily, _presentFamily };
-        fixed (uint* familyPointer = queueFamilies)
-        {
-            var createInfo = new SwapchainCreateInfoKHR
-            {
-                SType = StructureType.SwapchainCreateInfoKhr,
-                Surface = surface,
-                MinImageCount = imageCount,
-                ImageFormat = ChooseSurfaceFormat(formats),
-                ImageColorSpace = formats.Length == 0 ? ColorSpaceKHR.SpaceSrgbNonlinearKhr : formats[0].ColorSpace,
-                ImageExtent = extent,
-                ImageArrayLayers = 1,
-                ImageUsage = ImageUsageFlags.ColorAttachmentBit,
-                ImageSharingMode = _graphicsFamily == _presentFamily ? SharingMode.Exclusive : SharingMode.Concurrent,
-                QueueFamilyIndexCount = _graphicsFamily == _presentFamily ? 0u : 2u,
-                PQueueFamilyIndices = _graphicsFamily == _presentFamily ? null : familyPointer,
-                PreTransform = capabilities.CurrentTransform,
-                CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
-                PresentMode = ChoosePresentMode(modes),
-                Clipped = true
-            };
-            var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
-            Ensure(swapchainExtension.CreateSwapchain(Device, createInfo, null, out var swapchain), "CreateSwapchain");
-            return swapchain;
-        }
-    }
-
-    private static Format ChooseSurfaceFormat(ReadOnlySpan<SurfaceFormatKHR> formats)
-    {
-        foreach (var item in formats) if (item.Format == Format.B8G8R8A8Unorm && item.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr) return item.Format;
-        return formats.Length == 0 ? Format.B8G8R8A8Unorm : formats[0].Format;
-    }
-
-    private static PresentModeKHR ChoosePresentMode(ReadOnlySpan<PresentModeKHR> modes) => modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr : PresentModeKHR.FifoKhr;
-    private static Format ToVulkanFormat(RenderTextureFormat format) => format switch { RenderTextureFormat.R8Unorm => Format.R8Unorm, RenderTextureFormat.Rgba8Unorm => Format.R8G8B8A8Unorm, RenderTextureFormat.Rgba8Srgb => Format.R8G8B8A8Srgb, RenderTextureFormat.Bgra8Unorm => Format.B8G8R8A8Unorm, RenderTextureFormat.Bgra8Srgb => Format.B8G8R8A8Srgb, RenderTextureFormat.Rgba16Float => Format.R16G16B16A16Sfloat, RenderTextureFormat.D32Float => Format.D32Sfloat, RenderTextureFormat.D24UnormS8UInt => Format.D24UnormS8Uint, _ => throw new ArgumentException("Unsupported render texture format.", nameof(format)) };
-    private static AttachmentLoadOp ToAttachmentLoad(AttachmentLoadOperation operation) => operation switch { AttachmentLoadOperation.Load => AttachmentLoadOp.Load, AttachmentLoadOperation.Clear => AttachmentLoadOp.Clear, AttachmentLoadOperation.Discard => AttachmentLoadOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
-    private static AttachmentStoreOp ToAttachmentStore(AttachmentStoreOperation operation) => operation switch { AttachmentStoreOperation.Store => AttachmentStoreOp.Store, AttachmentStoreOperation.Discard => AttachmentStoreOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
-    private static ImageAspectFlags ToAspectMask(RenderTextureFormat format) => format switch { RenderTextureFormat.D32Float => ImageAspectFlags.DepthBit, RenderTextureFormat.D24UnormS8UInt => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, _ => ImageAspectFlags.ColorBit };
-    private static SampleCountFlags ToSampleCount(uint samples) => samples switch { 1 => SampleCountFlags.Count1Bit, 2 => SampleCountFlags.Count2Bit, 4 => SampleCountFlags.Count4Bit, 8 => SampleCountFlags.Count8Bit, _ => throw new ArgumentOutOfRangeException(nameof(samples)) };
-    private static SamplerAddressMode ToAddressMode(RenderAddressMode mode) => mode switch { RenderAddressMode.Repeat => SamplerAddressMode.Repeat, RenderAddressMode.MirroredRepeat => SamplerAddressMode.MirroredRepeat, _ => SamplerAddressMode.ClampToEdge };
-    private static BufferUsageFlags ToVulkanBufferUsageFlags(RenderBufferUsage usage) => ToVulkanBufferUsage(usage);
-    private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
-
     private readonly record struct HeadlessTarget(Image Image, DeviceMemory Memory, ImageView View, Framebuffer Framebuffer);
     private readonly record struct TransientBufferKey(ulong SizeInBytes, RenderBufferUsage Usage);
     private readonly record struct TransientTextureKey(uint Width, uint Height, RenderTextureFormat Format, uint MipLevels, uint Layers, uint Samples, RenderTextureUsage Usage);
@@ -1063,16 +699,17 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private readonly record struct DeferredTexture(PersistentTexture Texture, TransientTextureKey Key);
 }
 
-internal sealed class PersistentBuffer
+internal sealed class PersistentBuffer : IVulkanResourceGeneration
 {
     internal PersistentBuffer(BufferAllocation allocation, RenderBufferDescription description, uint generation) { Allocation = allocation; Description = description; Generation = generation; }
     internal BufferAllocation Allocation { get; }
     internal RenderBufferDescription Description { get; }
     internal uint Generation { get; }
+    uint IVulkanResourceGeneration.Generation => Generation;
 }
 
-internal sealed record PersistentTexture(Image Image, DeviceMemory Memory, ImageView View, Format Format, Extent2D Extent, uint Generation)
+internal sealed record PersistentTexture(Image Image, DeviceMemory Memory, ImageView View, Format Format, Extent2D Extent, uint Generation) : IVulkanResourceGeneration
 {
     internal RenderTextureUsage Usage { get; init; }
 }
-internal sealed record PersistentSampler(Sampler Sampler, uint Generation);
+internal sealed record PersistentSampler(Sampler Sampler, uint Generation) : IVulkanResourceGeneration;

@@ -8,7 +8,7 @@ using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
+internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {
     private readonly VulkanRenderSession _session;
     private readonly List<GraphResource> _resources = new();
@@ -137,7 +137,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
             if (!staging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
             {
                 var range = new MappedMemoryRange { SType = StructureType.MappedMemoryRange, Memory = staging.Memory, Offset = 0, Size = (nuint)staging.AllocationSize };
-                Ensure(_session.Api.InvalidateMappedMemoryRanges(_session.Device, 1, &range), "InvalidateMappedMemoryRanges");
+                VulkanCall.Ensure(_session.Api.InvalidateMappedMemoryRanges(_session.Device, 1, &range), "InvalidateMappedMemoryRanges");
                 new ReadOnlySpan<byte>(pointer, request.Size).CopyTo(destination);
             }
         }
@@ -166,28 +166,28 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     {
         ThrowIfMutable();
         if (!_session.HasTarget || target != _session.Target) throw new InvalidOperationException("The target handle does not belong to this session.");
-        return AddResource(GraphResource.Target());
+        return new RenderGraphTextureHandle(AddResource(GraphResource.Target()));
     }
 
     public RenderGraphTextureHandle ImportTexture(RenderTextureHandle texture)
     {
         ThrowIfMutable();
         if (!_session.TryGetTexture(texture, out var value)) throw new InvalidOperationException("The texture handle is unknown or stale.");
-        return AddResource(GraphResource.FromTexture(value));
+        return new RenderGraphTextureHandle(AddResource(GraphResource.FromTexture(value)));
     }
 
     public RenderGraphBufferHandle ImportBuffer(RenderBufferHandle buffer)
     {
         ThrowIfMutable();
         if (!_session.TryGetBuffer(buffer, out var value)) throw new InvalidOperationException("The buffer handle is unknown or stale.");
-        return AddBuffer(GraphResource.FromBuffer(value));
+        return new RenderGraphBufferHandle(AddResource(GraphResource.FromBuffer(value)));
     }
 
     public RenderGraphTextureHandle CreateTexture(in RenderTextureDescription description)
     {
         ThrowIfMutable();
         if (!description.IsValid) throw new ArgumentException("The transient texture description is invalid.", nameof(description));
-        return AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description), description));
+        return new RenderGraphTextureHandle(AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description), description)));
     }
 
     public RenderGraphBufferHandle CreateBuffer(in RenderBufferDescription description)
@@ -195,7 +195,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         ThrowIfMutable();
         if (!description.IsValid) throw new ArgumentException("The transient buffer description is invalid.", nameof(description));
         var allocation = _session.CreateTransientBuffer(description);
-        return AddBuffer(GraphResource.OwnedBuffer(allocation, description));
+        return new RenderGraphBufferHandle(AddResource(GraphResource.OwnedBuffer(allocation, description)));
     }
 
     public RenderGraphPassHandle AddRasterPass(in RasterPassDescription description, IRasterPass pass)
@@ -513,7 +513,12 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         {
             if (pass.Kind == PassKind.Raster)
             {
-                pass.Pipeline = _session.GetOrCreateRasterPipeline(pass.PipelineDescription);
+                if (pass.PipelineDescription is not { } pipelineDescription)
+                {
+                    throw new InvalidOperationException($"Raster pass '{pass.Name}' has no pipeline description.");
+                }
+
+                pass.Pipeline = _session.GetOrCreateRasterPipeline(pipelineDescription);
             }
         }
     }
@@ -523,7 +528,11 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         foreach (var pass in _passes)
         {
             if (pass.Kind != PassKind.Raster) continue;
-            var pipeline = pass.PipelineDescription;
+            if (pass.PipelineDescription is not { } pipeline)
+            {
+                throw new InvalidOperationException($"Raster pass '{pass.Name}' has no pipeline description.");
+            }
+
             if ((pipeline.DepthTest || pipeline.DepthWrite || pipeline.StencilState.Enabled) && !_hasDepthAttachment)
             {
                 throw new InvalidOperationException($"Raster pass '{pass.Name}' enables depth or stencil testing without a depth-stencil attachment.");
@@ -531,8 +540,12 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         }
     }
 
-    private RenderGraphTextureHandle AddResource(GraphResource resource) { resource.Index = _resources.Count; _resources.Add(resource); return new RenderGraphTextureHandle((uint)_resources.Count); }
-    private RenderGraphBufferHandle AddBuffer(GraphResource resource) { resource.Index = _resources.Count; _resources.Add(resource); return new RenderGraphBufferHandle((uint)_resources.Count); }
+    private uint AddResource(GraphResource resource)
+    {
+        resource.Index = _resources.Count;
+        _resources.Add(resource);
+        return (uint)_resources.Count;
+    }
     private GraphResource GetTexture(RenderGraphTextureHandle handle) { if (!handle.IsValid || handle.Value > (uint)_resources.Count || !_resources[(int)handle.Value - 1].IsTexture) throw new ArgumentException("The graph texture handle is invalid.", nameof(handle)); return _resources[(int)handle.Value - 1]; }
     private GraphResource GetBuffer(RenderGraphBufferHandle handle) { if (!handle.IsValid || handle.Value > (uint)_resources.Count || !_resources[(int)handle.Value - 1].IsBuffer) throw new ArgumentException("The graph buffer handle is invalid.", nameof(handle)); return _resources[(int)handle.Value - 1]; }
     private GraphPass GetPass(RenderGraphPassHandle handle) { if (!handle.IsValid || handle.Value > (uint)_passes.Count) throw new ArgumentException("The graph pass handle is invalid.", nameof(handle)); return _passes[(int)handle.Value - 1]; }
@@ -541,710 +554,8 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
     private static void AddEdge(int from, int to, HashSet<int>[] edges, int[] indegree) { if (from != to && edges[from].Add(to)) indegree[to]++; }
     private static BufferUsageFlags ToBufferUsage(RenderBufferUsage usage) { var result = BufferUsageFlags.None; if (usage.HasFlag(RenderBufferUsage.Vertex)) result |= BufferUsageFlags.VertexBufferBit; if (usage.HasFlag(RenderBufferUsage.Index)) result |= BufferUsageFlags.IndexBufferBit; if (usage.HasFlag(RenderBufferUsage.Uniform)) result |= BufferUsageFlags.UniformBufferBit; if (usage.HasFlag(RenderBufferUsage.Storage)) result |= BufferUsageFlags.StorageBufferBit; if (usage.HasFlag(RenderBufferUsage.Indirect)) result |= BufferUsageFlags.IndirectBufferBit; if (usage.HasFlag(RenderBufferUsage.TransferSource)) result |= BufferUsageFlags.TransferSrcBit; if (usage.HasFlag(RenderBufferUsage.TransferDestination)) result |= BufferUsageFlags.TransferDstBit; return result; }
-    private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
     private static RenderGraphExecutionResult Failed()
         => new(RenderGraphExecutionStatus.Failed, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
 
-    private enum PassKind : byte { Raster, Compute, Transfer }
-    private sealed class GraphPass(string name, PassKind kind, VulkanGraphPipeline? pipeline)
-    {
-        internal string Name = name;
-        internal PassKind Kind = kind;
-        internal VulkanGraphPipeline? Pipeline = pipeline;
-        internal RasterPipelineDescription PipelineDescription;
-        internal IRasterPass? Raster;
-        internal IComputePass? Compute;
-        internal ITransferPass? Transfer;
-        internal ColorAttachmentDescription Color;
-        internal DepthStencilAttachmentDescription DepthStencil;
-        internal bool HasDepthStencil;
-        internal readonly List<GraphUse> Uses = new();
-    }
 
-    internal sealed class GraphResource
-    {
-        internal int Index;
-        internal bool IsTexture;
-        internal bool IsBuffer;
-        internal bool IsTarget;
-        internal bool Owns;
-        internal Image Image;
-        internal PersistentBuffer? Buffer;
-        internal PersistentTexture? Texture;
-        internal RenderTextureDescription TextureDescription;
-        internal ImageAspectFlags AspectMask => IsTarget || Texture is null ? ImageAspectFlags.ColorBit : Texture.Format == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : Texture.Format == Format.D32Sfloat ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
-        internal static GraphResource Target() => new() { IsTexture = true, IsTarget = true };
-        internal static GraphResource FromTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image };
-        internal static GraphResource OwnedTexture(PersistentTexture texture, RenderTextureDescription description) => new() { IsTexture = true, Texture = texture, TextureDescription = description, Image = texture.Image, Owns = true };
-        internal static GraphResource FromBuffer(PersistentBuffer buffer) => new() { IsBuffer = true, Buffer = buffer };
-        internal static GraphResource OwnedBuffer(BufferAllocation allocation, RenderBufferDescription description) => new() { IsBuffer = true, Buffer = new PersistentBuffer(allocation, description, 0), Owns = true };
-        internal void Dispose(VulkanRenderSession session)
-        {
-            if (!Owns) return;
-            if (IsBuffer && Buffer is not null) session.DeferTransient(Buffer.Allocation, Buffer.Description);
-            if (IsTexture && Texture is not null) session.DeferTransient(Texture, TextureDescription);
-            Buffer = null;
-            Texture = null;
-            Image = default;
-        }
-    }
-
-    private readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);
-    private readonly record struct ResourceState(PipelineStageFlags Stages, AccessFlags Access, ImageLayout Layout)
-    {
-        internal static ResourceState For(RenderResourceAccess access, RenderPipelineStages stages)
-        {
-            var stage = PipelineStageFlags.TopOfPipeBit;
-            if (stages.HasFlag(RenderPipelineStages.Transfer)) stage |= PipelineStageFlags.TransferBit;
-            if (stages.HasFlag(RenderPipelineStages.Vertex)) stage |= PipelineStageFlags.VertexShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.Fragment)) stage |= PipelineStageFlags.FragmentShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.Compute)) stage |= PipelineStageFlags.ComputeShaderBit;
-            if (stages.HasFlag(RenderPipelineStages.ColorOutput)) stage |= PipelineStageFlags.ColorAttachmentOutputBit;
-            var hasTransfer = stages.HasFlag(RenderPipelineStages.Transfer);
-            var hasShader = stages.HasFlag(RenderPipelineStages.Vertex) || stages.HasFlag(RenderPipelineStages.Fragment) || stages.HasFlag(RenderPipelineStages.Compute);
-            var hasColor = stages.HasFlag(RenderPipelineStages.ColorOutput);
-            var hasDepth = stages.HasFlag(RenderPipelineStages.DepthStencil);
-            if (hasDepth) stage |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
-
-            var accessFlags = AccessFlags.None;
-            if (access.HasFlag(RenderResourceAccess.Read))
-            {
-                if (hasTransfer) accessFlags |= AccessFlags.TransferReadBit;
-                if (hasShader) accessFlags |= AccessFlags.ShaderReadBit;
-                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentReadBit;
-            }
-            if (access.HasFlag(RenderResourceAccess.Write))
-            {
-                if (hasTransfer) accessFlags |= AccessFlags.TransferWriteBit;
-                if (hasShader) accessFlags |= AccessFlags.ShaderWriteBit;
-                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentWriteBit;
-                if (hasColor) accessFlags |= AccessFlags.ColorAttachmentWriteBit;
-            }
-
-            var layout = hasColor ? ImageLayout.ColorAttachmentOptimal : hasDepth ? ImageLayout.DepthStencilAttachmentOptimal : hasTransfer ? (access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.TransferDstOptimal : ImageLayout.TransferSrcOptimal) : access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal;
-            return new ResourceState(stage, accessFlags, layout);
-        }
-    }
-
-    private sealed class ReadbackRequest(GraphResource resource, int size, ulong sourceOffset, PixelRect region = default, bool isTexture = false)
-    {
-        internal GraphResource Resource = resource;
-        internal int Size = size;
-        internal ulong SourceOffset = sourceOffset;
-        internal ulong StagingOffset;
-        internal bool Submitted;
-        internal PixelRect Region = region;
-        internal bool IsTexture = isTexture;
-    }
-
-    internal sealed unsafe class VulkanGraphPipeline
-    {
-        private readonly DescriptorSetLayout[] _layouts;
-        private readonly DescriptorPool _pool;
-        private readonly DescriptorSet[] _descriptorSets;
-        private readonly GraphBinding[] _bindings;
-        private readonly bool[] _bound;
-        private bool _disposed;
-        internal Pipeline Pipeline { get; }
-        internal PipelineLayout Layout { get; }
-        internal PipelineBindPoint BindPoint { get; }
-        internal ShaderStageFlags StageFlags { get; }
-        internal uint PushConstantSize { get; }
-
-        private VulkanGraphPipeline(Pipeline pipeline, PipelineLayout layout, PipelineBindPoint bindPoint, DescriptorSetLayout[] layouts, DescriptorPool pool, DescriptorSet[] descriptorSets, GraphBinding[] bindings, ShaderStageFlags stageFlags, uint pushConstantSize)
-        {
-            Pipeline = pipeline;
-            Layout = layout;
-            BindPoint = bindPoint;
-            _layouts = layouts;
-            _pool = pool;
-            _descriptorSets = descriptorSets;
-            _bindings = bindings;
-            _bound = new bool[bindings.Length];
-            StageFlags = stageFlags;
-            PushConstantSize = pushConstantSize;
-        }
-
-        internal void BeginBindings() => Array.Clear(_bound);
-
-        internal void BindBuffer(VulkanRenderGraph graph, ShaderBinding binding, RenderGraphBufferHandle handle, ulong offset, ulong sizeInBytes)
-        {
-            var index = FindBinding(binding);
-            var declaration = _bindings[index];
-            if (declaration.DescriptorType is not DescriptorType.StorageBuffer and not DescriptorType.UniformBuffer)
-            {
-                throw new ArgumentException($"Shader binding set {binding.Set}, binding {binding.Binding} is not a buffer.", nameof(binding));
-            }
-
-            var resource = graph.ResolveBuffer(handle);
-            var allocation = resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable.");
-            if (offset > allocation.AllocationSize)
-            {
-                throw new ArgumentOutOfRangeException(nameof(offset));
-            }
-
-            var range = sizeInBytes == 0 ? allocation.AllocationSize - offset : sizeInBytes;
-            if (range == 0 || range > allocation.AllocationSize - offset)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sizeInBytes));
-            }
-
-            var descriptor = new DescriptorBufferInfo { Buffer = allocation.Buffer, Offset = offset, Range = range };
-            var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = _descriptorSets[binding.Set], DstBinding = binding.Binding, DescriptorCount = 1, DescriptorType = declaration.DescriptorType, PBufferInfo = &descriptor };
-            graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
-            _bound[index] = true;
-        }
-
-        internal void BindTexture(VulkanRenderGraph graph, ShaderBinding binding, RenderGraphTextureHandle handle, RenderSamplerHandle sampler)
-        {
-            var index = FindBinding(binding);
-            var declaration = _bindings[index];
-            if (declaration.DescriptorType != DescriptorType.CombinedImageSampler)
-            {
-                throw new ArgumentException($"Shader binding set {binding.Set}, binding {binding.Binding} is not a sampled texture.", nameof(binding));
-            }
-
-            var resource = graph.ResolveTexture(handle);
-            var texture = resource.Texture ?? throw new InvalidOperationException("The graph texture is unavailable for sampling.");
-            if (!graph.Session.TryGetSampler(sampler, out var samplerValue) || samplerValue is null)
-            {
-                throw new InvalidOperationException("The sampler handle is unknown or stale.");
-            }
-
-            var descriptor = new DescriptorImageInfo { Sampler = samplerValue.Sampler, ImageView = texture.View, ImageLayout = ImageLayout.ShaderReadOnlyOptimal };
-            var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = _descriptorSets[binding.Set], DstBinding = binding.Binding, DescriptorCount = 1, DescriptorType = declaration.DescriptorType, PImageInfo = &descriptor };
-            graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
-            _bound[index] = true;
-        }
-
-        internal void Bind(VulkanRenderGraph graph)
-        {
-            for (var index = 0; index < _bound.Length; index++)
-            {
-                if (!_bound[index])
-                {
-                    throw new InvalidOperationException($"Shader binding set {_bindings[index].Binding.Set}, binding {_bindings[index].Binding.Binding} was not provided.");
-                }
-            }
-
-            graph.Session.Api.CmdBindPipeline(graph.Session.CommandBuffer, BindPoint, Pipeline);
-            if (_descriptorSets.Length == 0)
-            {
-                return;
-            }
-
-            fixed (DescriptorSet* descriptorSetPointer = _descriptorSets)
-            {
-                graph.Session.Api.CmdBindDescriptorSets(graph.Session.CommandBuffer, BindPoint, Layout, 0, (uint)_descriptorSets.Length, descriptorSetPointer, 0, null);
-            }
-        }
-
-        private int FindBinding(ShaderBinding binding)
-        {
-            for (var index = 0; index < _bindings.Length; index++)
-            {
-                if (_bindings[index].Binding == binding)
-                {
-                    return index;
-                }
-            }
-
-            throw new ArgumentException($"Shader binding set {binding.Set}, binding {binding.Binding} is not declared by the pipeline.", nameof(binding));
-        }
-
-        internal static VulkanGraphPipeline CreateCompute(VulkanRenderSession session, IShaderArtifact artifact)
-        {
-            ArgumentNullException.ThrowIfNull(artifact);
-            if (artifact.Stage != ShaderStage.Compute) throw new ArgumentException("A compute pipeline requires a compute artifact.", nameof(artifact));
-            return CreateComputeCore(session, artifact);
-        }
-
-        internal static VulkanGraphPipeline CreateRaster(VulkanRenderSession session, RasterPipelineDescription description)
-        {
-            var program = description.ShaderProgram;
-            return CreateRasterCore(session, program, description);
-        }
-
-        private static VulkanGraphPipeline CreateComputeCore(VulkanRenderSession session, IShaderArtifact artifact)
-        {
-            var bindings = BuildBindings(artifact.Abi.Resources, out var maxSet);
-            CreateDescriptorState(session, bindings, maxSet, out var layouts, out var pool, out var descriptorSets);
-            PipelineLayout pipelineLayout = default;
-            Pipeline pipeline = default;
-            ShaderModule module = default;
-            try
-            {
-                module = CreateShaderModule(session, artifact.Spirv);
-                var ranges = NativePushRanges(artifact.Abi.PushConstants, ShaderStageFlags.ComputeBit, out var size);
-                fixed (DescriptorSetLayout* layoutPointer = layouts)
-                fixed (PushConstantRange* pushPointer = ranges)
-                {
-                    var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = (uint)layouts.Length, PSetLayouts = layoutPointer, PushConstantRangeCount = (uint)ranges.Length, PPushConstantRanges = pushPointer };
-                    Ensure(session.Api.CreatePipelineLayout(session.Device, info, null, out pipelineLayout), "CreatePipelineLayout(compute)");
-                }
-
-                var name = Encoding.UTF8.GetBytes(artifact.EntryPoint + "\0");
-                fixed (byte* namePointer = name)
-                {
-                    var stage = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.ComputeBit, Module = module, PName = namePointer };
-                    var info = new ComputePipelineCreateInfo { SType = StructureType.ComputePipelineCreateInfo, Stage = stage, Layout = pipelineLayout };
-                    var output = stackalloc Pipeline[1];
-                    Ensure(session.Api.CreateComputePipelines(session.Device, default, 1, &info, null, output), "CreateComputePipelines");
-                    pipeline = output[0];
-                }
-
-                return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Compute, layouts, pool, descriptorSets, bindings, ShaderStageFlags.ComputeBit, size);
-            }
-            catch
-            {
-                if (module.Handle != default) session.Api.DestroyShaderModule(session.Device, module, null);
-                if (pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, pipeline, null);
-                if (pipelineLayout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, pipelineLayout, null);
-                DestroyDescriptorState(session, layouts, pool);
-                throw;
-            }
-            finally
-            {
-                if (module.Handle != default) session.Api.DestroyShaderModule(session.Device, module, null);
-            }
-        }
-
-        private static VulkanGraphPipeline CreateRasterCore(VulkanRenderSession session, IGraphicsShaderProgram program, RasterPipelineDescription description)
-        {
-            var resources = new List<ShaderResourceBinding>(program.Vertex.Abi.Resources);
-            foreach (var resource in program.Fragment.Abi.Resources)
-            {
-                if (!resources.Any(item => item.Binding == resource.Binding)) resources.Add(resource);
-            }
-
-            var bindings = BuildBindings(resources, out var maxSet);
-            CreateDescriptorState(session, bindings, maxSet, out var layouts, out var pool, out var descriptorSets);
-            PipelineLayout pipelineLayout = default;
-            Pipeline pipeline = default;
-            ShaderModule vertex = default;
-            ShaderModule fragment = default;
-            try
-            {
-                vertex = CreateShaderModule(session, program.Vertex.Spirv);
-                fragment = CreateShaderModule(session, program.Fragment.Spirv);
-                var pushRanges = program.Vertex.Abi.PushConstants.Count > 0 ? NativePushRanges(program.Vertex.Abi.PushConstants, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, out var pushSize) : NativePushRanges(program.Fragment.Abi.PushConstants, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, out pushSize);
-                fixed (DescriptorSetLayout* layoutPointer = layouts)
-                fixed (PushConstantRange* pushPointer = pushRanges)
-                {
-                    var layoutInfo = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = (uint)layouts.Length, PSetLayouts = layoutPointer, PushConstantRangeCount = (uint)pushRanges.Length, PPushConstantRanges = pushPointer };
-                    Ensure(session.Api.CreatePipelineLayout(session.Device, layoutInfo, null, out pipelineLayout), "CreatePipelineLayout(raster)");
-                }
-
-                var vertexName = Encoding.UTF8.GetBytes(program.Vertex.EntryPoint + "\0");
-                var fragmentName = Encoding.UTF8.GetBytes(program.Fragment.EntryPoint + "\0");
-                var vertexBindings = CreateVertexBindings(program.Vertex.Abi.VertexBuffers);
-                var vertexAttributes = CreateVertexAttributes(program.Vertex.Abi.VertexInputs, program.Vertex.Abi.VertexBuffers);
-                fixed (byte* vertexPointer = vertexName)
-                fixed (byte* fragmentPointer = fragmentName)
-                fixed (VertexInputBindingDescription* bindingPointer = vertexBindings)
-                fixed (VertexInputAttributeDescription* attributePointer = vertexAttributes)
-                {
-                    var stages = stackalloc PipelineShaderStageCreateInfo[2];
-                    stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vertex, PName = vertexPointer };
-                    stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fragment, PName = fragmentPointer };
-                    var vertexInput = new PipelineVertexInputStateCreateInfo
-                    {
-                        SType = StructureType.PipelineVertexInputStateCreateInfo,
-                        VertexBindingDescriptionCount = (uint)vertexBindings.Length,
-                        PVertexBindingDescriptions = bindingPointer,
-                        VertexAttributeDescriptionCount = (uint)vertexAttributes.Length,
-                        PVertexAttributeDescriptions = attributePointer,
-                    };
-                    var assembly = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = ToTopology(description.Topology) };
-                    var viewport = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
-                    var rasterization = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, PolygonMode = PolygonMode.Fill, CullMode = ToCullMode(description.CullMode), FrontFace = description.FrontFace == RasterFrontFace.Clockwise ? FrontFace.Clockwise : FrontFace.CounterClockwise, LineWidth = 1 };
-                    var multisample = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
-                    var blend = new PipelineColorBlendAttachmentState { BlendEnable = description.BlendMode != RenderBlendMode.Opaque, SrcColorBlendFactor = description.BlendMode == RenderBlendMode.PremultipliedAlpha ? BlendFactor.One : BlendFactor.SrcAlpha, DstColorBlendFactor = description.BlendMode == RenderBlendMode.Additive ? BlendFactor.One : BlendFactor.OneMinusSrcAlpha, ColorBlendOp = BlendOp.Add, SrcAlphaBlendFactor = BlendFactor.One, DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha, AlphaBlendOp = BlendOp.Add, ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
-                    var blendState = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
-                    var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
-                    var dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamicStates };
-                    var depth = new PipelineDepthStencilStateCreateInfo
-                    {
-                        SType = StructureType.PipelineDepthStencilStateCreateInfo,
-                        DepthTestEnable = description.DepthTest,
-                        DepthWriteEnable = description.DepthWrite,
-                        DepthCompareOp = ToCompareOp(description.DepthCompareOperation),
-                        StencilTestEnable = description.StencilState.Enabled,
-                        Front = ToStencilOpState(description.StencilState.Front),
-                        Back = ToStencilOpState(description.StencilState.Back),
-                    };
-                    var info = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &vertexInput, PInputAssemblyState = &assembly, PViewportState = &viewport, PRasterizationState = &rasterization, PMultisampleState = &multisample, PDepthStencilState = &depth, PColorBlendState = &blendState, PDynamicState = &dynamic, Layout = pipelineLayout, RenderPass = session.GraphRenderPass, Subpass = 0 };
-                    var output = stackalloc Pipeline[1];
-                    Ensure(session.Api.CreateGraphicsPipelines(session.Device, default, 1, &info, null, output), "CreateGraphicsPipelines");
-                    pipeline = output[0];
-                }
-
-                return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Graphics, layouts, pool, descriptorSets, bindings, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, Math.Max(GetPushSize(program.Vertex.Abi.PushConstants), GetPushSize(program.Fragment.Abi.PushConstants)));
-            }
-            catch
-            {
-                if (vertex.Handle != default) session.Api.DestroyShaderModule(session.Device, vertex, null);
-                if (fragment.Handle != default) session.Api.DestroyShaderModule(session.Device, fragment, null);
-                if (pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, pipeline, null);
-                if (pipelineLayout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, pipelineLayout, null);
-                DestroyDescriptorState(session, layouts, pool);
-                throw;
-            }
-            finally
-            {
-                if (vertex.Handle != default) session.Api.DestroyShaderModule(session.Device, vertex, null);
-                if (fragment.Handle != default) session.Api.DestroyShaderModule(session.Device, fragment, null);
-            }
-        }
-
-        private static VertexInputBindingDescription[] CreateVertexBindings(IReadOnlyList<ShaderVertexBufferLayout> layouts)
-        {
-            var result = new VertexInputBindingDescription[layouts.Count];
-            for (var index = 0; index < layouts.Count; index++)
-            {
-                var layout = layouts[index];
-                result[index] = new VertexInputBindingDescription
-                {
-                    Binding = layout.Binding,
-                    Stride = layout.Stride,
-                    InputRate = layout.InputRate switch
-                    {
-                        ShaderVertexInputRate.Vertex => VertexInputRate.Vertex,
-                        ShaderVertexInputRate.Instance => VertexInputRate.Instance,
-                        _ => throw new ArgumentOutOfRangeException(nameof(layouts), layout.InputRate, "Unknown vertex input rate."),
-                    },
-                };
-            }
-
-            return result;
-        }
-
-        private static VertexInputAttributeDescription[] CreateVertexAttributes(
-            IReadOnlyList<ShaderVertexInput> inputs,
-            IReadOnlyList<ShaderVertexBufferLayout> layouts)
-        {
-            var result = new VertexInputAttributeDescription[inputs.Count];
-            for (var index = 0; index < inputs.Count; index++)
-            {
-                var input = inputs[index];
-                var stride = 0u;
-                var found = false;
-                for (var layoutIndex = 0; layoutIndex < layouts.Count; layoutIndex++)
-                {
-                    if (layouts[layoutIndex].Binding == input.Binding)
-                    {
-                        stride = layouts[layoutIndex].Stride;
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found)
-                {
-                    throw new ArgumentException($"Vertex input location {input.Location} refers to undeclared binding {input.Binding}.", nameof(inputs));
-                }
-
-                var byteSize = GetVertexValueByteSize(input.Type);
-                if (input.ByteOffset > stride || byteSize > stride - input.ByteOffset)
-                {
-                    throw new ArgumentException($"Vertex input location {input.Location} exceeds binding {input.Binding} stride {stride}.", nameof(inputs));
-                }
-
-                result[index] = new VertexInputAttributeDescription
-                {
-                    Location = input.Location,
-                    Binding = input.Binding,
-                    Format = ToVertexFormat(input.Type),
-                    Offset = input.ByteOffset,
-                };
-            }
-
-            return result;
-        }
-
-        private static uint GetVertexValueByteSize(ShaderValueType type)
-        {
-            if (type.Kind is not (ShaderValueKind.FloatingPoint or ShaderValueKind.SignedInteger or ShaderValueKind.UnsignedInteger) ||
-                type.BitWidth != 32 || type.Columns != 1 || type.VectorSize is < 1 or > 4)
-            {
-                throw new NotSupportedException($"Vertex input type {type} is not supported by the Vulkan raster path.");
-            }
-
-            return checked(type.VectorSize * sizeof(uint));
-        }
-
-        private static Format ToVertexFormat(ShaderValueType type)
-        {
-            _ = GetVertexValueByteSize(type);
-            return (type.Kind, type.VectorSize) switch
-            {
-                (ShaderValueKind.FloatingPoint, 1) => Format.R32Sfloat,
-                (ShaderValueKind.FloatingPoint, 2) => Format.R32G32Sfloat,
-                (ShaderValueKind.FloatingPoint, 3) => Format.R32G32B32Sfloat,
-                (ShaderValueKind.FloatingPoint, 4) => Format.R32G32B32A32Sfloat,
-                (ShaderValueKind.SignedInteger, 1) => Format.R32Sint,
-                (ShaderValueKind.SignedInteger, 2) => Format.R32G32Sint,
-                (ShaderValueKind.SignedInteger, 3) => Format.R32G32B32Sint,
-                (ShaderValueKind.SignedInteger, 4) => Format.R32G32B32A32Sint,
-                (ShaderValueKind.UnsignedInteger, 1) => Format.R32Uint,
-                (ShaderValueKind.UnsignedInteger, 2) => Format.R32G32Uint,
-                (ShaderValueKind.UnsignedInteger, 3) => Format.R32G32B32Uint,
-                (ShaderValueKind.UnsignedInteger, 4) => Format.R32G32B32A32Uint,
-                _ => throw new NotSupportedException($"Vertex input type {type} is not supported by the Vulkan raster path."),
-            };
-        }
-
-        internal void Dispose(VulkanRenderSession session)
-        {
-            if (_disposed) return;
-            _disposed = true;
-            if (Pipeline.Handle != default) session.Api.DestroyPipeline(session.Device, Pipeline, null);
-            if (Layout.Handle != default) session.Api.DestroyPipelineLayout(session.Device, Layout, null);
-            DestroyDescriptorState(session, _layouts, _pool);
-        }
-
-        private static ShaderModule CreateShaderModule(VulkanRenderSession session, ReadOnlySpan<byte> bytes)
-        {
-            var words = MemoryMarshal.Cast<byte, uint>(bytes);
-            fixed (uint* pointer = words)
-            {
-                var info = new ShaderModuleCreateInfo { SType = StructureType.ShaderModuleCreateInfo, CodeSize = (nuint)(words.Length * sizeof(uint)), PCode = pointer };
-                Ensure(session.Api.CreateShaderModule(session.Device, info, null, out var module), "CreateShaderModule");
-                return module;
-            }
-        }
-
-        private static GraphBinding[] BuildBindings(IReadOnlyList<ShaderResourceBinding> resources, out int maxSet)
-        {
-            maxSet = -1;
-            var result = new List<GraphBinding>(resources.Count);
-            foreach (var resource in resources)
-            {
-                if (resource.DescriptorCount != 1) throw new ArgumentException("The graph supports one descriptor per binding.");
-                maxSet = Math.Max(maxSet, checked((int)resource.Binding.Set));
-                if (result.Any(item => item.Binding == resource.Binding)) continue;
-                result.Add(new GraphBinding(resource.Binding, ToDescriptorType(resource.Kind), ToStageFlags(resource.Stages)));
-            }
-
-            return result.ToArray();
-        }
-
-        private static void CreateDescriptorState(VulkanRenderSession session, GraphBinding[] bindings, int maxSet, out DescriptorSetLayout[] layouts, out DescriptorPool pool, out DescriptorSet[] descriptorSets)
-        {
-            var setCount = maxSet + 1;
-            if (setCount > session.MaxBoundDescriptorSets) throw new InvalidOperationException("Shader descriptor sets exceed device limits.");
-            layouts = new DescriptorSetLayout[setCount];
-            pool = default;
-            descriptorSets = Array.Empty<DescriptorSet>();
-            try
-            {
-                for (var set = 0; set < setCount; set++)
-                {
-                    var setBindings = bindings.Where(item => item.Binding.Set == (uint)set).Select(item => new DescriptorSetLayoutBinding { Binding = item.Binding.Binding, DescriptorCount = 1, DescriptorType = item.DescriptorType, StageFlags = item.StageFlags }).ToArray();
-                    fixed (DescriptorSetLayoutBinding* pointer = setBindings)
-                    {
-                        var info = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = (uint)setBindings.Length, PBindings = pointer };
-                        Ensure(session.Api.CreateDescriptorSetLayout(session.Device, info, null, out layouts[set]), "CreateDescriptorSetLayout");
-                    }
-                }
-
-                if (bindings.Length != 0)
-                {
-                    var sizes = bindings.GroupBy(item => item.DescriptorType).Select(group => new DescriptorPoolSize { Type = group.Key, DescriptorCount = (uint)group.Count() }).ToArray();
-                    fixed (DescriptorPoolSize* pointer = sizes)
-                    {
-                        var info = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = (uint)setCount, PoolSizeCount = (uint)sizes.Length, PPoolSizes = pointer };
-                        Ensure(session.Api.CreateDescriptorPool(session.Device, info, null, out pool), "CreateDescriptorPool");
-                    }
-
-                    descriptorSets = new DescriptorSet[setCount];
-                    fixed (DescriptorSetLayout* layoutPointer = layouts)
-                    fixed (DescriptorSet* descriptorSetPointer = descriptorSets)
-                    {
-                        var allocateInfo = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = pool, DescriptorSetCount = (uint)setCount, PSetLayouts = layoutPointer };
-                        Ensure(session.Api.AllocateDescriptorSets(session.Device, allocateInfo, descriptorSetPointer), "AllocateDescriptorSets");
-                    }
-                }
-            }
-            catch
-            {
-                DestroyDescriptorState(session, layouts, pool);
-                throw;
-            }
-        }
-
-        private static void DestroyDescriptorState(VulkanRenderSession session, DescriptorSetLayout[] layouts, DescriptorPool pool)
-        {
-            if (pool.Handle != default) session.Api.DestroyDescriptorPool(session.Device, pool, null);
-            for (var i = layouts.Length - 1; i >= 0; i--) if (layouts[i].Handle != default) session.Api.DestroyDescriptorSetLayout(session.Device, layouts[i], null);
-        }
-
-        private static PushConstantRange[] NativePushRanges(IReadOnlyList<ShaderPushConstantRange> ranges, ShaderStageFlags flags, out uint size)
-        {
-            size = GetPushSize(ranges);
-            return ranges.Select(range => new PushConstantRange { Offset = range.Offset, Size = range.Size, StageFlags = flags }).ToArray();
-        }
-
-        private static uint GetPushSize(IReadOnlyList<ShaderPushConstantRange> ranges) => ranges.Count == 0 ? 0 : ranges.Max(range => checked(range.Offset + range.Size));
-        private static ShaderStageFlags ToStageFlags(ShaderStageMask stages) { var result = ShaderStageFlags.None; if (stages.HasFlag(ShaderStageMask.Compute)) result |= ShaderStageFlags.ComputeBit; if (stages.HasFlag(ShaderStageMask.Vertex)) result |= ShaderStageFlags.VertexBit; if (stages.HasFlag(ShaderStageMask.Fragment)) result |= ShaderStageFlags.FragmentBit; return result; }
-        private static DescriptorType ToDescriptorType(ShaderResourceKind kind) => kind switch { ShaderResourceKind.StorageBuffer => DescriptorType.StorageBuffer, ShaderResourceKind.UniformBuffer => DescriptorType.UniformBuffer, ShaderResourceKind.SampledTexture or ShaderResourceKind.CombinedTextureSampler => DescriptorType.CombinedImageSampler, _ => throw new ArgumentException("Unsupported shader resource kind.") };
-        private static CompareOp ToCompareOp(RenderCompareOperation operation) => operation switch
-        {
-            RenderCompareOperation.Never => CompareOp.Never,
-            RenderCompareOperation.Less => CompareOp.Less,
-            RenderCompareOperation.Equal => CompareOp.Equal,
-            RenderCompareOperation.LessOrEqual => CompareOp.LessOrEqual,
-            RenderCompareOperation.Greater => CompareOp.Greater,
-            RenderCompareOperation.NotEqual => CompareOp.NotEqual,
-            RenderCompareOperation.GreaterOrEqual => CompareOp.GreaterOrEqual,
-            RenderCompareOperation.Always => CompareOp.Always,
-            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
-        };
-        private static StencilOp ToStencilOp(RenderStencilOperation operation) => operation switch
-        {
-            RenderStencilOperation.Keep => StencilOp.Keep,
-            RenderStencilOperation.Zero => StencilOp.Zero,
-            RenderStencilOperation.Replace => StencilOp.Replace,
-            RenderStencilOperation.IncrementClamp => StencilOp.IncrementAndClamp,
-            RenderStencilOperation.DecrementClamp => StencilOp.DecrementAndClamp,
-            RenderStencilOperation.Invert => StencilOp.Invert,
-            RenderStencilOperation.IncrementWrap => StencilOp.IncrementAndWrap,
-            RenderStencilOperation.DecrementWrap => StencilOp.DecrementAndWrap,
-            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
-        };
-        private static StencilOpState ToStencilOpState(RenderStencilFaceState state) => new()
-        {
-            FailOp = ToStencilOp(state.FailOperation),
-            PassOp = ToStencilOp(state.PassOperation),
-            DepthFailOp = ToStencilOp(state.DepthFailOperation),
-            CompareOp = ToCompareOp(state.CompareOperation),
-            CompareMask = state.CompareMask,
-            WriteMask = state.WriteMask,
-            Reference = state.Reference,
-        };
-        private static Silk.NET.Vulkan.PrimitiveTopology ToTopology(Delta.Render.RenderGraph.PrimitiveTopology topology) => topology switch { Delta.Render.RenderGraph.PrimitiveTopology.TriangleStrip => Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, Delta.Render.RenderGraph.PrimitiveTopology.LineList => Silk.NET.Vulkan.PrimitiveTopology.LineList, Delta.Render.RenderGraph.PrimitiveTopology.PointList => Silk.NET.Vulkan.PrimitiveTopology.PointList, _ => Silk.NET.Vulkan.PrimitiveTopology.TriangleList };
-        private static CullModeFlags ToCullMode(RasterCullMode mode) => mode switch { RasterCullMode.Front => CullModeFlags.FrontBit, RasterCullMode.Back => CullModeFlags.BackBit, _ => CullModeFlags.None };
-        private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
-        private readonly record struct GraphBinding(ShaderBinding Binding, DescriptorType DescriptorType, ShaderStageFlags StageFlags);
-    }
-
-    internal sealed unsafe class VulkanRasterCommandContext(VulkanRenderGraph graph, VulkanGraphPipeline? pipeline) : IRasterCommandContext
-    {
-        private readonly VulkanGraphPipeline _pipeline = pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.");
-        public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0) => graph.BindBuffer(_pipeline, binding, buffer, offset, sizeInBytes);
-        public void BindTexture(ShaderBinding binding, RenderGraphTextureHandle texture, RenderSamplerHandle sampler) => graph.BindTexture(_pipeline, binding, texture, sampler);
-        public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0) => graph.PushConstants(_pipeline, data, offset);
-        public void SetViewport(in RenderViewport viewport) { if (!viewport.IsValid) throw new ArgumentException("Viewport is invalid.", nameof(viewport)); var value = new Viewport(viewport.X, viewport.Y, viewport.Width, viewport.Height, viewport.MinDepth, viewport.MaxDepth); graph.Session.Api.CmdSetViewport(graph.Session.CommandBuffer, 0, 1, &value); }
-        public void SetScissor(in PixelRect scissor) { if (scissor.IsEmpty) throw new ArgumentException("Scissor is empty.", nameof(scissor)); var value = new Rect2D { Offset = new Offset2D(scissor.X, scissor.Y), Extent = new Extent2D((uint)scissor.Width, (uint)scissor.Height) }; graph.Session.Api.CmdSetScissor(graph.Session.CommandBuffer, 0, 1, &value); }
-        public void BindVertexBuffer(uint binding, RenderGraphBufferHandle buffer, ulong offset = 0) { var native = graph.ResolveBufferAllocation(buffer).Buffer; graph.Session.Api.CmdBindVertexBuffers(graph.Session.CommandBuffer, binding, 1, &native, &offset); }
-        public void BindIndexBuffer(RenderGraphBufferHandle buffer, IndexElementFormat format, ulong offset = 0) => graph.Session.Api.CmdBindIndexBuffer(graph.Session.CommandBuffer, graph.ResolveBufferAllocation(buffer).Buffer, offset, format == IndexElementFormat.UnsignedShort ? IndexType.Uint16 : IndexType.Uint32);
-        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) { graph.Bind(_pipeline); graph.Session.Api.CmdDraw(graph.Session.CommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance); }
-        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0) { graph.Bind(_pipeline); graph.Session.Api.CmdDrawIndexed(graph.Session.CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); }
-    }
-
-    internal sealed unsafe class VulkanComputeCommandContext(VulkanRenderGraph graph, VulkanGraphPipeline? pipeline) : IComputeCommandContext
-    {
-        private readonly VulkanGraphPipeline _pipeline = pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.");
-        public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0) => graph.BindBuffer(_pipeline, binding, buffer, offset, sizeInBytes);
-        public void BindTexture(ShaderBinding binding, RenderGraphTextureHandle texture, RenderSamplerHandle sampler) => graph.BindTexture(_pipeline, binding, texture, sampler);
-        public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0) => graph.PushConstants(_pipeline, data, offset);
-        public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) { if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0) return; graph.Bind(_pipeline); graph.Session.Api.CmdDispatch(graph.Session.CommandBuffer, groupCountX, groupCountY, groupCountZ); }
-    }
-
-    internal sealed unsafe class VulkanTransferCommandContext(VulkanRenderGraph graph) : ITransferCommandContext
-    {
-        public void CopyBuffer(RenderGraphBufferHandle source, RenderGraphBufferHandle destination, ulong sizeInBytes, ulong sourceOffset = 0, ulong destinationOffset = 0) { var src = graph.ResolveBufferAllocation(source).Buffer; var dst = graph.ResolveBufferAllocation(destination).Buffer; var copy = new BufferCopy { SrcOffset = sourceOffset, DstOffset = destinationOffset, Size = sizeInBytes }; graph.Session.Api.CmdCopyBuffer(graph.Session.CommandBuffer, src, dst, 1, &copy); }
-        public void CopyTexture(RenderGraphTextureHandle source, in PixelRect sourceRegion, RenderGraphTextureHandle destination, in PixelRect destinationRegion)
-        {
-            var sourceResource = graph.ResolveTexture(source);
-            var destinationResource = graph.ResolveTexture(destination);
-            var sourceImage = sourceResource.IsTarget ? graph.Session.GraphImage : sourceResource.Image;
-            var destinationImage = destinationResource.IsTarget ? graph.Session.GraphImage : destinationResource.Image;
-            if (sourceImage.Handle == default || destinationImage.Handle == default)
-            {
-                throw new InvalidOperationException("Texture copy resource is unavailable.");
-            }
-
-            if (sourceRegion.X < 0 || sourceRegion.Y < 0 || destinationRegion.X < 0 || destinationRegion.Y < 0 ||
-                sourceRegion.Width <= 0 || sourceRegion.Height <= 0 ||
-                sourceRegion.Width != destinationRegion.Width || sourceRegion.Height != destinationRegion.Height)
-            {
-                throw new ArgumentException("Texture copy regions must be positive and have equal dimensions.");
-            }
-
-            var copy = new ImageCopy
-            {
-                SrcSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = 1 },
-                SrcOffset = new Offset3D(sourceRegion.X, sourceRegion.Y, 0),
-                DstSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = 1 },
-                DstOffset = new Offset3D(destinationRegion.X, destinationRegion.Y, 0),
-                Extent = new Extent3D((uint)sourceRegion.Width, (uint)sourceRegion.Height, 1)
-            };
-            graph.Session.Api.CmdCopyImage(
-                graph.Session.CommandBuffer,
-                sourceImage,
-                ImageLayout.TransferSrcOptimal,
-                destinationImage,
-                ImageLayout.TransferDstOptimal,
-                1,
-                &copy);
-        }
-        public void UploadBuffer(RenderGraphBufferHandle destination, ReadOnlySpan<byte> data, ulong destinationOffset = 0) { var sourceOffset = graph.AllocateStaging(data); var src = graph.StagingBuffer.Buffer; var dst = graph.ResolveBufferAllocation(destination).Buffer; var copy = new BufferCopy { SrcOffset = sourceOffset, DstOffset = destinationOffset, Size = (ulong)data.Length }; graph.Session.Api.CmdCopyBuffer(graph.Session.CommandBuffer, src, dst, 1, &copy); }
-        public void UploadTexture(RenderGraphTextureHandle destination, in PixelRect destinationRegion, ReadOnlySpan<byte> data, uint sourceRowPitch)
-        {
-            var resource = graph.ResolveTexture(destination);
-            if (resource.Texture is not { } texture)
-            {
-                throw new InvalidOperationException("Texture upload requires a registered or graph-owned texture.");
-            }
-
-            if (destinationRegion.X < 0 || destinationRegion.Y < 0 || destinationRegion.Width <= 0 || destinationRegion.Height <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(destinationRegion), "Texture upload region must have positive dimensions and non-negative coordinates.");
-            }
-
-            var right = checked((uint)destinationRegion.X + (uint)destinationRegion.Width);
-            var bottom = checked((uint)destinationRegion.Y + (uint)destinationRegion.Height);
-            if (right > texture.Extent.Width || bottom > texture.Extent.Height)
-            {
-                throw new ArgumentOutOfRangeException(nameof(destinationRegion), "Texture upload region is outside the destination texture.");
-            }
-
-            var bytesPerPixel = texture.Format switch
-            {
-                Format.R8Unorm => 1u,
-                Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb or Format.B8G8R8A8Unorm or Format.B8G8R8A8Srgb => 4u,
-                _ => throw new NotSupportedException($"Texture uploads do not support Vulkan format {texture.Format}.")
-            };
-            var minimumRowPitch = checked((uint)destinationRegion.Width * bytesPerPixel);
-            if (sourceRowPitch < minimumRowPitch || sourceRowPitch % bytesPerPixel != 0)
-            {
-                throw new ArgumentException("Texture source row pitch is smaller than the region or misaligned to its pixel format.", nameof(sourceRowPitch));
-            }
-
-            var requiredBytes = checked((ulong)sourceRowPitch * (uint)destinationRegion.Height);
-            if ((ulong)data.Length < requiredBytes)
-            {
-                throw new ArgumentException("Texture upload data is shorter than sourceRowPitch multiplied by region height.", nameof(data));
-            }
-
-            var sourceOffset = graph.AllocateStaging(data[..checked((int)requiredBytes)]);
-            var copy = new BufferImageCopy
-            {
-                BufferOffset = sourceOffset,
-                BufferRowLength = sourceRowPitch / bytesPerPixel,
-                BufferImageHeight = (uint)destinationRegion.Height,
-                ImageSubresource = new ImageSubresourceLayers
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = 0,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                },
-                ImageOffset = new Offset3D(destinationRegion.X, destinationRegion.Y, 0),
-                ImageExtent = new Extent3D((uint)destinationRegion.Width, (uint)destinationRegion.Height, 1)
-            };
-            graph.Session.Api.CmdCopyBufferToImage(graph.Session.CommandBuffer, graph.StagingBuffer.Buffer, texture.Image, ImageLayout.TransferDstOptimal, 1, &copy);
-        }
-    }
 }
