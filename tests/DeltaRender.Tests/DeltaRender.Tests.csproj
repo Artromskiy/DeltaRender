@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\\..\\src\\DeltaRender.XAML\\DeltaRender.XAML.csproj" />
+    <ProjectReference Include="../../../DeltaXAML/src/DeltaXAML.Contract/DeltaXAML.Contract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
