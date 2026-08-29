@@ -43,7 +43,7 @@ resource lifetime are decided in one place.
   session-owned target, not synthetic surfaces.
 - [x] `DeltaRender.Text.TextRenderFeature` now emits ordinary transfer + raster
   graph passes for its bounded text slice.
-- [ ] DeltaRender.XAML must consume the text feature through a neutral adapter
+- [x] DeltaRender.XAML consumes the text feature through a neutral adapter
   without adding another frame packet or input-polling owner.
 
 ### P1 - DeltaRender.XAML UI display-list adapter
@@ -63,8 +63,8 @@ contract and not in DeltaXAML.
   `UiVisualTypeId`; missing, stale or foreign entries must be diagnostics.
 - [x] Keep reusable clip/order storage and batch adjacent compatible text
   commands; preserve mixed visual/text `A-B-A` order through one transfer stage
-  and one contiguous raster segment. GPU material/dirty upload reuse remains a
-  separate shader/resource milestone.
+  and one raster pass per contiguous text segment or visual command. GPU
+  material/dirty upload reuse remains a separate shader/resource milestone.
 - [x] Support the current rectangle/solid/image/text path first. Rounded
   shapes, stroke, gradients and non-rectangular clips require explicit shader
   artifacts and must not silently fall back.
