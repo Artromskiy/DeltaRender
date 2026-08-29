@@ -114,6 +114,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private int[] _clipMarks = [];
     private bool[] _seenVisuals = [];
     private bool[] _seenTexts = [];
+    private int[] _textRunIndices = [];
     private int _visualCount;
     private int _clipCount;
     private int _textCount;
@@ -219,6 +220,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _clipMarks, displayList.Clips.Length);
         EnsureCapacity(ref _seenVisuals, displayList.Visuals.Length);
         EnsureCapacity(ref _seenTexts, displayList.Text.Length);
+        EnsureCapacity(ref _textRunIndices, displayList.Order.Length);
 
         displayList.Visuals.CopyTo(_visuals);
         displayList.Clips.CopyTo(_clips);
@@ -334,41 +336,75 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return;
         }
 
+        var target = graph.ImportTarget(_session.Target);
+        var textPrepared = false;
         if (_textCount != 0)
         {
-            if (_visualCount != 0)
-            {
-                AddDiagnostic("Mixed visual/text submission requires a shared text raster pass; the borrowed order is retained but no unsafe fallback is submitted.");
-                return;
-            }
-
             if (_textFeature is null)
             {
-                AddDiagnostic("Text payloads require a caller-owned DeltaRender.Text feature.");
+                AddDiagnostic("Text payloads require a caller-owned DeltaRender.Text adapter.");
                 return;
             }
 
+            var textRunCount = 0;
+            var previousWasText = false;
             for (var index = 0; index < _orderCount; index++)
             {
                 var draw = _order[index];
+                if (draw.Kind != UiDrawKind.Text)
+                {
+                    previousWasText = false;
+                    continue;
+                }
+
                 var text = _texts[draw.Index];
                 var color = text.Paint.FillColor;
-                _textFeature.AddRun(
+                _textRunIndices[index] = _textFeature.QueueCompositeRun(
                     text.Text,
                     text.BaselineOrigin.x,
                     text.BaselineOrigin.y,
                     new Vector4(color.x, color.y, color.z, color.w),
-                    _commandClips[index]);
+                    _commandClips[index],
+                    mergeWithPrevious: previousWasText);
+                textRunCount++;
+                previousWasText = true;
             }
 
-            _textFeature.AddPasses(graph, frameNumber);
-            return;
+            textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph);
         }
 
-        var target = graph.ImportTarget(_session.Target);
         for (var index = 0; index < _orderCount; index++)
         {
             var draw = _order[index];
+            if (draw.Kind == UiDrawKind.Text)
+            {
+                if (!textPrepared || _textFeature is null)
+                {
+                    continue;
+                }
+
+                var end = index + 1;
+                while (end < _orderCount && _order[end].Kind == UiDrawKind.Text)
+                {
+                    end++;
+                }
+
+                var firstRun = _textRunIndices[index];
+                var lastRun = _textRunIndices[end - 1];
+                var textPass = graph.AddRasterPass(
+                    new RasterPassDescription(
+                        "DeltaRender.XAML.Text",
+                        _textFeature.CompositePipeline),
+                    new UiTextPass(_textFeature, firstRun, checked(lastRun - firstRun + 1)));
+                graph.UseColorAttachment(
+                    textPass,
+                    0,
+                    new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
+                _textFeature.ConfigureCompositePass(graph, textPass);
+                index = end - 1;
+                continue;
+            }
+
             var visual = _visuals[draw.Index];
             var clip = _commandClips[index];
             if (clip.IsEmpty)
@@ -651,6 +687,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         Array.Clear(_commandClips, 0, _orderCount);
         Array.Clear(_seenVisuals, 0, _visualCount);
         Array.Clear(_seenTexts, 0, _textCount);
+        Array.Clear(_textRunIndices, 0, _orderCount);
         _visualCount = 0;
         _clipCount = 0;
         _textCount = 0;
@@ -705,5 +742,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             commands.Draw(6);
         }
+    }
+
+    private sealed class UiTextPass(TextRenderFeature feature, int firstRun, int runCount) : IRasterPass
+    {
+        public void Record(IRasterCommandContext commands)
+            => feature.RecordCompositeRuns(commands, firstRun, runCount);
     }
 }

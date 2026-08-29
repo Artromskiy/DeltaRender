@@ -10,7 +10,7 @@ namespace Delta.Render.Tests;
 public sealed class UiDisplayListGraphFeatureTests
 {
     [Fact]
-    public void ConsumePreservesCanonicalABADrawOrder()
+    public void ConsumePreservesCanonicalDrawOrder()
     {
         var visuals = new[]
         {
@@ -30,6 +30,45 @@ public sealed class UiDisplayListGraphFeatureTests
             feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
             string.Join(" | ", feature.Diagnostics));
         Assert.Equal(order, feature.BorrowOrder().ToArray());
+    }
+
+    [Fact]
+    public void DuplicatePayloadReferenceIsRejected()
+    {
+        using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
+
+        Assert.False(feature.Consume(new UiDisplayList(
+            new[] { Solid(1), Solid(2) },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            new[]
+            {
+                new UiDrawRef(UiDrawKind.Visual, 0),
+                new UiDrawRef(UiDrawKind.Visual, 1),
+                new UiDrawRef(UiDrawKind.Visual, 0),
+            })));
+        Assert.Contains(feature.Diagnostics, static message => message == "Order[2] references visual 0 more than once.");
+    }
+
+    [Fact]
+    public void ConsumeCopiesBorrowedOrderBeforeProducerMutation()
+    {
+        var order = new[]
+        {
+            new UiDrawRef(UiDrawKind.Visual, 0),
+            new UiDrawRef(UiDrawKind.Visual, 1),
+        };
+        using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
+
+        Assert.True(feature.Consume(new UiDisplayList(
+            new[] { Solid(1), Solid(2) },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            order)));
+
+        order[0] = new UiDrawRef(UiDrawKind.Visual, 1);
+
+        Assert.Equal(new UiDrawRef(UiDrawKind.Visual, 0), feature.BorrowOrder()[0]);
     }
 
     [Fact]
@@ -66,6 +105,24 @@ public sealed class UiDisplayListGraphFeatureTests
             Array.Empty<UiTextDraw>(),
             new[] { new UiDrawRef(UiDrawKind.Visual, 0) })));
         Assert.Contains(feature.Diagnostics, static message => message.Contains("stroke or rounded", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ClipParentCycleIsRejectedWithDeterministicDiagnostic()
+    {
+        var clips = new[]
+        {
+            new UiClipRegion(new float4(0, 0, 20, 20), new UiClipId(1)),
+            new UiClipRegion(new float4(0, 0, 20, 20), new UiClipId(0)),
+        };
+        using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
+
+        Assert.False(feature.Consume(new UiDisplayList(
+            new[] { Solid(1, new UiClipId(0)) },
+            clips,
+            Array.Empty<UiTextDraw>(),
+            new[] { new UiDrawRef(UiDrawKind.Visual, 0) })));
+        Assert.Contains(feature.Diagnostics, static message => message == "Clip 0 contains a parent cycle.");
     }
 
     [Fact]

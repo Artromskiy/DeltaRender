@@ -46,6 +46,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private TextGlyphGpu[] _instances;
     private TextBatch[] _batches;
+    private int[] _runBatchStarts = new int[8];
+    private int[] _runBatchCounts = new int[8];
     private RenderTextureHandle _atlas;
     private RenderBufferHandle _instanceBuffer;
     private RenderSamplerHandle _sampler;
@@ -166,6 +168,17 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     /// the feature for another frame.
     /// </remarks>
     public void AddRun(ShapedText text, float originX, float originY, Vector4 color, PixelRect clip)
+        => QueueCompositeRun(text, originX, originY, color, clip, mergeWithPrevious: true);
+
+    internal RasterPipelineDescription CompositePipeline => _pipeline;
+
+    internal int QueueCompositeRun(
+        ShapedText text,
+        float originX,
+        float originY,
+        Vector4 color,
+        PixelRect clip,
+        bool mergeWithPrevious)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -180,7 +193,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         EnsurePendingCapacity(_pendingRunCount + 1);
-        _pendingRuns[_pendingRunCount++] = new PendingRun(text, originX, originY, color, clip);
+        _pendingRuns[_pendingRunCount] = new PendingRun(text, originX, originY, color, clip, mergeWithPrevious);
+        return _pendingRunCount++;
     }
 
     /// <summary>Removes queued runs while retaining atlas/cache and GPU capacity.</summary>
@@ -210,15 +224,33 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(graph);
-        BuildInstances();
-        if (_instanceCount == 0)
+        if (!PrepareComposite(graph))
         {
             return;
         }
 
+        var target = graph.ImportTarget(_session.Target);
+
+        var raster = graph.AddRasterPass(new RasterPassDescription("DeltaRender.Text.Draw", _pipeline), _drawPass);
+        graph.UseColorAttachment(
+            raster,
+            0,
+            new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
+        ConfigureCompositePass(graph, raster);
+    }
+
+    internal bool PrepareComposite(IRenderGraphBuilder graph)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(graph);
+        BuildInstances();
+        if (_instanceCount == 0)
+        {
+            return false;
+        }
+
         var atlas = graph.ImportTexture(_atlas);
         var instances = graph.ImportBuffer(_instanceBuffer);
-        var target = graph.ImportTarget(_session.Target);
         _atlasGraphHandle = atlas;
         _instanceGraphHandle = instances;
 
@@ -229,13 +261,59 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             graph.UseTexture(upload, atlas, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
         }
 
-        var raster = graph.AddRasterPass(new RasterPassDescription("DeltaRender.Text.Draw", _pipeline), _drawPass);
-        graph.UseColorAttachment(
-            raster,
+        return true;
+    }
+
+    internal void ConfigureCompositePass(IRenderGraphBuilder graph, RenderGraphPassHandle pass)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        graph.UseBuffer(pass, _instanceGraphHandle, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
+        graph.UseTexture(pass, _atlasGraphHandle, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+    }
+
+    internal void RecordCompositeRuns(IRasterCommandContext commands, int firstRun, int runCount)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(commands);
+        if (firstRun < 0 || runCount <= 0 || firstRun > _pendingRunCount - runCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(firstRun));
+        }
+
+        commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
+        commands.BindTexture(_atlasBinding, _atlasGraphHandle, _sampler);
+        commands.BindBuffer(
+            _instanceBinding,
+            _instanceGraphHandle,
             0,
-            new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
-        graph.UseBuffer(raster, instances, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
-        graph.UseTexture(raster, atlas, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+            checked((ulong)_instanceCount * (ulong)Marshal.SizeOf<TextGlyphGpu>()));
+
+        var firstBatch = -1;
+        var lastBatch = 0;
+        for (var runIndex = firstRun; runIndex < firstRun + runCount; runIndex++)
+        {
+            var batchStart = _runBatchStarts[runIndex];
+            var batchCount = _runBatchCounts[runIndex];
+            if (batchCount == 0)
+            {
+                continue;
+            }
+
+            firstBatch = firstBatch < 0 ? batchStart : Math.Min(firstBatch, batchStart);
+            lastBatch = Math.Max(lastBatch, checked(batchStart + batchCount));
+        }
+
+        if (firstBatch < 0)
+        {
+            return;
+        }
+
+        for (var batchIndex = firstBatch; batchIndex < lastBatch; batchIndex++)
+        {
+            var batch = _batches[batchIndex];
+            commands.SetScissor(batch.Clip);
+            commands.Draw(6, checked((uint)batch.Count), 0, checked((uint)batch.Start));
+        }
     }
 
     /// <inheritdoc />
@@ -274,11 +352,13 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         _instanceCount = 0;
         _batchCount = 0;
+        EnsureRunBatchCapacity(_pendingRunCount);
         var penX = 0f;
         var penY = 0f;
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
         {
             var pending = _pendingRuns[runIndex];
+            var firstBatch = -1;
             foreach (var run in pending.Text.Runs.Span)
             {
                 var runX = pending.OriginX + penX;
@@ -299,7 +379,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                             UvRect = placement.UvRect,
                             Color = pending.Color,
                         };
-                        AppendBatch(clip, _instanceCount);
+                        var batchIndex = AppendBatch(clip, _instanceCount, pending.MergeWithPrevious || firstBatch >= 0);
+                        firstBatch = firstBatch < 0 ? batchIndex : firstBatch;
                         _instanceCount++;
                     }
                 }
@@ -307,6 +388,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 penX += run.AdvanceX;
                 penY += run.AdvanceY;
             }
+
+            _runBatchStarts[runIndex] = firstBatch < 0 ? 0 : firstBatch;
+            _runBatchCounts[runIndex] = firstBatch < 0 ? 0 : _batchCount - firstBatch;
         }
     }
 
@@ -420,20 +504,21 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
     }
 
-    private void AppendBatch(PixelRect clip, int instance)
+    private int AppendBatch(PixelRect clip, int instance, bool allowMerge)
     {
-        if (_batchCount > 0)
+        if (allowMerge && _batchCount > 0)
         {
             ref var last = ref _batches[_batchCount - 1];
             if (last.Clip == clip && last.Start + last.Count == instance)
             {
                 last.Count++;
-                return;
+                return _batchCount - 1;
             }
         }
 
         EnsureBatchCapacity(_batchCount + 1);
-        _batches[_batchCount++] = new TextBatch(clip, instance, 1);
+        _batches[_batchCount] = new TextBatch(clip, instance, 1);
+        return _batchCount++;
     }
 
     private void EnsureInstanceCapacity(int required)
@@ -492,12 +577,31 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         Array.Resize(ref _batches, capacity);
     }
 
+    private void EnsureRunBatchCapacity(int required)
+    {
+        if (required <= _runBatchStarts.Length)
+        {
+            return;
+        }
+
+        var capacity = _runBatchStarts.Length;
+        while (capacity < required)
+        {
+            capacity = checked(capacity * 2);
+        }
+
+        Array.Resize(ref _runBatchStarts, capacity);
+        Array.Resize(ref _runBatchCounts, capacity);
+    }
+
     private void ClearState()
     {
         Array.Clear(_pendingRuns, 0, _pendingRunCount);
         _pendingRunCount = 0;
         _instanceCount = 0;
         _batchCount = 0;
+        Array.Clear(_runBatchStarts, 0, _runBatchStarts.Length);
+        Array.Clear(_runBatchCounts, 0, _runBatchCounts.Length);
         _glyphs.Clear();
     }
 
@@ -618,7 +722,13 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private readonly record struct PendingRun(ShapedText Text, float OriginX, float OriginY, Vector4 Color, PixelRect Clip);
+    private readonly record struct PendingRun(
+        ShapedText Text,
+        float OriginX,
+        float OriginY,
+        Vector4 Color,
+        PixelRect Clip,
+        bool MergeWithPrevious);
 
     private readonly record struct GlyphKey(
         FontInstanceId Font,
@@ -682,21 +792,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private sealed class TextDrawPass(TextRenderFeature owner) : IRasterPass
     {
         public void Record(IRasterCommandContext commands)
-        {
-            commands.SetViewport(new RenderViewport(0, 0, owner._viewport.Width, owner._viewport.Height));
-            commands.BindTexture(owner._atlasBinding, owner._atlasGraphHandle, owner._sampler);
-            commands.BindBuffer(
-                owner._instanceBinding,
-                owner._instanceGraphHandle,
-                0,
-                checked((ulong)owner._instanceCount * (ulong)Marshal.SizeOf<TextGlyphGpu>()));
-            for (var index = 0; index < owner._batchCount; index++)
-            {
-                var batch = owner._batches[index];
-                commands.SetScissor(batch.Clip);
-                commands.Draw(6, checked((uint)batch.Count), 0, checked((uint)batch.Start));
-            }
-        }
+            => owner.RecordCompositeRuns(commands, 0, owner._pendingRunCount);
     }
 
     private RenderGraphTextureHandle _atlasGraphHandle;

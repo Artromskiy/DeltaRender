@@ -52,24 +52,27 @@ This is the selected consumer slice for the `DeltaXAML.Contract` v0.0.8 paint
 and clip data. It belongs in `src/DeltaRender.XAML/`, not in the core Render
 contract and not in DeltaXAML.
 
-- [ ] Create `UiDisplayListGraphFeature : IRenderFeature, IDisposable` with a
+- [x] Create `UiDisplayListGraphFeature : IRenderFeature, IDisposable` with a
   synchronous `Consume(UiDisplayList)` followed by normal `AddPasses`.
-- [ ] Walk only `Order`, validate visual/text indices and resolve nested clip
+- [x] Walk only `Order`, validate visual/text indices and resolve nested clip
   parents to viewport-intersected rectangles without losing draw order.
-- [ ] Route shaped text and paint data to the reusable text adapter; keep
+- [x] Route shaped text and paint data to the reusable text adapter; keep
   `DeltaRender.Text` independent from XAML and do not duplicate DeltaText
   values or ABI types.
-- [ ] Add adapter-owned resource/type registration for `UiResourceId` and
+- [x] Add adapter-owned resource/type registration for `UiResourceId` and
   `UiVisualTypeId`; missing, stale or foreign entries must be diagnostics.
-- [ ] Keep persistent dense instances, clip slots, material slots and dirty
-  upload ranges reusable after warm-up. Batch only adjacent compatible order
-  entries; preserve `A-B-A` semantics.
-- [ ] Support the current rectangle/solid/image/text path first. Rounded
+- [x] Keep reusable clip/order storage and batch adjacent compatible text
+  commands; preserve mixed visual/text `A-B-A` order through one transfer stage
+  and one contiguous raster segment. GPU material/dirty upload reuse remains a
+  separate shader/resource milestone.
+- [x] Support the current rectangle/solid/image/text path first. Rounded
   shapes, stroke, gradients and non-rectangular clips require explicit shader
   artifacts and must not silently fall back.
-- [ ] Add headless tests for borrowed lifetime, order, clips, resource lookup,
-  paint-only updates, cache hits and zero-allocation unchanged frames before
-  any native smoke.
+- [ ] Add remaining headless evidence for borrowed lifetime, paint-only updates,
+  registry cache hits and zero-allocation unchanged frames. Current tests cover
+  synchronous order copy, nested rectangular clips, deterministic cycle
+  diagnostics, unsupported paint rejection and resource registration; warm-frame
+  allocation and native submission remain separate acceptance work.
 
 ### P1 - DeltaRender.Text: reusable implementation slice
 
