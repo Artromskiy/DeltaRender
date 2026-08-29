@@ -1,7 +1,7 @@
 using Delta.Maths;
 using Delta.Shader;
 
-namespace Delta.Render.UiShaders;
+namespace Delta.Render.UIShaders;
 
 public static class UiPanel
 {

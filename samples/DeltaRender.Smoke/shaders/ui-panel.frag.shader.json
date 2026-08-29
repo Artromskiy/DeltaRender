@@ -28,7 +28,7 @@
     {
       "Name": "DeltaPushConstants",
       "ParameterName": "parameters",
-      "GlslType": "DeltaStruct_Delta_Render_UiShaders_UiPanel_Parameters",
+      "GlslType": "DeltaStruct_Delta_Render_UIShaders_UiPanel_Parameters",
       "Alignment": 16,
       "Size": 48,
       "ArrayStride": 48,

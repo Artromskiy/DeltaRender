@@ -1,5 +1,5 @@
 using Delta.Render.FullscreenShaders;
-using Delta.Render.UiShaders;
+using Delta.Render.UIShaders;
 using Delta.Shader.Contract;
 using Xunit;
 

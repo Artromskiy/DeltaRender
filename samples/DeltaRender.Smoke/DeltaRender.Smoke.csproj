@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
-    <ProjectReference Include="../../tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender\\DeltaRender.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Platform.SDL3\\DeltaRender.Platform.SDL3.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Vulkan\\DeltaRender.Vulkan.csproj" />

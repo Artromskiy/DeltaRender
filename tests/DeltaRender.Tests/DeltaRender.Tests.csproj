@@ -9,7 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
-    <ProjectReference Include="../../tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Text/DeltaShader.Text.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender\\DeltaRender.csproj" />
     <ProjectReference Include="..\\..\\src\\DeltaRender.Platform.SDL3\\DeltaRender.Platform.SDL3.csproj" />
@@ -33,6 +34,7 @@
     <None Include="fixtures\compute_multi.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute_multi_sets.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\delta-text-atlas\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../DeltaText/tests/DeltaText.Tests/Fixtures/NotoSans-Regular.ttf" Link="fixtures/NotoSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.vert.spv" Link="fixtures\fullscreen-rounded-rectangle.vert.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.frag.spv" Link="fixtures\fullscreen-rounded-rectangle.frag.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.vert.shader.json" Link="fixtures\graphics\fullscreen-rounded-rectangle.vert.shader.json" CopyToOutputDirectory="PreserveNewest" />

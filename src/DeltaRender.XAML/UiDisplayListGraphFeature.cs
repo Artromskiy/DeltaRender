@@ -111,6 +111,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiDrawRef[] _order = [];
     private PixelRect[] _resolvedClips = [];
     private PixelRect[] _commandClips = [];
+    private byte[] _visualPushConstants = [];
     private int[] _clipMarks = [];
     private bool[] _seenVisuals = [];
     private bool[] _seenTexts = [];
@@ -186,6 +187,27 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         ThrowIfDisposed();
         return _order.AsSpan(0, _orderCount);
+    }
+
+    /// <summary>Gets the copied visual payloads until the next consume or disposal.</summary>
+    internal ReadOnlySpan<UiVisualDraw> BorrowVisuals()
+    {
+        ThrowIfDisposed();
+        return _visuals.AsSpan(0, _visualCount);
+    }
+
+    /// <summary>Gets the copied clip payloads until the next consume or disposal.</summary>
+    internal ReadOnlySpan<UiClipRegion> BorrowClips()
+    {
+        ThrowIfDisposed();
+        return _clips.AsSpan(0, _clipCount);
+    }
+
+    /// <summary>Gets the copied shaped-text payloads until the next consume or disposal.</summary>
+    internal ReadOnlySpan<UiTextDraw> BorrowTexts()
+    {
+        ThrowIfDisposed();
+        return _texts.AsSpan(0, _textCount);
     }
 
     /// <summary>Gets the effective viewport-intersected clip for one order entry.</summary>
@@ -336,6 +358,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return;
         }
 
+        EnsureCapacity(ref _visualPushConstants, checked(_orderCount * UiVisualShaderContract.MaxPushConstantSize));
         var target = graph.ImportTarget(_session.Target);
         var textPrepared = false;
         if (_textCount != 0)
@@ -412,6 +435,30 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
+            var program = ResolveVisualProgram(visual);
+            if (!UiVisualShaderContract.TryDescribe(
+                    program,
+                    visual.Kind,
+                    out var shaderKind,
+                    out var pushConstantSize,
+                    out var shaderDiagnostic))
+            {
+                AddDiagnostic($"Visual at Order[{index}] is unsupported: {shaderDiagnostic}");
+                continue;
+            }
+
+            var parameterOffset = checked(index * UiVisualShaderContract.MaxPushConstantSize);
+            var packedSize = UiVisualShaderContract.Pack(
+                shaderKind,
+                in visual,
+                _viewport,
+                _visualPushConstants.AsSpan(parameterOffset, checked((int)pushConstantSize)));
+            if (packedSize != pushConstantSize)
+            {
+                AddDiagnostic($"Visual at Order[{index}] generated UI packer wrote {packedSize} bytes; expected {pushConstantSize}.");
+                continue;
+            }
+
             RenderTextureHandle imageTexture = default;
             RenderSamplerHandle imageSampler = default;
             ShaderBinding? imageBinding = null;
@@ -427,12 +474,19 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 imageGraphTexture = graph.ImportTexture(imageTexture);
             }
 
-            var program = ResolveVisualProgram(visual);
             var pass = graph.AddRasterPass(
                 new RasterPassDescription(
                     $"DeltaRender.XAML.{draw.Index}",
                     new RasterPipelineDescription(program, cullMode: RasterCullMode.None, blendMode: RenderBlendMode.Alpha)),
-                new UiVisualPass(_viewport, clip, imageGraphTexture, imageSampler, imageBinding));
+                new UiVisualPass(
+                    _viewport,
+                    clip,
+                    _visualPushConstants,
+                    parameterOffset,
+                    checked((int)pushConstantSize),
+                    imageGraphTexture,
+                    imageSampler,
+                    imageBinding));
             graph.UseColorAttachment(
                 pass,
                 0,
@@ -484,7 +538,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (visual.Paint.StrokeWidth != 0 || !IsZero(visual.Paint.CornerRadii))
+        if (visual.Kind == UiVisualKind.SolidRectangle &&
+            (visual.Paint.StrokeWidth != 0 || !IsZero(visual.Paint.CornerRadii)))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] requests stroke or rounded geometry without a registered effect shader.");
             return false;
@@ -512,12 +567,46 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 return true;
             case UiVisualKind.RoundedRectangle:
             case UiVisualKind.Border:
-                AddDiagnostic($"Visual kind {visual.Kind} at Order[{orderIndex}] is not supported by the current rectangle shader path.");
-                return false;
+                return ValidateRoundedVisual(visual, orderIndex);
             default:
                 AddDiagnostic($"Visual kind {visual.Kind} at Order[{orderIndex}] is unknown.");
                 return false;
         }
+    }
+
+    private bool ValidateRoundedVisual(UiVisualDraw visual, int orderIndex)
+    {
+        var radii = visual.Paint.CornerRadii;
+        if (radii.x < 0 || radii.y < 0 || radii.z < 0 || radii.w < 0)
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] has negative corner radii.");
+            return false;
+        }
+
+        if (visual.Paint.StrokeWidth < 0)
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] has a negative stroke width.");
+            return false;
+        }
+
+        var width = (double)visual.Bounds.z;
+        var height = (double)visual.Bounds.w;
+        if (width <= 0 || height <= 0)
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] has non-positive bounds for rounded geometry.");
+            return false;
+        }
+
+        if ((double)radii.x + radii.y > width ||
+            (double)radii.w + radii.z > width ||
+            (double)radii.x + radii.w > height ||
+            (double)radii.y + radii.z > height)
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] has adjacent corner radii exceeding its bounds.");
+            return false;
+        }
+
+        return true;
     }
 
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)
@@ -538,12 +627,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         if (text.Paint.OutlineWidth != 0 || text.Paint.Effect.IsValid)
         {
             AddDiagnostic($"Text at Order[{orderIndex}] requests outline/effect data without a registered text effect shader.");
-            return false;
-        }
-
-        if (_textFeature is null)
-        {
-            AddDiagnostic($"Text at Order[{orderIndex}] requires the existing DeltaRender.Text adapter.");
             return false;
         }
 
@@ -727,6 +810,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private sealed class UiVisualPass(
         PixelExtent viewport,
         PixelRect clip,
+        byte[] parameterBytes,
+        int parameterOffset,
+        int parameterSize,
         RenderGraphTextureHandle? imageTexture,
         RenderSamplerHandle imageSampler,
         ShaderBinding? imageBinding) : IRasterPass
@@ -735,6 +821,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         {
             commands.SetViewport(new RenderViewport(0, 0, viewport.Width, viewport.Height));
             commands.SetScissor(clip);
+            commands.PushConstants(parameterBytes.AsSpan(parameterOffset, parameterSize));
             if (imageTexture.HasValue && imageBinding.HasValue)
             {
                 commands.BindTexture(imageBinding.Value, imageTexture.Value, imageSampler);

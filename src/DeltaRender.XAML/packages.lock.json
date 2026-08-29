@@ -24,11 +24,31 @@
         "type": "Project",
         "dependencies": {
           "DeltaRender": "[1.0.0, )",
+          "DeltaShader.Text": "[1.0.0, )",
           "DeltaText": "[1.0.0, )"
         }
       },
+      "deltashader": {
+        "type": "Project"
+      },
       "deltashader.contract": {
         "type": "Project"
+      },
+      "deltashader.text": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaShader": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltashader.ui": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaShader": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
       },
       "deltatext": {
         "type": "Project",
@@ -44,6 +64,7 @@
           "DeltaText": "[1.0.0, )"
         }
       }
-    }
+    },
+    "net10.0/osx-arm64": {}
   }
 }

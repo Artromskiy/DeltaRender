@@ -72,6 +72,11 @@
           "Microsoft.Extensions.DependencyModel": "9.0.9"
         }
       },
+      "SixLabors.Fonts": {
+        "type": "Transitive",
+        "resolved": "3.1.0-fork.cadda774",
+        "contentHash": "melkZCD43nHQiY1WTbVxy1+J/YwJ61S9bwPun1UNHBi4iYuIgQSGzP6oJYdaA3bFBZHw6RsByyD4scyfnUUcAw=="
+      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -143,6 +148,14 @@
           "SDL3-CS.Windows": "[3.4.12.6, )"
         }
       },
+      "deltarender.text": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaRender": "[1.0.0, )",
+          "DeltaShader.Text": "[1.0.0, )",
+          "DeltaText": "[1.0.0, )"
+        }
+      },
       "deltarender.uishaders": {
         "type": "Project",
         "dependencies": {
@@ -163,6 +176,15 @@
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )"
         }
       },
+      "deltarender.xaml": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaRender": "[1.0.0, )",
+          "DeltaRender.Text": "[1.0.0, )",
+          "DeltaShader.UI": "[1.0.0, )",
+          "DeltaXAML.Contract": "[1.0.0, )"
+        }
+      },
       "deltashader": {
         "type": "Project"
       },
@@ -175,6 +197,28 @@
           "DeltaMaths": "[1.0.0, )",
           "DeltaShader": "[1.0.0, )",
           "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltashader.ui": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaShader": "[1.0.0, )",
+          "DeltaShader.Contract": "[1.0.0, )"
+        }
+      },
+      "deltatext": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "SixLabors.Fonts": "[3.1.0-fork.cadda774, )"
+        }
+      },
+      "deltaxaml.contract": {
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )",
+          "DeltaText": "[1.0.0, )"
         }
       },
       "SDL3-CS": {

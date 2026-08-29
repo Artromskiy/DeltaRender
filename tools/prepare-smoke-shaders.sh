@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DELTA_SHADER_ROOT="${DELTA_SHADER_ROOT:-"$ROOT/../DeltaShader"}"
 TOOL_PROJECT="$DELTA_SHADER_ROOT/src/DeltaShader.Tool/DeltaShader.Tool.csproj"
-UI_PROJECT="$ROOT/tools/DeltaRender.UiShaders/DeltaRender.UiShaders.csproj"
+UI_PROJECT="$ROOT/tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj"
 FULLSCREEN_PROJECT="$ROOT/tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj"
 SHADER_DIR="${DELTA_RENDER_SHADER_DIR:-"$ROOT/samples/DeltaRender.Smoke/shaders"}"
 EXPECTED_VERSION=4
