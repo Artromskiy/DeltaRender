@@ -196,9 +196,9 @@ internal static class Sdl3Runtime
     }
 
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
-    public static bool TryDestroySurface(ulong windowHandle, ulong vulkanInstance, ulong surfaceHandle)
+    public static bool TryDestroySurface(ulong vulkanInstance, ulong surfaceHandle)
     {
-        if (windowHandle == 0 || vulkanInstance == 0 || surfaceHandle == 0)
+        if (vulkanInstance == 0 || surfaceHandle == 0)
         {
             return true;
         }
@@ -206,9 +206,9 @@ internal static class Sdl3Runtime
         try
         {
             SDL.VulkanDestroySurface(
-                new IntPtr(unchecked((long)windowHandle)),
                 new IntPtr(unchecked((long)vulkanInstance)),
-                new IntPtr(unchecked((long)surfaceHandle)));
+                new IntPtr(unchecked((long)surfaceHandle)),
+                IntPtr.Zero);
             return true;
         }
         catch

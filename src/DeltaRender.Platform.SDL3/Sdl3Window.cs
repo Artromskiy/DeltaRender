@@ -57,7 +57,7 @@ public sealed class Sdl3Window : IRenderWindow
         public bool TryDestroySurface(ulong vkInstance, ulong surface, out RenderDiagnosticBag diagnostics)
         {
             diagnostics = new RenderDiagnosticBag();
-            if (Sdl3Runtime.TryDestroySurface(windowHandle, vkInstance, surface))
+            if (Sdl3Runtime.TryDestroySurface(vkInstance, surface))
             {
                 return true;
             }
