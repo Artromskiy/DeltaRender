@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Delta.Render.SquareShaders</RootNamespace>
+    <AssemblyName>DeltaRender.SquareShaders</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
+    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
+    <ProjectReference Include="../../../DeltaMaths/src/DeltaMaths/DeltaMaths.csproj">
+      <SetTargetFramework>TargetFramework=netstandard2.1</SetTargetFramework>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

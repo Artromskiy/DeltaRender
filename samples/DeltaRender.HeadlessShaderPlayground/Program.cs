@@ -11,16 +11,17 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var shaderDirectory = GetOption(args, "--shader-dir") ?? Path.Combine("samples", "DeltaRender.Smoke", "shaders");
-        var vertexPath = GetOption(args, "--vertex") ?? Path.Combine(shaderDirectory, "fullscreen-rounded-rectangle.vert.spv");
-        var fragmentPath = GetOption(args, "--fragment") ?? Path.Combine(shaderDirectory, "fullscreen-rounded-rectangle.frag.spv");
-        var outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "headless-shader-playground", "output.ppm");
+        var shaderDirectory = GetOption(args, "--shader-dir") ?? Path.Combine("artifacts", "headless-shader-playground", "shaders");
+        var vertexPath = GetOption(args, "--vertex") ?? Path.Combine(shaderDirectory, "SquareVertex.vert.spv");
+        var fragmentPath = GetOption(args, "--fragment") ?? Path.Combine(shaderDirectory, "SquareFragment.frag.spv");
+        var outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "headless-shader-playground", "square.ppm");
         var width = ParseUInt(args, "--width", 960);
         var height = ParseUInt(args, "--height", 540);
         var frames = ParseUInt(args, "--frames", 1);
-        if (width == 0 || height == 0 || frames == 0)
+        var vertexCount = ParseUInt(args, "--vertices", 18);
+        if (width == 0 || height == 0 || frames == 0 || vertexCount == 0)
         {
-            await Console.Error.WriteLineAsync("--width, --height and --frames must be greater than zero.").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync("--width, --height, --frames and --vertices must be greater than zero.").ConfigureAwait(false);
             return 2;
         }
 
@@ -41,7 +42,7 @@ internal static class Program
             await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var session = renderer.CreateHeadlessSession(width, height);
             var graph = session.CreateRenderGraph();
-            var feature = new FullscreenFeature(program, session.Target, width, height, ParseFloat(args, "--time", 1.25f));
+            var feature = new RasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
             IRenderFeature[] features = [feature];
             for (var frameNumber = 0UL; frameNumber < frames; frameNumber++)
             {
@@ -62,7 +63,7 @@ internal static class Program
             }
 
             SavePpm(outputPath, width, height, rgba);
-            await Console.Out.WriteLineAsync($"headless-shader-playground frames={frames} target={width}x{height} time={feature.Time.ToString(CultureInfo.InvariantCulture)} vertex={Path.GetFileName(vertexPath)} fragment={Path.GetFileName(fragmentPath)} output={Path.GetFullPath(outputPath)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"headless-shader-playground frames={frames} target={width}x{height} vertices={vertexCount} time={feature.Time.ToString(CultureInfo.InvariantCulture)} vertex={Path.GetFileName(vertexPath)} fragment={Path.GetFileName(fragmentPath)} output={Path.GetFullPath(outputPath)}").ConfigureAwait(false);
             return 0;
         }
         catch (Exception exception)
@@ -118,26 +119,28 @@ internal static class Program
         stream.Write(rgb);
     }
 
-    private sealed class FullscreenFeature : IRenderFeature
+    private sealed class RasterFeature : IRenderFeature
     {
         private readonly IGraphicsShaderProgram _program;
         private readonly RenderTargetHandle _target;
         private readonly uint _width;
         private readonly uint _height;
+        private readonly uint _vertexCount;
         private readonly byte[] _pushConstants = new byte[16];
-        private readonly FullscreenPass _pass;
+        private readonly RasterPass _pass;
 
-        internal FullscreenFeature(IGraphicsShaderProgram program, RenderTargetHandle target, uint width, uint height, float time)
+        internal RasterFeature(IGraphicsShaderProgram program, RenderTargetHandle target, uint width, uint height, uint vertexCount, float time)
         {
             _program = program;
             _target = target;
             _width = width;
             _height = height;
+            _vertexCount = vertexCount;
             Time = time;
             BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(0, 4), width);
             BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(4, 4), height);
             BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(8, 4), time);
-            _pass = new FullscreenPass(width, height, _pushConstants);
+            _pass = new RasterPass(width, height, _vertexCount, _pushConstants);
         }
 
         internal float Time { get; }
@@ -152,16 +155,18 @@ internal static class Program
         }
     }
 
-    private sealed class FullscreenPass : IRasterPass
+    private sealed class RasterPass : IRasterPass
     {
         private readonly RenderViewport _viewport;
         private readonly PixelRect _scissor;
+        private readonly uint _vertexCount;
         private readonly byte[] _pushConstants;
 
-        internal FullscreenPass(uint width, uint height, byte[] pushConstants)
+        internal RasterPass(uint width, uint height, uint vertexCount, byte[] pushConstants)
         {
             _viewport = new RenderViewport(0, 0, width, height);
             _scissor = new PixelRect(0, 0, checked((int)width), checked((int)height));
+            _vertexCount = vertexCount;
             _pushConstants = pushConstants;
         }
 
@@ -170,7 +175,7 @@ internal static class Program
             commands.SetViewport(in _viewport);
             commands.SetScissor(in _scissor);
             commands.PushConstants(_pushConstants);
-            commands.Draw(3);
+            commands.Draw(_vertexCount);
         }
     }
 }
