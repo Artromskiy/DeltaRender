@@ -46,6 +46,31 @@ resource lifetime are decided in one place.
 - [ ] DeltaRender.XAML must consume the text feature through a neutral adapter
   without adding another frame packet or input-polling owner.
 
+### P1 - DeltaRender.XAML UI display-list adapter
+
+This is the selected consumer slice for the `DeltaXAML.Contract` v0.0.8 paint
+and clip data. It belongs in `src/DeltaRender.XAML/`, not in the core Render
+contract and not in DeltaXAML.
+
+- [ ] Create `UiDisplayListGraphFeature : IRenderFeature, IDisposable` with a
+  synchronous `Consume(UiDisplayList)` followed by normal `AddPasses`.
+- [ ] Walk only `Order`, validate visual/text indices and resolve nested clip
+  parents to viewport-intersected rectangles without losing draw order.
+- [ ] Route shaped text and paint data to the reusable text adapter; keep
+  `DeltaRender.Text` independent from XAML and do not duplicate DeltaText
+  values or ABI types.
+- [ ] Add adapter-owned resource/type registration for `UiResourceId` and
+  `UiVisualTypeId`; missing, stale or foreign entries must be diagnostics.
+- [ ] Keep persistent dense instances, clip slots, material slots and dirty
+  upload ranges reusable after warm-up. Batch only adjacent compatible order
+  entries; preserve `A-B-A` semantics.
+- [ ] Support the current rectangle/solid/image/text path first. Rounded
+  shapes, stroke, gradients and non-rectangular clips require explicit shader
+  artifacts and must not silently fall back.
+- [ ] Add headless tests for borrowed lifetime, order, clips, resource lookup,
+  paint-only updates, cache hits and zero-allocation unchanged frames before
+  any native smoke.
+
 ### P1 - DeltaRender.Text: reusable implementation slice
 
 Purpose: keep shaping in DeltaText and make atlas/packing/upload/batching
