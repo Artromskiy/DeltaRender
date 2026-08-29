@@ -31,6 +31,44 @@ public enum RenderBlendMode : byte
     Additive,
 }
 
+public enum RenderCompareOperation : byte
+{
+    Never,
+    Less,
+    Equal,
+    LessOrEqual,
+    Greater,
+    NotEqual,
+    GreaterOrEqual,
+    Always,
+}
+
+public enum RenderStencilOperation : byte
+{
+    Keep,
+    Zero,
+    Replace,
+    IncrementClamp,
+    DecrementClamp,
+    Invert,
+    IncrementWrap,
+    DecrementWrap,
+}
+
+public readonly record struct RenderStencilFaceState(
+    RenderCompareOperation CompareOperation = RenderCompareOperation.Always,
+    RenderStencilOperation FailOperation = RenderStencilOperation.Keep,
+    RenderStencilOperation DepthFailOperation = RenderStencilOperation.Keep,
+    RenderStencilOperation PassOperation = RenderStencilOperation.Keep,
+    uint CompareMask = uint.MaxValue,
+    uint WriteMask = uint.MaxValue,
+    uint Reference = 0);
+
+public readonly record struct RenderStencilState(
+    bool Enabled = false,
+    RenderStencilFaceState Front = default,
+    RenderStencilFaceState Back = default);
+
 public sealed record RasterPipelineDescription
 {
     public RasterPipelineDescription(
@@ -40,7 +78,9 @@ public sealed record RasterPipelineDescription
         RasterFrontFace frontFace = RasterFrontFace.CounterClockwise,
         RenderBlendMode blendMode = RenderBlendMode.Opaque,
         bool depthTest = false,
-        bool depthWrite = false)
+        bool depthWrite = false,
+        RenderCompareOperation depthCompareOperation = RenderCompareOperation.LessOrEqual,
+        RenderStencilState stencilState = default)
     {
         ArgumentNullException.ThrowIfNull(shaderProgram);
         ShaderProgram = shaderProgram;
@@ -50,6 +90,8 @@ public sealed record RasterPipelineDescription
         BlendMode = blendMode;
         DepthTest = depthTest;
         DepthWrite = depthWrite;
+        DepthCompareOperation = depthCompareOperation;
+        StencilState = stencilState;
     }
 
     public IGraphicsShaderProgram ShaderProgram { get; }
@@ -65,6 +107,10 @@ public sealed record RasterPipelineDescription
     public bool DepthTest { get; }
 
     public bool DepthWrite { get; }
+
+    public RenderCompareOperation DepthCompareOperation { get; }
+
+    public RenderStencilState StencilState { get; }
 }
 
 public sealed record RasterPassDescription

@@ -129,6 +129,22 @@ ComputePassDescription     -> IShaderArtifact(stage = Compute)
 Pipeline objects and cache keys are renderer-owned. They are not public
 handles and are never created by a feature.
 
+### Depth, Z-test and stencil contract
+
+Raster pipeline state uses `DepthTest`, `DepthWrite` and
+`DepthCompareOperation` for Z testing. `RenderStencilState` enables stencil
+testing and supplies independent front/back `RenderStencilFaceState` values:
+compare operation, fail/depth-fail/pass operations, reference value and
+read/write masks.
+
+`UseDepthStencilAttachment` binds a `DepthStencilAttachmentDescription` to a
+raster pass. Depth and stencil load/store operations are independent; the
+shared `ClearDepthStencil` value supplies both clear values. A pipeline that
+enables depth or stencil testing requires a compatible depth/stencil
+attachment in the same raster pass. The Vulkan implementation must reject an
+incompatible format, missing attachment or invalid state before recording
+native commands.
+
 ## Compute coverage
 
 The graph contract covers every supported former direct-compute operation:

@@ -63,6 +63,11 @@ Text, UI and mesh integrations follow the same pattern. Their source records
 belong to DeltaText, DeltaXAML or Engine; only GPU resources and pass commands
 belong to Render.
 
+Raster pipelines can opt into depth and stencil testing without exposing
+Vulkan state. Set `DepthTest`, `DepthWrite`, `DepthCompareOperation` and
+`StencilState` on `RasterPipelineDescription`, then declare the matching
+`DepthStencilAttachmentDescription` with `UseDepthStencilAttachment`.
+
 ## Compute and readback
 
 A compute feature composes the former standalone workflow from graph

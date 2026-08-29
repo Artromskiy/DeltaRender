@@ -91,4 +91,6 @@ public readonly record struct DepthStencilAttachmentDescription(
     RenderGraphTextureHandle Texture,
     AttachmentLoadOperation DepthLoad,
     AttachmentStoreOperation DepthStore,
-    ClearDepthStencil ClearValue = default);
+    ClearDepthStencil ClearValue = default,
+    AttachmentLoadOperation StencilLoad = AttachmentLoadOperation.DontCare,
+    AttachmentStoreOperation StencilStore = AttachmentStoreOperation.DontCare);
