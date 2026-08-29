@@ -25,7 +25,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private readonly uint _graphicsFamily;
     private readonly uint _presentFamily;
     private readonly PhysicalDeviceMemoryProperties _memoryProperties;
-    private readonly RenderPass _renderPass;
+    private RenderPass _renderPass;
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
     private readonly Fence _frameFence;
@@ -47,6 +47,11 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     private DeviceMemory _targetMemory;
     private ImageView _targetView;
     private Framebuffer _targetFramebuffer;
+    private Image _depthImage;
+    private ImageView _depthView;
+    private Format _depthFormat;
+    private bool _hasDepthStencilAttachment;
+    private DepthStencilAttachmentDescription _depthDescription;
     private Extent2D _extent;
     private Format _format;
     private uint _activeImage;
@@ -299,6 +304,11 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         }
 
         WaitForFrame();
+        if (_hasDepthStencilAttachment)
+        {
+            ConfigureDepthStencilAttachment(null, default);
+        }
+
         var newExtent = new Extent2D(extent.Width, extent.Height);
         if (_windowed)
         {
@@ -334,6 +344,109 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
     internal uint MaxBoundDescriptorSets => Capabilities.MaxBoundDescriptorSets;
     internal BufferAllocation StagingBuffer => _staging;
 
+    internal void ConfigureDepthStencilAttachment(PersistentTexture? texture, in DepthStencilAttachmentDescription description)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_hasTarget)
+        {
+            if (texture is not null) throw new InvalidOperationException("A compute-only session cannot configure a depth-stencil attachment.");
+            return;
+        }
+
+        var depthTexture = texture;
+        var hasAttachment = depthTexture is not null;
+        if (!hasAttachment && !_hasDepthStencilAttachment) return;
+        if (hasAttachment)
+        {
+            if (depthTexture is null || depthTexture.View.Handle == default || depthTexture.Image.Handle == default)
+            {
+                throw new InvalidOperationException("The depth-stencil attachment native image or view is unavailable.");
+            }
+
+            if (depthTexture.Format is not (Format.D32Sfloat or Format.D24UnormS8Uint))
+            {
+                throw new ArgumentException("The attachment texture must use a depth-capable Vulkan format.", nameof(texture));
+            }
+
+            if (!depthTexture.Usage.HasFlag(RenderTextureUsage.DepthStencilAttachment))
+            {
+                throw new ArgumentException("The attachment texture was not created with DepthStencilAttachment usage.", nameof(texture));
+            }
+
+            if (depthTexture.Extent.Width != _extent.Width || depthTexture.Extent.Height != _extent.Height)
+            {
+                throw new ArgumentException("The depth-stencil texture extent must match the render target.", nameof(texture));
+            }
+
+            if (depthTexture.Format == Format.D32Sfloat && (description.StencilLoad != AttachmentLoadOperation.DontCare || description.StencilStore != AttachmentStoreOperation.DontCare || description.ClearValue.Stencil != 0))
+            {
+                throw new ArgumentException("D32Float does not provide a stencil aspect.", nameof(description));
+            }
+
+            if (_hasDepthStencilAttachment && _depthImage.Handle == depthTexture.Image.Handle && _depthView.Handle == depthTexture.View.Handle && _depthFormat == depthTexture.Format && IsSameDepthDescription(description))
+            {
+                return;
+            }
+        }
+
+        WaitForFrame();
+        var nextDepthFormat = depthTexture?.Format ?? default;
+        var nextDepthView = depthTexture?.View ?? default;
+        var nextRenderPass = CreateRenderPass(
+            Api,
+            Device,
+            _format,
+            _windowed ? ImageLayout.PresentSrcKhr : ImageLayout.ColorAttachmentOptimal,
+            hasAttachment,
+            hasAttachment ? nextDepthFormat : default,
+            hasAttachment ? ToAttachmentLoad(description.DepthLoad) : AttachmentLoadOp.DontCare,
+            hasAttachment ? ToAttachmentStore(description.DepthStore) : AttachmentStoreOp.DontCare,
+            hasAttachment ? ToAttachmentLoad(description.StencilLoad) : AttachmentLoadOp.DontCare,
+            hasAttachment ? ToAttachmentStore(description.StencilStore) : AttachmentStoreOp.DontCare);
+        ImageView[] nextViews = [];
+        Framebuffer[] nextFramebuffers = [];
+        Framebuffer nextTargetFramebuffer = default;
+        try
+        {
+            if (_windowed)
+            {
+                (nextViews, nextFramebuffers) = CreateSwapchainViews(Api, _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension."), Device, _extent, nextRenderPass, _swapchain, _format, nextDepthView, hasAttachment);
+            }
+            else
+            {
+                nextTargetFramebuffer = CreateFramebuffer(Api, Device, nextRenderPass, _targetView, nextDepthView, hasAttachment, _extent, "CreateFramebuffer(target)");
+            }
+        }
+        catch
+        {
+            DestroySwapchainViews(Api, Device, nextViews, nextFramebuffers);
+            if (nextTargetFramebuffer.Handle != default) Api.DestroyFramebuffer(Device, nextTargetFramebuffer, null);
+            Api.DestroyRenderPass(Device, nextRenderPass, null);
+            throw;
+        }
+
+        DestroyRasterPipelines();
+        if (_windowed)
+        {
+            DestroySwapchainViews(Api, Device, _swapchainViews, _swapchainFramebuffers);
+        }
+        else if (_targetFramebuffer.Handle != default)
+        {
+            Api.DestroyFramebuffer(Device, _targetFramebuffer, null);
+        }
+
+        if (_renderPass.Handle != default) Api.DestroyRenderPass(Device, _renderPass, null);
+        _renderPass = nextRenderPass;
+        _swapchainViews = nextViews;
+        _swapchainFramebuffers = nextFramebuffers;
+        _targetFramebuffer = nextTargetFramebuffer;
+        _depthImage = depthTexture?.Image ?? default;
+        _depthView = depthTexture?.View ?? default;
+        _depthFormat = nextDepthFormat;
+        _hasDepthStencilAttachment = hasAttachment;
+        _depthDescription = hasAttachment ? description : default;
+    }
+
     internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
     {
         if (!_rasterPipelines.TryGetValue(description.ShaderProgram, out var pipeline))
@@ -343,6 +456,18 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         }
 
         return pipeline;
+    }
+
+    private bool IsSameDepthDescription(in DepthStencilAttachmentDescription description)
+        => _depthDescription.DepthLoad == description.DepthLoad &&
+           _depthDescription.DepthStore == description.DepthStore &&
+           _depthDescription.StencilLoad == description.StencilLoad &&
+           _depthDescription.StencilStore == description.StencilStore;
+
+    private void DestroyRasterPipelines()
+    {
+        foreach (var pipeline in _rasterPipelines.Values) pipeline.Dispose(this);
+        _rasterPipelines.Clear();
     }
 
     internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateComputePipeline(IShaderArtifact artifact)
@@ -710,7 +835,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             Ensure(Api.AllocateMemory(Device, new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type }, null, out memory), "AllocateImageMemory");
             Ensure(Api.BindImageMemory(Device, image, memory, 0), "BindImageMemory");
             Ensure(Api.CreateImageView(Device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = image, ViewType = ImageViewType.Type2D, Format = format, SubresourceRange = new ImageSubresourceRange { AspectMask = ToAspectMask(description.Format), BaseMipLevel = 0, LevelCount = description.MipLevels, BaseArrayLayer = 0, LayerCount = description.Layers } }, null, out view), "CreateImageView");
-            return new PersistentTexture(image, memory, view, format, new Extent2D(description.Width, description.Height), 0);
+            return new PersistentTexture(image, memory, view, format, new Extent2D(description.Width, description.Height), 0) { Usage = description.Usage };
         }
         catch
         {
@@ -736,7 +861,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         swapchainExtension.DestroySwapchain(Device, _swapchain, null);
         _format = ChooseSurfaceFormat(formats);
         _swapchain = CreateSwapchain(_surface, extent, capabilities, formats, modes);
-        (_swapchainViews, _swapchainFramebuffers) = CreateSwapchainViews(Api, swapchainExtension, Device, extent, _renderPass, _swapchain, _format);
+        (_swapchainViews, _swapchainFramebuffers) = CreateSwapchainViews(Api, swapchainExtension, Device, extent, _renderPass, _swapchain, _format, _depthView, _hasDepthStencilAttachment);
         _extent = extent;
     }
 
@@ -754,8 +879,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             Ensure(Api.AllocateMemory(Device, new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type }, null, out memory), "AllocateMemory(target)");
             Ensure(Api.BindImageMemory(Device, image, memory, 0), "BindImageMemory(target)");
             Ensure(Api.CreateImageView(Device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = image, ViewType = ImageViewType.Type2D, Format = _format, SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 } }, null, out view), "CreateImageView(target)");
-            var attachment = view;
-            Ensure(Api.CreateFramebuffer(Device, new FramebufferCreateInfo { SType = StructureType.FramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = 1, PAttachments = &attachment, Width = extent.Width, Height = extent.Height, Layers = 1 }, null, out framebuffer), "CreateFramebuffer(target)");
+            framebuffer = CreateFramebuffer(Api, Device, renderPass, view, default, false, extent, "CreateFramebuffer(target)");
             return new HeadlessTarget(image, memory, view, framebuffer);
         }
         catch
@@ -800,7 +924,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         for (var i = views.Length - 1; i >= 0; i--) if (views[i].Handle != default) api.DestroyImageView(device, views[i], null);
     }
 
-    private static (ImageView[] Views, Framebuffer[] Framebuffers) CreateSwapchainViews(Vk api, KhrSwapchain extension, Device device, Extent2D extent, RenderPass renderPass, SwapchainKHR swapchain, Format format)
+    private static (ImageView[] Views, Framebuffer[] Framebuffers) CreateSwapchainViews(Vk api, KhrSwapchain extension, Device device, Extent2D extent, RenderPass renderPass, SwapchainKHR swapchain, Format format, ImageView depthView = default, bool hasDepthStencil = false)
     {
         uint count = 0;
         Ensure(extension.GetSwapchainImages(device, swapchain, &count, null), "GetSwapchainImages(count)");
@@ -813,8 +937,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
             for (var i = 0; i < images.Length; i++)
             {
                 Ensure(api.CreateImageView(device, new ImageViewCreateInfo { SType = StructureType.ImageViewCreateInfo, Image = images[i], ViewType = ImageViewType.Type2D, Format = format, SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 } }, null, out views[i]), "CreateSwapchainImageView");
-                var attachment = views[i];
-                Ensure(api.CreateFramebuffer(device, new FramebufferCreateInfo { SType = StructureType.FramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = 1, PAttachments = &attachment, Width = extent.Width, Height = extent.Height, Layers = 1 }, null, out framebuffers[i]), "CreateSwapchainFramebuffer");
+                framebuffers[i] = CreateFramebuffer(api, device, renderPass, views[i], depthView, hasDepthStencil, extent, "CreateSwapchainFramebuffer");
             }
 
             return (views, framebuffers);
@@ -826,15 +949,44 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    private static RenderPass CreateRenderPass(Vk api, Device device, Format format, ImageLayout finalLayout)
+    private static RenderPass CreateRenderPass(
+        Vk api,
+        Device device,
+        Format format,
+        ImageLayout finalLayout,
+        bool hasDepthStencil = false,
+        Format depthFormat = default,
+        AttachmentLoadOp depthLoadOp = AttachmentLoadOp.DontCare,
+        AttachmentStoreOp depthStoreOp = AttachmentStoreOp.DontCare,
+        AttachmentLoadOp stencilLoadOp = AttachmentLoadOp.DontCare,
+        AttachmentStoreOp stencilStoreOp = AttachmentStoreOp.DontCare)
     {
-        var attachment = new AttachmentDescription { Format = format, Samples = SampleCountFlags.Count1Bit, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, StencilLoadOp = AttachmentLoadOp.DontCare, StencilStoreOp = AttachmentStoreOp.DontCare, InitialLayout = ImageLayout.Undefined, FinalLayout = finalLayout };
+        var attachments = stackalloc AttachmentDescription[2];
+        attachments[0] = new AttachmentDescription { Format = format, Samples = SampleCountFlags.Count1Bit, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, StencilLoadOp = AttachmentLoadOp.DontCare, StencilStoreOp = AttachmentStoreOp.DontCare, InitialLayout = ImageLayout.Undefined, FinalLayout = finalLayout };
+        if (hasDepthStencil)
+        {
+            attachments[1] = new AttachmentDescription { Format = depthFormat, Samples = SampleCountFlags.Count1Bit, LoadOp = depthLoadOp, StoreOp = depthStoreOp, StencilLoadOp = stencilLoadOp, StencilStoreOp = stencilStoreOp, InitialLayout = depthLoadOp == AttachmentLoadOp.Load || stencilLoadOp == AttachmentLoadOp.Load ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.Undefined, FinalLayout = ImageLayout.DepthStencilAttachmentOptimal };
+        }
+
         var color = new AttachmentReference { Attachment = 0, Layout = ImageLayout.ColorAttachmentOptimal };
+        var depth = new AttachmentReference { Attachment = 1, Layout = ImageLayout.DepthStencilAttachmentOptimal };
+        var depthStages = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
         var subpass = new SubpassDescription { PipelineBindPoint = PipelineBindPoint.Graphics, ColorAttachmentCount = 1, PColorAttachments = &color };
-        var dependency = new SubpassDependency { SrcSubpass = Vk.SubpassExternal, DstSubpass = 0, SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit, DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit, DstAccessMask = AccessFlags.ColorAttachmentWriteBit };
-        var info = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = 1, PAttachments = &attachment, SubpassCount = 1, PSubpasses = &subpass, DependencyCount = 1, PDependencies = &dependency };
+        if (hasDepthStencil) subpass.PDepthStencilAttachment = &depth;
+        var dependency = new SubpassDependency { SrcSubpass = Vk.SubpassExternal, DstSubpass = 0, SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | (hasDepthStencil ? depthStages : PipelineStageFlags.None), DstAccessMask = AccessFlags.ColorAttachmentWriteBit | (hasDepthStencil ? AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit : AccessFlags.None) };
+        var info = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, SubpassCount = 1, PSubpasses = &subpass, DependencyCount = 1, PDependencies = &dependency };
         Ensure(api.CreateRenderPass(device, info, null, out var renderPass), "CreateRenderPass");
         return renderPass;
+    }
+
+    private static Framebuffer CreateFramebuffer(Vk api, Device device, RenderPass renderPass, ImageView colorView, ImageView depthView, bool hasDepthStencil, Extent2D extent, string operation)
+    {
+        var attachments = stackalloc ImageView[2];
+        attachments[0] = colorView;
+        if (hasDepthStencil) attachments[1] = depthView;
+        var info = new FramebufferCreateInfo { SType = StructureType.FramebufferCreateInfo, RenderPass = renderPass, AttachmentCount = hasDepthStencil ? 2u : 1u, PAttachments = attachments, Width = extent.Width, Height = extent.Height, Layers = 1 };
+        Ensure(api.CreateFramebuffer(device, info, null, out var framebuffer), operation);
+        return framebuffer;
     }
 
     private SwapchainKHR CreateSwapchain(SurfaceKHR surface, Extent2D extent, SurfaceCapabilitiesKHR capabilities, SurfaceFormatKHR[] formats, PresentModeKHR[] modes)
@@ -876,7 +1028,9 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     private static PresentModeKHR ChoosePresentMode(ReadOnlySpan<PresentModeKHR> modes) => modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr : PresentModeKHR.FifoKhr;
     private static Format ToVulkanFormat(RenderTextureFormat format) => format switch { RenderTextureFormat.R8Unorm => Format.R8Unorm, RenderTextureFormat.Rgba8Unorm => Format.R8G8B8A8Unorm, RenderTextureFormat.Rgba8Srgb => Format.R8G8B8A8Srgb, RenderTextureFormat.Bgra8Unorm => Format.B8G8R8A8Unorm, RenderTextureFormat.Bgra8Srgb => Format.B8G8R8A8Srgb, RenderTextureFormat.Rgba16Float => Format.R16G16B16A16Sfloat, RenderTextureFormat.D32Float => Format.D32Sfloat, RenderTextureFormat.D24UnormS8UInt => Format.D24UnormS8Uint, _ => throw new ArgumentException("Unsupported render texture format.", nameof(format)) };
-    private static ImageAspectFlags ToAspectMask(RenderTextureFormat format) => format is RenderTextureFormat.D32Float or RenderTextureFormat.D24UnormS8UInt ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+    private static AttachmentLoadOp ToAttachmentLoad(AttachmentLoadOperation operation) => operation switch { AttachmentLoadOperation.Load => AttachmentLoadOp.Load, AttachmentLoadOperation.Clear => AttachmentLoadOp.Clear, AttachmentLoadOperation.DontCare => AttachmentLoadOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
+    private static AttachmentStoreOp ToAttachmentStore(AttachmentStoreOperation operation) => operation switch { AttachmentStoreOperation.Store => AttachmentStoreOp.Store, AttachmentStoreOperation.DontCare => AttachmentStoreOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
+    private static ImageAspectFlags ToAspectMask(RenderTextureFormat format) => format switch { RenderTextureFormat.D32Float => ImageAspectFlags.DepthBit, RenderTextureFormat.D24UnormS8UInt => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, _ => ImageAspectFlags.ColorBit };
     private static SampleCountFlags ToSampleCount(uint samples) => samples switch { 1 => SampleCountFlags.Count1Bit, 2 => SampleCountFlags.Count2Bit, 4 => SampleCountFlags.Count4Bit, 8 => SampleCountFlags.Count8Bit, _ => throw new ArgumentOutOfRangeException(nameof(samples)) };
     private static SamplerAddressMode ToAddressMode(RenderAddressMode mode) => mode switch { RenderAddressMode.Repeat => SamplerAddressMode.Repeat, RenderAddressMode.MirroredRepeat => SamplerAddressMode.MirroredRepeat, _ => SamplerAddressMode.ClampToEdge };
     private static BufferUsageFlags ToVulkanBufferUsageFlags(RenderBufferUsage usage) => ToVulkanBufferUsage(usage);
@@ -893,5 +1047,8 @@ internal sealed class PersistentBuffer
     internal uint Generation { get; }
 }
 
-internal sealed record PersistentTexture(Image Image, DeviceMemory Memory, ImageView View, Format Format, Extent2D Extent, uint Generation);
+internal sealed record PersistentTexture(Image Image, DeviceMemory Memory, ImageView View, Format Format, Extent2D Extent, uint Generation)
+{
+    internal RenderTextureUsage Usage { get; init; }
+}
 internal sealed record PersistentSampler(Sampler Sampler, uint Generation);

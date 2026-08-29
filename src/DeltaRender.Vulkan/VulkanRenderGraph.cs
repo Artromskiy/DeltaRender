@@ -16,6 +16,9 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     private readonly List<ReadbackRequest> _readbacks = new();
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
+    private GraphResource? _depthAttachmentResource;
+    private DepthStencilAttachmentDescription _depthAttachment;
+    private bool _hasDepthAttachment;
     private bool _built;
     private bool _disposed;
 
@@ -33,8 +36,10 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
                 features[index].AddPasses(this, frameNumber);
             }
 
+            ConfigureRenderPass();
             _order = CompileOrder();
             ValidateRasterSegment();
+            ValidateRasterPipelines();
             _built = true;
         }
         catch
@@ -199,7 +204,11 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         if (!_session.HasTarget) throw new InvalidOperationException("Raster passes require a graphics target.");
         var pipeline = _session.GetOrCreateRasterPipeline(description.Pipeline);
 
-        _passes.Add(new GraphPass(description.Name, PassKind.Raster, pipeline) { Raster = pass });
+        _passes.Add(new GraphPass(description.Name, PassKind.Raster, pipeline)
+        {
+            Raster = pass,
+            PipelineDescription = description.Pipeline
+        });
         return new RenderGraphPassHandle((uint)_passes.Count);
     }
 
@@ -233,7 +242,34 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     }
 
     public void UseDepthStencilAttachment(RenderGraphPassHandle pass, in DepthStencilAttachmentDescription attachment)
-        => throw new NotSupportedException("Depth-stencil attachments are not supported by the current surface-color render pass.");
+    {
+        var graphPass = GetPass(pass);
+        if (graphPass.Kind != PassKind.Raster) throw new InvalidOperationException("Depth-stencil attachments can only be used by raster passes.");
+
+        var resource = GetTexture(attachment.Texture);
+        var texture = resource.Texture ?? throw new InvalidOperationException("The depth-stencil attachment must reference a registered texture.");
+        if (texture.Format is not (Format.D32Sfloat or Format.D24UnormS8Uint))
+        {
+            throw new ArgumentException("The attachment texture must use D32Float or D24UnormS8UInt.", nameof(attachment));
+        }
+
+        if (texture.Extent.Width != _session.GraphExtent.Width || texture.Extent.Height != _session.GraphExtent.Height)
+        {
+            throw new ArgumentException("The depth-stencil texture extent must match the render target.", nameof(attachment));
+        }
+
+        if (_hasDepthAttachment && (_depthAttachmentResource != resource || _depthAttachment != attachment))
+        {
+            throw new InvalidOperationException("All raster passes in a render segment must use the same depth-stencil attachment description.");
+        }
+
+        _depthAttachmentResource = resource;
+        _depthAttachment = attachment;
+        _hasDepthAttachment = true;
+        graphPass.DepthStencil = attachment;
+        graphPass.HasDepthStencil = true;
+        AddUse(graphPass, resource, RenderResourceAccess.ReadWrite, RenderPipelineStages.DepthStencil);
+    }
 
     public void UseTexture(RenderGraphPassHandle pass, RenderGraphTextureHandle texture, RenderResourceAccess access, RenderPipelineStages stages)
         => AddUse(GetPass(pass), GetTexture(texture), access, stages);
@@ -354,8 +390,17 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
     private void BeginRaster(GraphPass pass)
     {
         var clear = pass.Color.ClearValue;
-        var clearValue = new ClearValue(new ClearColorValue(clear.Red, clear.Green, clear.Blue, clear.Alpha));
-        var begin = new RenderPassBeginInfo { SType = StructureType.RenderPassBeginInfo, RenderPass = _session.GraphRenderPass, Framebuffer = _session.GraphFramebuffer, RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _session.GraphExtent }, ClearValueCount = 1, PClearValues = &clearValue };
+        var clearValues = stackalloc ClearValue[2];
+        clearValues[0] = new ClearValue(new ClearColorValue(clear.Red, clear.Green, clear.Blue, clear.Alpha));
+        uint clearValueCount = 1;
+        if (_hasDepthAttachment)
+        {
+            var depth = _depthAttachment.ClearValue;
+            clearValues[1] = new ClearValue(new ClearDepthStencilValue { Depth = depth.Depth, Stencil = depth.Stencil });
+            clearValueCount = 2;
+        }
+
+        var begin = new RenderPassBeginInfo { SType = StructureType.RenderPassBeginInfo, RenderPass = _session.GraphRenderPass, Framebuffer = _session.GraphFramebuffer, RenderArea = new Rect2D { Offset = new Offset2D(0, 0), Extent = _session.GraphExtent }, ClearValueCount = clearValueCount, PClearValues = clearValues };
         _session.Api.CmdBeginRenderPass(_session.CommandBuffer, &begin, SubpassContents.Inline);
     }
 
@@ -374,7 +419,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
             }
             else if (use.Resource.Image.Handle != default && (previous.Layout != next.Layout || previous.Access != next.Access))
             {
-                images.Add(new ImageMemoryBarrier { SType = StructureType.ImageMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, OldLayout = previous.Layout, NewLayout = next.Layout, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Image = use.Resource.Image, SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 } });
+                images.Add(new ImageMemoryBarrier { SType = StructureType.ImageMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, OldLayout = previous.Layout, NewLayout = next.Layout, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Image = use.Resource.Image, SubresourceRange = new ImageSubresourceRange { AspectMask = use.Resource.AspectMask, LevelCount = 1, LayerCount = 1 } });
             }
         }
 
@@ -451,7 +496,35 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         _passes.Clear();
         _readbacks.Clear();
         _order = Array.Empty<int>();
+        _depthAttachmentResource = null;
+        _depthAttachment = default;
+        _hasDepthAttachment = false;
         _built = false;
+    }
+
+    private void ConfigureRenderPass()
+    {
+        _session.ConfigureDepthStencilAttachment(_hasDepthAttachment ? _depthAttachmentResource?.Texture : null, _depthAttachment);
+        foreach (var pass in _passes)
+        {
+            if (pass.Kind == PassKind.Raster)
+            {
+                pass.Pipeline = _session.GetOrCreateRasterPipeline(pass.PipelineDescription);
+            }
+        }
+    }
+
+    private void ValidateRasterPipelines()
+    {
+        foreach (var pass in _passes)
+        {
+            if (pass.Kind != PassKind.Raster) continue;
+            var pipeline = pass.PipelineDescription;
+            if ((pipeline.DepthTest || pipeline.DepthWrite || pipeline.StencilState.Enabled) && !_hasDepthAttachment)
+            {
+                throw new InvalidOperationException($"Raster pass '{pass.Name}' enables depth or stencil testing without a depth-stencil attachment.");
+            }
+        }
     }
 
     private RenderGraphTextureHandle AddResource(GraphResource resource) { resource.Index = _resources.Count; _resources.Add(resource); return new RenderGraphTextureHandle((uint)_resources.Count); }
@@ -474,10 +547,13 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         internal string Name = name;
         internal PassKind Kind = kind;
         internal VulkanGraphPipeline? Pipeline = pipeline;
+        internal RasterPipelineDescription PipelineDescription;
         internal IRasterPass? Raster;
         internal IComputePass? Compute;
         internal ITransferPass? Transfer;
         internal ColorAttachmentDescription Color;
+        internal DepthStencilAttachmentDescription DepthStencil;
+        internal bool HasDepthStencil;
         internal readonly List<GraphUse> Uses = new();
     }
 
@@ -491,6 +567,7 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         internal Image Image;
         internal PersistentBuffer? Buffer;
         internal PersistentTexture? Texture;
+        internal ImageAspectFlags AspectMask => IsTarget || Texture is null ? ImageAspectFlags.ColorBit : Texture.Format == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : Texture.Format == Format.D32Sfloat ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
         internal static GraphResource Target() => new() { IsTexture = true, IsTarget = true };
         internal static GraphResource FromTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image };
         internal static GraphResource OwnedTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image, Owns = true };
@@ -518,11 +595,28 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
             if (stages.HasFlag(RenderPipelineStages.Fragment)) stage |= PipelineStageFlags.FragmentShaderBit;
             if (stages.HasFlag(RenderPipelineStages.Compute)) stage |= PipelineStageFlags.ComputeShaderBit;
             if (stages.HasFlag(RenderPipelineStages.ColorOutput)) stage |= PipelineStageFlags.ColorAttachmentOutputBit;
+            var hasTransfer = stages.HasFlag(RenderPipelineStages.Transfer);
+            var hasShader = stages.HasFlag(RenderPipelineStages.Vertex) || stages.HasFlag(RenderPipelineStages.Fragment) || stages.HasFlag(RenderPipelineStages.Compute);
+            var hasColor = stages.HasFlag(RenderPipelineStages.ColorOutput);
+            var hasDepth = stages.HasFlag(RenderPipelineStages.DepthStencil);
+            if (hasDepth) stage |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+
             var accessFlags = AccessFlags.None;
-            if (access.HasFlag(RenderResourceAccess.Read)) accessFlags |= stages.HasFlag(RenderPipelineStages.Transfer) ? AccessFlags.TransferReadBit : AccessFlags.ShaderReadBit;
-            if (access.HasFlag(RenderResourceAccess.Write)) accessFlags |= stages.HasFlag(RenderPipelineStages.Transfer) ? AccessFlags.TransferWriteBit : AccessFlags.ShaderWriteBit;
-            if (stages.HasFlag(RenderPipelineStages.ColorOutput)) accessFlags = AccessFlags.ColorAttachmentWriteBit;
-            var layout = stages.HasFlag(RenderPipelineStages.ColorOutput) ? ImageLayout.ColorAttachmentOptimal : stages.HasFlag(RenderPipelineStages.Transfer) ? (access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.TransferDstOptimal : ImageLayout.TransferSrcOptimal) : access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal;
+            if (access.HasFlag(RenderResourceAccess.Read))
+            {
+                if (hasTransfer) accessFlags |= AccessFlags.TransferReadBit;
+                if (hasShader) accessFlags |= AccessFlags.ShaderReadBit;
+                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentReadBit;
+            }
+            if (access.HasFlag(RenderResourceAccess.Write))
+            {
+                if (hasTransfer) accessFlags |= AccessFlags.TransferWriteBit;
+                if (hasShader) accessFlags |= AccessFlags.ShaderWriteBit;
+                if (hasDepth) accessFlags |= AccessFlags.DepthStencilAttachmentWriteBit;
+                if (hasColor) accessFlags |= AccessFlags.ColorAttachmentWriteBit;
+            }
+
+            var layout = hasColor ? ImageLayout.ColorAttachmentOptimal : hasDepth ? ImageLayout.DepthStencilAttachmentOptimal : hasTransfer ? (access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.TransferDstOptimal : ImageLayout.TransferSrcOptimal) : access.HasFlag(RenderResourceAccess.Write) ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal;
             return new ResourceState(stage, accessFlags, layout);
         }
     }
@@ -753,7 +847,16 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
                     var blendState = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
                     var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
                     var dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamicStates };
-                    var depth = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = description.DepthTest, DepthWriteEnable = description.DepthWrite, DepthCompareOp = CompareOp.LessOrEqual };
+                    var depth = new PipelineDepthStencilStateCreateInfo
+                    {
+                        SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                        DepthTestEnable = description.DepthTest,
+                        DepthWriteEnable = description.DepthWrite,
+                        DepthCompareOp = ToCompareOp(description.DepthCompareOperation),
+                        StencilTestEnable = description.StencilState.Enabled,
+                        Front = ToStencilOpState(description.StencilState.Front),
+                        Back = ToStencilOpState(description.StencilState.Back),
+                    };
                     var info = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &vertexInput, PInputAssemblyState = &assembly, PViewportState = &viewport, PRasterizationState = &rasterization, PMultisampleState = &multisample, PDepthStencilState = &depth, PColorBlendState = &blendState, PDynamicState = &dynamic, Layout = pipelineLayout, RenderPass = session.GraphRenderPass, Subpass = 0 };
                     var output = stackalloc Pipeline[1];
                     Ensure(session.Api.CreateGraphicsPipelines(session.Device, default, 1, &info, null, output), "CreateGraphicsPipelines");
@@ -872,6 +975,40 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         private static uint GetPushSize(IReadOnlyList<ShaderPushConstantRange> ranges) => ranges.Count == 0 ? 0 : ranges.Max(range => checked(range.Offset + range.Size));
         private static ShaderStageFlags ToStageFlags(ShaderStageMask stages) { var result = ShaderStageFlags.None; if (stages.HasFlag(ShaderStageMask.Compute)) result |= ShaderStageFlags.ComputeBit; if (stages.HasFlag(ShaderStageMask.Vertex)) result |= ShaderStageFlags.VertexBit; if (stages.HasFlag(ShaderStageMask.Fragment)) result |= ShaderStageFlags.FragmentBit; return result; }
         private static DescriptorType ToDescriptorType(ShaderResourceKind kind) => kind switch { ShaderResourceKind.StorageBuffer => DescriptorType.StorageBuffer, ShaderResourceKind.UniformBuffer => DescriptorType.UniformBuffer, ShaderResourceKind.SampledTexture or ShaderResourceKind.CombinedTextureSampler => DescriptorType.CombinedImageSampler, _ => throw new ArgumentException("Unsupported shader resource kind.") };
+        private static CompareOp ToCompareOp(RenderCompareOperation operation) => operation switch
+        {
+            RenderCompareOperation.Never => CompareOp.Never,
+            RenderCompareOperation.Less => CompareOp.Less,
+            RenderCompareOperation.Equal => CompareOp.Equal,
+            RenderCompareOperation.LessOrEqual => CompareOp.LessOrEqual,
+            RenderCompareOperation.Greater => CompareOp.Greater,
+            RenderCompareOperation.NotEqual => CompareOp.NotEqual,
+            RenderCompareOperation.GreaterOrEqual => CompareOp.GreaterOrEqual,
+            RenderCompareOperation.Always => CompareOp.Always,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
+        private static StencilOp ToStencilOp(RenderStencilOperation operation) => operation switch
+        {
+            RenderStencilOperation.Keep => StencilOp.Keep,
+            RenderStencilOperation.Zero => StencilOp.Zero,
+            RenderStencilOperation.Replace => StencilOp.Replace,
+            RenderStencilOperation.IncrementClamp => StencilOp.IncrementAndClamp,
+            RenderStencilOperation.DecrementClamp => StencilOp.DecrementAndClamp,
+            RenderStencilOperation.Invert => StencilOp.Invert,
+            RenderStencilOperation.IncrementWrap => StencilOp.IncrementAndWrap,
+            RenderStencilOperation.DecrementWrap => StencilOp.DecrementAndWrap,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
+        private static StencilOpState ToStencilOpState(RenderStencilFaceState state) => new()
+        {
+            FailOp = ToStencilOp(state.FailOperation),
+            PassOp = ToStencilOp(state.PassOperation),
+            DepthFailOp = ToStencilOp(state.DepthFailOperation),
+            CompareOp = ToCompareOp(state.CompareOperation),
+            CompareMask = state.CompareMask,
+            WriteMask = state.WriteMask,
+            Reference = state.Reference,
+        };
         private static Silk.NET.Vulkan.PrimitiveTopology ToTopology(Delta.Render.RenderGraph.PrimitiveTopology topology) => topology switch { Delta.Render.RenderGraph.PrimitiveTopology.TriangleStrip => Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, Delta.Render.RenderGraph.PrimitiveTopology.LineList => Silk.NET.Vulkan.PrimitiveTopology.LineList, Delta.Render.RenderGraph.PrimitiveTopology.PointList => Silk.NET.Vulkan.PrimitiveTopology.PointList, _ => Silk.NET.Vulkan.PrimitiveTopology.TriangleList };
         private static CullModeFlags ToCullMode(RasterCullMode mode) => mode switch { RasterCullMode.Front => CullModeFlags.FrontBit, RasterCullMode.Back => CullModeFlags.BackBit, _ => CullModeFlags.None };
         private static void Ensure(Result result, string operation) { if (result != Result.Success) throw new InvalidOperationException($"{operation} failed: {result}"); }
