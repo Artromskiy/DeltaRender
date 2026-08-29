@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
+using Delta.Shader.Text;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
@@ -39,12 +40,14 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private readonly float _distanceRange;
     private readonly ColorGlyphOptions? _colorOptions;
     private readonly ShaderBinding _instanceBinding;
+    private readonly uint _instanceStride;
     private readonly ShaderBinding _atlasBinding;
     private PendingRun[] _pendingRuns = new PendingRun[8];
     private readonly Dictionary<GlyphKey, GlyphPlacement> _glyphs = new();
     private readonly byte[] _atlasPixels;
 
-    private TextGlyphGpu[] _instances;
+    private GlyphInstance[] _instances;
+    private byte[] _instanceBytes;
     private TextBatch[] _batches;
     private int[] _runBatchStarts = new int[8];
     private int[] _runBatchCounts = new int[8];
@@ -101,6 +104,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         (_encoding, _atlasFormat, _atlasBytesPerPixel) = DescribeImageFormat(mode);
         _instanceBinding = FindBinding(shaderProgram, ShaderResourceKind.StorageBuffer, ShaderStageMask.Vertex, "vertex instance buffer");
+        _instanceStride = FindInstanceStride(shaderProgram, _instanceBinding);
         _atlasBinding = FindTextureBinding(shaderProgram, "fragment atlas texture");
 
         _session = session;
@@ -113,7 +117,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _colorOptions = colorOptions;
         _viewport = viewport;
         _atlasPixels = new byte[checked((int)((ulong)atlasWidth * atlasHeight * (uint)_atlasBytesPerPixel))];
-        _instances = new TextGlyphGpu[InitialInstanceCapacity];
+        _instances = new GlyphInstance[InitialInstanceCapacity];
+        _instanceBytes = new byte[checked((int)((ulong)InitialInstanceCapacity * _instanceStride))];
         _batches = new TextBatch[16];
         _uploadPass = new TextUploadPass(this);
         _drawPass = new TextDrawPass(this);
@@ -135,7 +140,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 RenderTextureUsage.Sampled | RenderTextureUsage.TransferDestination));
             sampler = session.CreateSampler(new RenderSamplerDescription());
             instanceBuffer = session.CreateBuffer(new RenderBufferDescription(
-                checked((ulong)InitialInstanceCapacity * (ulong)Marshal.SizeOf<TextGlyphGpu>()),
+                checked((ulong)InitialInstanceCapacity * _instanceStride),
                 RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination));
             _atlas = atlas;
             _sampler = sampler;
@@ -286,7 +291,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             _instanceBinding,
             _instanceGraphHandle,
             0,
-            checked((ulong)_instanceCount * (ulong)Marshal.SizeOf<TextGlyphGpu>()));
+            checked((ulong)_instanceCount * _instanceStride));
 
         var firstBatch = -1;
         var lastBatch = 0;
@@ -372,12 +377,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                         var glyphX = runX + glyph.OffsetX;
                         var glyphY = runY + glyph.OffsetY;
                         var plane = placement.PlaneBounds;
-                        _instances[_instanceCount] = new TextGlyphGpu
+                        _instances[_instanceCount] = new GlyphInstance
                         {
-                            PixelMin = new Vector2(glyphX + plane.Left, glyphY + plane.Top),
-                            PixelMax = new Vector2(glyphX + plane.Right, glyphY + plane.Bottom),
-                            UvRect = placement.UvRect,
-                            Color = pending.Color,
+                            PixelMin = new float2(glyphX + plane.Left, glyphY + plane.Top),
+                            PixelMax = new float2(glyphX + plane.Right, glyphY + plane.Bottom),
+                            UvRect = new float4(placement.UvRect.X, placement.UvRect.Y, placement.UvRect.Z, placement.UvRect.W),
+                            Color = new float4(pending.Color.X, pending.Color.Y, pending.Color.Z, pending.Color.W),
                         };
                         var batchIndex = AppendBatch(clip, _instanceCount, pending.MergeWithPrevious || firstBatch >= 0);
                         firstBatch = firstBatch < 0 ? batchIndex : firstBatch;
@@ -533,13 +538,19 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         {
             capacity = checked(capacity * 2);
         }
-        var replacement = new TextGlyphGpu[capacity];
+        var replacement = new GlyphInstance[capacity];
         _instances.AsSpan(0, _instanceCount).CopyTo(replacement);
+        var replacementByteCapacity = checked((int)((ulong)capacity * _instanceStride));
         var replacementHandle = _session.CreateBuffer(new RenderBufferDescription(
-            checked((ulong)capacity * (ulong)Marshal.SizeOf<TextGlyphGpu>()),
+            checked((ulong)capacity * _instanceStride),
             RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination));
         var oldHandle = _instanceBuffer;
         _instances = replacement;
+        if (_instanceBytes.Length < replacementByteCapacity)
+        {
+            _instanceBytes = new byte[replacementByteCapacity];
+        }
+
         _instanceBuffer = replacementHandle;
         if (oldHandle.IsValid)
         {
@@ -614,6 +625,41 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             GlyphImageMode.Color => (GlyphImageEncoding.ColorRgba8PremultipliedSrgb, RenderTextureFormat.Rgba8Srgb, 4),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "The text feature requires a concrete glyph image mode."),
         };
+
+    private static uint FindInstanceStride(IGraphicsShaderProgram program, ShaderBinding binding)
+    {
+        ShaderResourceBinding? found = null;
+        foreach (var resource in program.Vertex.Abi.Resources)
+        {
+            if (resource.Binding != binding || resource.Kind != ShaderResourceKind.StorageBuffer ||
+                !resource.Stages.HasFlag(ShaderStageMask.Vertex) || (resource.Access & ShaderResourceAccess.Write) != 0)
+            {
+                continue;
+            }
+
+            if (found is not null)
+            {
+                throw new ArgumentException("The shader manifest contains more than one compatible instance buffer.", nameof(program));
+            }
+
+            found = resource;
+        }
+
+        if (found is null || found.Layout.ArrayStride == 0)
+        {
+            throw new ArgumentException("The shader manifest has no resolved instance-buffer array stride.", nameof(program));
+        }
+
+        return found.Layout.ArrayStride;
+    }
+
+    private int PackInstances(Span<byte> destination)
+    {
+        var values = _instances.AsSpan(0, _instanceCount);
+        return _mode == GlyphImageMode.Msdf
+            ? MsdfTextGraphicsShaderProgram.PackMsdfTextVertexGlyphsElements(values, destination)
+            : SdfTextGraphicsShaderProgram.PackSdfTextVertexGlyphsElements(values, destination);
+    }
 
     private static ShaderBinding FindBinding(
         IGraphicsShaderProgram program,
@@ -761,15 +807,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         public int Count;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
-    private struct TextGlyphGpu
-    {
-        public Vector2 PixelMin;
-        public Vector2 PixelMax;
-        public Vector4 UvRect;
-        public Vector4 Color;
-    }
-
     private sealed class TextUploadPass(TextRenderFeature owner) : ITransferPass
     {
         public void Record(ITransferCommandContext commands)
@@ -784,7 +821,14 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 owner._atlasDirty = false;
             }
 
-            var bytes = MemoryMarshal.AsBytes(owner._instances.AsSpan(0, owner._instanceCount));
+            var byteCount = checked((int)((ulong)owner._instanceCount * owner._instanceStride));
+            var bytes = owner._instanceBytes.AsSpan(0, byteCount);
+            var written = owner.PackInstances(bytes);
+            if (written != byteCount)
+            {
+                throw new InvalidOperationException("The generated text packer wrote a byte count different from ShaderAbi stride.");
+            }
+
             commands.UploadBuffer(owner._instanceGraphHandle, bytes);
         }
     }
