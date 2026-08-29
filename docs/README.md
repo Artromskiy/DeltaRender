@@ -26,6 +26,8 @@ does not compile source, poll input, shape text or own ECS state.
 - [CONTRACT.md](CONTRACT.md): authoritative cross-project contract.
 - [USER_API.md](USER_API.md): graph authoring and resource usage.
 - [INTERNAL.md](INTERNAL.md): Vulkan implementation design.
+- [TEXT_CONTRACT.md](TEXT_CONTRACT.md): DeltaRender.Text renderer integration boundary.
+- [TEXT_INTERNAL.md](TEXT_INTERNAL.md): DeltaRender.Text ownership and implementation details.
 - [MIGRATION.md](MIGRATION.md): removal of every legacy submission path.
 - [TODO.md](../TODO.md): selected implementation work.
 - [WORKFLOW.md](../WORKFLOW.md): bounded local checks.
