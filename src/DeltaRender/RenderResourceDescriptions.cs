@@ -92,5 +92,5 @@ public readonly record struct DepthStencilAttachmentDescription(
     AttachmentLoadOperation DepthLoad,
     AttachmentStoreOperation DepthStore,
     ClearDepthStencil ClearValue = default,
-    AttachmentLoadOperation StencilLoad = AttachmentLoadOperation.DontCare,
-    AttachmentStoreOperation StencilStore = AttachmentStoreOperation.DontCare);
+    AttachmentLoadOperation StencilLoad = AttachmentLoadOperation.Discard,
+    AttachmentStoreOperation StencilStore = AttachmentStoreOperation.Discard);

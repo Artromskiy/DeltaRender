@@ -396,7 +396,10 @@ internal sealed unsafe class VulkanRenderGraph : IRenderGraph, IRenderGraphBuild
         if (_hasDepthAttachment)
         {
             var depth = _depthAttachment.ClearValue;
-            clearValues[1] = new ClearValue(new ClearDepthStencilValue { Depth = depth.Depth, Stencil = depth.Stencil });
+            clearValues[1] = new ClearValue
+            {
+                DepthStencil = new ClearDepthStencilValue { Depth = depth.Depth, Stencil = depth.Stencil }
+            };
             clearValueCount = 2;
         }
 

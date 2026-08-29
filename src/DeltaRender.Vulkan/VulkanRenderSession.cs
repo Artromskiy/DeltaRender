@@ -378,7 +378,7 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
                 throw new ArgumentException("The depth-stencil texture extent must match the render target.", nameof(texture));
             }
 
-            if (depthTexture.Format == Format.D32Sfloat && (description.StencilLoad != AttachmentLoadOperation.DontCare || description.StencilStore != AttachmentStoreOperation.DontCare || description.ClearValue.Stencil != 0))
+            if (depthTexture.Format == Format.D32Sfloat && (description.StencilLoad != AttachmentLoadOperation.Discard || description.StencilStore != AttachmentStoreOperation.Discard || description.ClearValue.Stencil != 0))
             {
                 throw new ArgumentException("D32Float does not provide a stencil aspect.", nameof(description));
             }
@@ -1028,8 +1028,8 @@ internal sealed unsafe class VulkanRenderSession : IRenderFrameSession
 
     private static PresentModeKHR ChoosePresentMode(ReadOnlySpan<PresentModeKHR> modes) => modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr : PresentModeKHR.FifoKhr;
     private static Format ToVulkanFormat(RenderTextureFormat format) => format switch { RenderTextureFormat.R8Unorm => Format.R8Unorm, RenderTextureFormat.Rgba8Unorm => Format.R8G8B8A8Unorm, RenderTextureFormat.Rgba8Srgb => Format.R8G8B8A8Srgb, RenderTextureFormat.Bgra8Unorm => Format.B8G8R8A8Unorm, RenderTextureFormat.Bgra8Srgb => Format.B8G8R8A8Srgb, RenderTextureFormat.Rgba16Float => Format.R16G16B16A16Sfloat, RenderTextureFormat.D32Float => Format.D32Sfloat, RenderTextureFormat.D24UnormS8UInt => Format.D24UnormS8Uint, _ => throw new ArgumentException("Unsupported render texture format.", nameof(format)) };
-    private static AttachmentLoadOp ToAttachmentLoad(AttachmentLoadOperation operation) => operation switch { AttachmentLoadOperation.Load => AttachmentLoadOp.Load, AttachmentLoadOperation.Clear => AttachmentLoadOp.Clear, AttachmentLoadOperation.DontCare => AttachmentLoadOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
-    private static AttachmentStoreOp ToAttachmentStore(AttachmentStoreOperation operation) => operation switch { AttachmentStoreOperation.Store => AttachmentStoreOp.Store, AttachmentStoreOperation.DontCare => AttachmentStoreOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
+    private static AttachmentLoadOp ToAttachmentLoad(AttachmentLoadOperation operation) => operation switch { AttachmentLoadOperation.Load => AttachmentLoadOp.Load, AttachmentLoadOperation.Clear => AttachmentLoadOp.Clear, AttachmentLoadOperation.Discard => AttachmentLoadOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
+    private static AttachmentStoreOp ToAttachmentStore(AttachmentStoreOperation operation) => operation switch { AttachmentStoreOperation.Store => AttachmentStoreOp.Store, AttachmentStoreOperation.Discard => AttachmentStoreOp.DontCare, _ => throw new ArgumentOutOfRangeException(nameof(operation)) };
     private static ImageAspectFlags ToAspectMask(RenderTextureFormat format) => format switch { RenderTextureFormat.D32Float => ImageAspectFlags.DepthBit, RenderTextureFormat.D24UnormS8UInt => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, _ => ImageAspectFlags.ColorBit };
     private static SampleCountFlags ToSampleCount(uint samples) => samples switch { 1 => SampleCountFlags.Count1Bit, 2 => SampleCountFlags.Count2Bit, 4 => SampleCountFlags.Count4Bit, 8 => SampleCountFlags.Count8Bit, _ => throw new ArgumentOutOfRangeException(nameof(samples)) };
     private static SamplerAddressMode ToAddressMode(RenderAddressMode mode) => mode switch { RenderAddressMode.Repeat => SamplerAddressMode.Repeat, RenderAddressMode.MirroredRepeat => SamplerAddressMode.MirroredRepeat, _ => SamplerAddressMode.ClampToEdge };
