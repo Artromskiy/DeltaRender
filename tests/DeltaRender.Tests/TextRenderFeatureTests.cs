@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -9,11 +10,60 @@ using Delta.Shader.Text;
 using Delta.Text;
 using Delta.Text.Contract;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Delta.Render.Tests;
 
 public sealed class TextRenderFeatureTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public TextRenderFeatureTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
+    [Fact]
+    public void FiveThousandAdjacentGlyphsUseOneInstancedDraw()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var shaped = textService.Shape(new TextShapeRequest(new string('A', 5000).AsMemory(), 32, new[] { font }));
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(4096, 4096),
+            atlasWidth: 2048,
+            atlasHeight: 2048);
+
+        feature.AddRun(shaped, 0, 0, Vector4.One, new PixelRect(0, 0, 4096, 4096));
+        var graph = new RecordingGraphBuilder();
+        var stopwatch = Stopwatch.StartNew();
+        feature.AddPasses(graph, 1);
+        var commands = graph.RecordRaster();
+        stopwatch.Stop();
+
+        var glyphCount = 0;
+        foreach (var run in shaped.Runs.Span)
+        {
+            glyphCount += run.Glyphs.Length;
+        }
+
+        Assert.Equal(5000, glyphCount);
+        Assert.Single(commands.Draws);
+        Assert.Equal(6u, commands.Draws[0].VertexCount);
+        Assert.Equal((uint)glyphCount, commands.Draws[0].InstanceCount);
+        Assert.Equal(0u, commands.Draws[0].FirstInstance);
+        _output.WriteLine(
+            $"Contiguous text benchmark: glyphs={glyphCount}, naiveDraws={glyphCount}, " +
+            $"instancedDraws={commands.Draws.Count}, buildAndRecord={stopwatch.Elapsed.TotalMilliseconds:F3} ms");
+    }
+
     [Fact]
     public void GeneratedTextParametersAreSubmittedAndResizeUpdatesResolution()
     {
