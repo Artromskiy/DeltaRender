@@ -28,6 +28,8 @@ does not compile source, poll input, shape text or own ECS state.
 - [INTERNAL.md](INTERNAL.md): Vulkan implementation design.
 - [TEXT_CONTRACT.md](TEXT_CONTRACT.md): DeltaRender.Text renderer integration boundary.
 - [TEXT_INTERNAL.md](TEXT_INTERNAL.md): DeltaRender.Text ownership and implementation details.
+- [RENDER_BATCHING.md](RENDER_BATCHING.md): renderer-owned instance batching,
+  ordering and dirty-upload behavior.
 - [MIGRATION.md](MIGRATION.md): removal of every legacy submission path.
 - [TODO.md](../TODO.md): selected implementation work.
 - [WORKFLOW.md](../WORKFLOW.md): bounded local checks.
