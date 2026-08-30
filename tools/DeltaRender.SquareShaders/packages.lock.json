@@ -6,7 +6,10 @@
         "type": "Project"
       },
       "deltashader": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )"
+        }
       },
       "deltashader.contract": {
         "type": "Project"

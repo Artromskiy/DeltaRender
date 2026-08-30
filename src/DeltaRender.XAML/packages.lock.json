@@ -29,7 +29,10 @@
         }
       },
       "deltashader": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "DeltaMaths": "[1.0.0, )"
+        }
       },
       "deltashader.contract": {
         "type": "Project"
@@ -64,7 +67,6 @@
           "DeltaText": "[1.0.0, )"
         }
       }
-    },
-    "net10.0/osx-arm64": {}
+    }
   }
 }
