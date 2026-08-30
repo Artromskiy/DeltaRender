@@ -489,6 +489,8 @@ public sealed class TextRenderFeatureTests
 
         public IRenderGraph CreateRenderGraph() => throw new NotSupportedException();
 
+        public bool TryReinitializeAfterDeviceLoss() => false;
+
         public RenderBufferHandle CreateBuffer(in RenderBufferDescription description)
         {
             ResourceCreationCount++;

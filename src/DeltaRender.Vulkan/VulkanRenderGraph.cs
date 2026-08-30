@@ -64,9 +64,16 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.NoWork, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
         }
 
-        if (!_session.BeginGraphFrame())
+        try
         {
-            return Failed();
+            if (!_session.BeginGraphFrame())
+            {
+                return Failed();
+            }
+        }
+        catch (VulkanOperationException exception)
+        {
+            return Failed(exception);
         }
 
         if (_states.Length < _resources.Count)
@@ -131,6 +138,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
             _built = false;
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.Submitted, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
+        }
+        catch (VulkanOperationException exception)
+        {
+            _session.AbortGraphFrame();
+            return Failed(exception);
         }
         catch
         {
@@ -774,8 +786,13 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
         return result;
     }
-    private static RenderGraphExecutionResult Failed()
-        => new(RenderGraphExecutionStatus.Failed, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
+    private static RenderGraphExecutionResult Failed(VulkanOperationException? exception = null)
+        => new(
+            ClassifyFailure(exception),
+            ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
+
+    internal static RenderGraphExecutionStatus ClassifyFailure(VulkanOperationException? exception)
+        => exception?.Result == Result.ErrorDeviceLost ? RenderGraphExecutionStatus.DeviceLost : RenderGraphExecutionStatus.Failed;
 
 
 }

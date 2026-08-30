@@ -15,6 +15,13 @@ public interface IRenderFrameSession : IAsyncDisposable
 
     IRenderGraph CreateRenderGraph();
 
+    /// <summary>
+    /// Recreates device-local session state after a Vulkan device-loss event.
+    /// All existing persistent and graph-local handles become stale; callers
+    /// must create and upload their resources again after a successful return.
+    /// </summary>
+    bool TryReinitializeAfterDeviceLoss();
+
     RenderBufferHandle CreateBuffer(in RenderBufferDescription description);
 
     RenderTextureHandle CreateTexture(in RenderTextureDescription description);

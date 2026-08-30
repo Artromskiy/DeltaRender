@@ -190,6 +190,48 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     internal KhrSwapchain GetKhrSwapchain() => SwapchainExtension;
 
+    internal bool TryReinitializeDevice(bool windowed, SurfaceKHR surface, RenderDiagnosticBag diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        if (!IsInitialized || _physicalDevice.Handle == default)
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-RECOVERY", "The Vulkan instance or physical device is not initialized.");
+            return false;
+        }
+
+        if (_khrSwapchain is not null)
+        {
+            _khrSwapchain.Dispose();
+            _khrSwapchain = null;
+        }
+
+        // Device-loss recovery must not wait on the lost device.
+        if (Device.Handle != default)
+        {
+            Api.DestroyDevice(Device, null);
+            Device = default;
+        }
+
+        var created = windowed
+            ? CreateLogicalDevice(surface, diagnostics)
+            : CreateLogicalDeviceForHeadless(diagnostics);
+        if (!created)
+        {
+            return false;
+        }
+
+        if (windowed && !Api.TryGetDeviceExtension(Instance, Device, out _khrSwapchain, string.Empty))
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-RECOVERY", "Failed to reload VK_KHR_swapchain after device recovery.");
+            Api.DestroyDevice(Device, null);
+            Device = default;
+            return false;
+        }
+
+        diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-RECOVERY", "Vulkan logical device reinitialized; session resources must be recreated.");
+        return true;
+    }
+
     private void InitializeForWindow(IVulkanWindowSurfaceSource surfaceSource, RenderDiagnosticBag diagnostics)
     {
         if (IsInitialized)

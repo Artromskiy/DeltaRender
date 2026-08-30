@@ -36,6 +36,8 @@ public interface IRenderFrameSession : IAsyncDisposable
 
     IRenderGraph CreateRenderGraph();
 
+    bool TryReinitializeAfterDeviceLoss();
+
     RenderBufferHandle CreateBuffer(in RenderBufferDescription description);
     RenderTextureHandle CreateTexture(in RenderTextureDescription description);
     RenderSamplerHandle CreateSampler(in RenderSamplerDescription description);
@@ -62,6 +64,14 @@ not expose an array of views or surfaces.
 
 Persistent handles are session-owned and generation-checked. Graph-local
 handles are compact build-local indices and expire at the next `Build`.
+
+`TryReinitializeAfterDeviceLoss` is an explicit recovery boundary. It does not
+preserve Vulkan resources: on success, the graph, persistent handles, staging,
+pipelines and transient allocations from the old device are invalidated and
+must be recreated and uploaded by their data owners. A window session keeps
+its instance-owned surface and recreates its logical device, swapchain and
+frame resources. The operation must not be called while a frame is recording;
+it returns `false` when device recreation or target setup fails.
 
 ### Graph lifecycle
 

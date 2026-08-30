@@ -18,20 +18,20 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
     private readonly bool _hasTarget;
-    private readonly KhrSwapchain? _swapchainExtension;
-    private readonly PhysicalDevice _physicalDevice;
-    private readonly Queue _graphicsQueue;
-    private readonly Queue _presentQueue;
-    private readonly Device _device;
-    private readonly uint _graphicsFamily;
-    private readonly uint _presentFamily;
-    private readonly PhysicalDeviceMemoryProperties _memoryProperties;
+    private KhrSwapchain? _swapchainExtension;
+    private PhysicalDevice _physicalDevice;
+    private Queue _graphicsQueue;
+    private Queue _presentQueue;
+    private Device _device;
+    private uint _graphicsFamily;
+    private uint _presentFamily;
+    private PhysicalDeviceMemoryProperties _memoryProperties;
     private RenderPass _renderPass;
-    private readonly CommandPool _commandPool;
-    private readonly CommandBuffer _commandBuffer;
-    private readonly Fence _frameFence;
-    private readonly VulkanSemaphore _imageAvailable;
-    private readonly VulkanSemaphore _renderComplete;
+    private CommandPool _commandPool;
+    private CommandBuffer _commandBuffer;
+    private Fence _frameFence;
+    private VulkanSemaphore _imageAvailable;
+    private VulkanSemaphore _renderComplete;
     private readonly VulkanResourceRegistry _resources = new();
     private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanPipelineCache<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
@@ -549,6 +549,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
             var result = swapchainExtension.AcquireNextImage(Device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref _activeImage);
+            if (result == Result.ErrorDeviceLost)
+            {
+                throw new VulkanOperationException(result, "AcquireNextImage");
+            }
             if (result is not Result.Success and not Result.SuboptimalKhr)
             {
                 return false;
@@ -595,6 +599,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
                 var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
                 var result = swapchainExtension.QueuePresent(_presentQueue, present);
+                if (result == Result.ErrorDeviceLost)
+                {
+                    throw new VulkanOperationException(result, "QueuePresent");
+                }
                 if (result is not Result.Success and not Result.SuboptimalKhr and not Result.ErrorOutOfDateKhr)
                 {
                     throw new InvalidOperationException($"QueuePresent failed: {result}.");
@@ -676,7 +684,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         _graph?.DisposeGraph();
         _disposed = true;
-        Api.DeviceWaitIdle(Device);
+        if (Device.Handle != default)
+        {
+            Api.DeviceWaitIdle(Device);
+        }
         DisposePersistentResources();
         DisposeStaging();
         DisposeTargetResources();

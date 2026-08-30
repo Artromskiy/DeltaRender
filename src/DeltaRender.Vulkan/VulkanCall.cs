@@ -8,7 +8,18 @@ internal static class VulkanCall
     {
         if (result != Result.Success)
         {
-            throw new InvalidOperationException($"{operation} failed: {result}");
+            throw new VulkanOperationException(result, operation);
         }
     }
+}
+
+internal sealed class VulkanOperationException : InvalidOperationException
+{
+    internal VulkanOperationException(Result result, string operation)
+        : base($"{operation} failed: {result}")
+    {
+        Result = result;
+    }
+
+    internal Result Result { get; }
 }

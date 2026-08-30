@@ -130,8 +130,10 @@ DeltaXAML/editor integration rather than only a reusable Render-side feature.
 - [x] Implement transactional bounded multi-page atlas allocation and page-level
   LRU recycling. Recycled pages invalidate their cached placements, retain their
   session-owned texture handles and return to the dirty upload set.
-- [ ] Define device-loss/reinitialization and atlas replacement. This remains
-  open because `IRenderFrameSession` has no device-loss reinitialization operation.
+- [x] Define device-loss/reinitialization and atlas replacement. The explicit
+  `IRenderFrameSession.TryReinitializeAfterDeviceLoss` boundary invalidates
+  graph/persistent device resources, preserves a window surface, recreates
+  session-local Vulkan state, and requires producers to re-upload resources.
 - [ ] Obtain an approved producer identity/delta contract. Frozen `UiTextDraw`
   has no Owner, OwnerGeneration or Version; object references and hashes are not
   valid substitutes. Current fallback is full instance re-encoding.
@@ -182,8 +184,8 @@ the still-open project-level gates and avoids repeating completed work.
   use a synthetic surface or direct Vulkan submission. A native render/readback
   run remains open because this bounded slice does not execute GPU tests.
 - [x] Implement bounded multi-page atlas allocation/recycling for
-  `DeltaRender.Text`; device-loss/reinitialization remains open because the
-  session contract has no reinitialization operation.
+  `DeltaRender.Text`; device-loss recovery invalidates pages and requires
+  producer-owned atlas data to be uploaded again after reinitialization.
 - [ ] Obtain an approved producer identity/delta path for incremental text
   updates; until then full instance re-encoding is the documented fallback.
 - [x] Complete feature-level text warm-frame allocation evidence. After two

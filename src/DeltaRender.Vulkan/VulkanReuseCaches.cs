@@ -103,4 +103,10 @@ internal sealed class VulkanTransientResourcePool<TKey, TValue>
         _free.Clear();
         _inPool.Clear();
     }
+
+    internal void Clear()
+    {
+        _free.Clear();
+        _inPool.Clear();
+    }
 }
