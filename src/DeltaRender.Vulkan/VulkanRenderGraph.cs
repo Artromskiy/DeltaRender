@@ -17,6 +17,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
     private GraphResource? _depthAttachmentResource;
+    private GraphResource? _targetResource;
     private DepthStencilAttachmentDescription _depthAttachment;
     private bool _hasDepthAttachment;
     private bool _built;
@@ -222,7 +223,13 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new InvalidOperationException("The target handle does not belong to this session.");
         }
 
-        return new RenderGraphTextureHandle(AddResource(GraphResource.Target()));
+        if (_targetResource is null)
+        {
+            _targetResource = GraphResource.Target();
+            AddResource(_targetResource);
+        }
+
+        return new RenderGraphTextureHandle(checked((uint)_targetResource.Index + 1u));
     }
 
     public RenderGraphTextureHandle ImportTexture(RenderTextureHandle texture)
@@ -579,12 +586,12 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             }
         }
 
-        var ready = new Queue<int>();
+        var ready = new List<int>();
         for (var i = 0; i < indegree.Length; i++)
         {
             if (indegree[i] == 0)
             {
-                ready.Enqueue(i);
+                ready.Add(i);
             }
         }
 
@@ -592,13 +599,24 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var count = 0;
         while (ready.Count != 0)
         {
-            var current = ready.Dequeue();
+            var readyIndex = 0;
+            for (var index = 1; index < ready.Count; index++)
+            {
+                if (_passes[ready[index]].Kind == PassKind.Transfer)
+                {
+                    readyIndex = index;
+                    break;
+                }
+            }
+
+            var current = ready[readyIndex];
+            ready.RemoveAt(readyIndex);
             order[count++] = current;
             foreach (var next in edges[current])
             {
                 if (--indegree[next] == 0)
                 {
-                    ready.Enqueue(next);
+                    ready.Add(next);
                 }
             }
         }
@@ -645,6 +663,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         _readbacks.Clear();
         _order = Array.Empty<int>();
         _depthAttachmentResource = null;
+        _targetResource = null;
         _depthAttachment = default;
         _hasDepthAttachment = false;
         _built = false;

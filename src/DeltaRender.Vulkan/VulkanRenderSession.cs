@@ -61,6 +61,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private bool _recording;
     private bool _disposed;
     private BufferAllocation _staging;
+    private readonly List<BufferAllocation> _retiredStaging = new();
     private ulong _stagingCursor;
 
     private VulkanRenderSession(VulkanRenderer renderer, VulkanSurfaceLease? surfaceLease, WindowMetrics metrics, bool windowed)
@@ -543,6 +544,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         WaitForFrame();
+        ReclaimRetiredStaging();
         ReclaimDeferredTransients();
         _stagingCursor = 0;
         if (_windowed)
@@ -622,7 +624,16 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    internal void AbortGraphFrame() => _recording = false;
+    internal void AbortGraphFrame()
+    {
+        if (!_recording)
+        {
+            return;
+        }
+
+        Api.ResetCommandBuffer(_commandBuffer, 0);
+        _recording = false;
+    }
 
     internal void WaitForFrame()
     {
@@ -746,6 +757,13 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             DestroyAllocation(_staging);
             _staging = default;
         }
+
+        foreach (var allocation in _retiredStaging)
+        {
+            DestroyAllocation(allocation);
+        }
+
+        _retiredStaging.Clear();
     }
 
     private void DisposeTargetResources()
@@ -804,8 +822,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         if (VulkanBufferAllocation.IsLive(in _staging))
         {
-            WaitForReadback();
-            DestroyAllocation(_staging);
+            _retiredStaging.Add(_staging);
+            _staging = default;
         }
 
         var capacity = 4096UL;
@@ -819,6 +837,16 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
             MemoryPropertyFlags.HostVisibleBit,
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+    }
+
+    private void ReclaimRetiredStaging()
+    {
+        foreach (var allocation in _retiredStaging)
+        {
+            DestroyAllocation(allocation);
+        }
+
+        _retiredStaging.Clear();
     }
 
     private static ulong Align(ulong value, ulong alignment) => checked((value + alignment - 1) / alignment * alignment);

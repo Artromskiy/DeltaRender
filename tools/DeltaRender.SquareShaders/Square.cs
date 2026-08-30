@@ -18,10 +18,9 @@ public static class Square
     [Interstage]
     public struct Varying
     {
-        [Position]
-        public float4 Position;
-        public float2 Uv;
-        public float4 Color;
+        public Position Position;
+        public Uv0 Uv;
+        public VertexColor Color;
 
         public Varying()
         {

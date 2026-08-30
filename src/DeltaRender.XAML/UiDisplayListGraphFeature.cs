@@ -140,6 +140,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderBufferHandle _visualInstanceBuffer;
     private RenderGraphBufferHandle _visualInstanceGraphHandle;
     private bool _visualInstancePayloadDirty = true;
+    private bool _flatVisualInstanceBuffer;
     private int _clipMarkEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -455,7 +456,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             {
                 var upload = graph.AddTransferPass("DeltaRender.XAML.VisualUpload", _visualUploadPass);
                 graph.UseBuffer(upload, _visualInstanceGraphHandle, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
-                CommitVisualInstanceSnapshot();
             }
         }
 
@@ -592,6 +592,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     private bool PrepareVisualInstances()
     {
+        _flatVisualInstanceBuffer = HasUniformVisualInstanceLayout();
         ulong byteCursor = 0;
         var previousOrderIndex = -1;
         for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
@@ -605,7 +606,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
 
             var startsNewSegment = previousOrderIndex < 0 || !CanJoinVisualSegment(previousOrderIndex, orderIndex);
-            if (startsNewSegment)
+            if (startsNewSegment && !_flatVisualInstanceBuffer)
             {
                 byteCursor = Align(byteCursor, _visualInstanceAlignment);
             }
@@ -635,6 +636,37 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             !_visualInstanceBytes.AsSpan(0, _visualInstanceByteCount).SequenceEqual(
                 _uploadedVisualInstanceBytes.AsSpan(0, Math.Min(_uploadedVisualInstanceByteCount, _visualInstanceByteCount)));
         return true;
+    }
+
+    private bool HasUniformVisualInstanceLayout()
+    {
+        IGraphicsShaderProgram? program = null;
+        var stride = 0u;
+        var binding = default(ShaderBinding);
+        var found = false;
+        for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
+        {
+            if (_order[orderIndex].Kind != UiDrawKind.Visual || _commandClips[orderIndex].IsEmpty || _visualPrograms[orderIndex] is not { } candidate)
+            {
+                continue;
+            }
+
+            if (!found)
+            {
+                program = candidate;
+                stride = _visualInstanceStrides[orderIndex];
+                binding = _visualInstanceBindings[orderIndex];
+                found = true;
+                continue;
+            }
+
+            if (!ReferenceEquals(program, candidate) || stride != _visualInstanceStrides[orderIndex] || binding != _visualInstanceBindings[orderIndex])
+            {
+                return false;
+            }
+        }
+
+        return found;
     }
 
     private void EnsureVisualInstanceBuffer(ulong requiredBytes)
@@ -681,6 +713,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         commands.UploadBuffer(
             _visualInstanceGraphHandle,
             _visualInstanceBytes.AsSpan(0, _visualInstanceByteCount));
+        CommitVisualInstanceSnapshot();
     }
 
     private static ulong Align(ulong value, ulong alignment)
@@ -709,12 +742,22 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             0,
             checked((int)_visualPushConstantSizes[firstOrderIndex])),
             _visualFramePushConstantOffsets[firstOrderIndex]);
-        commands.BindBuffer(
-            _visualInstanceBindings[firstOrderIndex],
-            _visualInstanceGraphHandle,
-            checked((ulong)_visualInstanceOffsets[firstOrderIndex]),
-            checked((ulong)_visualInstanceStrides[firstOrderIndex] * (ulong)visualCount));
-        commands.Draw(6, checked((uint)visualCount), 0, 0);
+        var stride = _visualInstanceStrides[firstOrderIndex];
+        if (_flatVisualInstanceBuffer)
+        {
+            commands.BindBuffer(_visualInstanceBindings[firstOrderIndex], _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
+            var firstInstance = checked((uint)((ulong)_visualInstanceOffsets[firstOrderIndex] / stride));
+            commands.Draw(6, checked((uint)visualCount), 0, firstInstance);
+        }
+        else
+        {
+            commands.BindBuffer(
+                _visualInstanceBindings[firstOrderIndex],
+                _visualInstanceGraphHandle,
+                checked((ulong)_visualInstanceOffsets[firstOrderIndex]),
+                checked((ulong)stride * (ulong)visualCount));
+            commands.Draw(6, checked((uint)visualCount), 0, 0);
+        }
     }
 
     /// <inheritdoc />
@@ -1012,6 +1055,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _orderCount = 0;
         _visualInstanceByteCount = 0;
         _visualInstanceGraphHandle = default;
+        _flatVisualInstanceBuffer = false;
         _hasFrame = false;
     }
 

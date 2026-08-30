@@ -26,6 +26,14 @@
       "GlslType": "vec2",
       "Location": 0,
       "Builtin": null
+    },
+    {
+      "Name": "Color",
+      "ParameterName": "Color",
+      "GlslName": "Color",
+      "GlslType": "vec4",
+      "Location": 1,
+      "Builtin": null
     }
   ],
   "VertexInputs": [],
