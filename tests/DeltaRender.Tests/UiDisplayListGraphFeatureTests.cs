@@ -4,6 +4,8 @@ using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.XAML;
+using Delta.Shader.Contract;
+using Delta.Shader.UI;
 using Delta.Text;
 using Delta.Text.Contract;
 using Delta.XAML.Contract;
@@ -123,6 +125,36 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(expectedOrder, feature.BorrowOrder()[0]);
         Assert.Equal(new PixelRect(10, 12, 50, 30), feature.GetEffectiveClip(0));
         Assert.Equal(new PixelRect(10, 12, 50, 30), feature.GetEffectiveClip(1));
+    }
+
+    [Fact]
+    public void AdjacentVisualsUseOneRasterSegmentWithoutReorderingDraws()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var visuals = new[] { Solid(1), Solid(2) };
+        var order = new[]
+        {
+            new UiDrawRef(UiDrawKind.Visual, 0),
+            new UiDrawRef(UiDrawKind.Visual, 1),
+        };
+
+        Assert.True(
+            feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Equal(2, commands.DrawCount);
+        Assert.Equal(2, commands.PushedConstants.Count);
+        Assert.Equal(2, commands.Scissors.Count);
+        Assert.Equal(1f, ReadFloat(commands.PushedConstants[0], 16));
+        Assert.Equal(2f, ReadFloat(commands.PushedConstants[1], 16));
     }
 
     [Fact]
@@ -330,4 +362,154 @@ public sealed class UiDisplayListGraphFeatureTests
             new FontSourceId(Guid.Parse("d7f3e9ab-6fb6-4d0f-9d8a-4d4fc2c4d6f6")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
             0));
+
+    private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)
+        => BitConverter.Int32BitsToSingle(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]));
+
+    private static readonly byte[] MinimalSpirv =
+    [
+        0x03, 0x02, 0x23, 0x07,
+        0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    private sealed class RecordingSession : IRenderFrameSession, IDisposable
+    {
+        public RenderDeviceCapabilities Capabilities => default;
+
+        public RenderTargetHandle Target => new(1, 1);
+
+        public IRenderGraph CreateRenderGraph() => throw new NotSupportedException();
+
+        public bool TryReinitializeAfterDeviceLoss() => false;
+
+        public RenderBufferHandle CreateBuffer(in RenderBufferDescription description) => new(1, 1);
+
+        public RenderTextureHandle CreateTexture(in RenderTextureDescription description) => new(1, 1);
+
+        public RenderSamplerHandle CreateSampler(in RenderSamplerDescription description) => new(1, 1);
+
+        public void Release(RenderBufferHandle buffer)
+        {
+        }
+
+        public void Release(RenderTextureHandle texture)
+        {
+        }
+
+        public void Release(RenderSamplerHandle sampler)
+        {
+        }
+
+        public void ResizeTarget(in PixelExtent extent)
+        {
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class RecordingGraphBuilder : IRenderGraphBuilder
+    {
+        private uint _nextHandle = 1;
+
+        public List<IRasterPass> RasterPasses { get; } = [];
+
+        public RenderGraphTextureHandle ImportTarget(RenderTargetHandle target) => new(_nextHandle++);
+
+        public RenderGraphTextureHandle ImportTexture(RenderTextureHandle texture) => new(_nextHandle++);
+
+        public RenderGraphBufferHandle ImportBuffer(RenderBufferHandle buffer) => new(_nextHandle++);
+
+        public RenderGraphTextureHandle CreateTexture(in RenderTextureDescription description) => new(_nextHandle++);
+
+        public RenderGraphBufferHandle CreateBuffer(in RenderBufferDescription description) => new(_nextHandle++);
+
+        public RenderGraphPassHandle AddRasterPass(in RasterPassDescription description, IRasterPass pass)
+        {
+            RasterPasses.Add(pass);
+            return new RenderGraphPassHandle(_nextHandle++);
+        }
+
+        public RenderGraphPassHandle AddComputePass(in ComputePassDescription description, IComputePass pass)
+            => new(_nextHandle++);
+
+        public RenderGraphPassHandle AddTransferPass(string name, ITransferPass pass)
+            => new(_nextHandle++);
+
+        public void UseColorAttachment(RenderGraphPassHandle pass, uint index, in ColorAttachmentDescription attachment)
+        {
+        }
+
+        public void UseDepthStencilAttachment(RenderGraphPassHandle pass, in DepthStencilAttachmentDescription attachment)
+        {
+        }
+
+        public void UseTexture(RenderGraphPassHandle pass, RenderGraphTextureHandle texture, RenderResourceAccess access, RenderPipelineStages stages)
+        {
+        }
+
+        public void UseBuffer(RenderGraphPassHandle pass, RenderGraphBufferHandle buffer, RenderResourceAccess access, RenderPipelineStages stages)
+        {
+        }
+
+        public RenderGraphReadbackHandle ReadbackBuffer(RenderGraphBufferHandle buffer, in BufferRange range)
+            => new(_nextHandle++);
+
+        public RenderGraphReadbackHandle ReadbackTexture(RenderGraphTextureHandle texture, in PixelRect region)
+            => new(_nextHandle++);
+
+        public void RecordRaster(RecordingRasterCommands commands)
+        {
+            foreach (var pass in RasterPasses)
+            {
+                pass.Record(commands);
+            }
+        }
+    }
+
+    private sealed class RecordingRasterCommands : IRasterCommandContext
+    {
+        public List<PixelRect> Scissors { get; } = [];
+
+        public List<byte[]> PushedConstants { get; } = [];
+
+        public int DrawCount { get; private set; }
+
+        public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0)
+        {
+        }
+
+        public void BindTexture(ShaderBinding binding, RenderGraphTextureHandle texture, RenderSamplerHandle sampler)
+        {
+        }
+
+        public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0) => PushedConstants.Add(data.ToArray());
+
+        public void SetViewport(in RenderViewport viewport)
+        {
+        }
+
+        public void SetScissor(in PixelRect scissor) => Scissors.Add(scissor);
+
+        public void BindVertexBuffer(uint binding, RenderGraphBufferHandle buffer, ulong offset = 0)
+        {
+        }
+
+        public void BindIndexBuffer(RenderGraphBufferHandle buffer, IndexElementFormat format, ulong offset = 0)
+        {
+        }
+
+        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
+            => DrawCount++;
+
+        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
+        {
+        }
+    }
 }

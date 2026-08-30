@@ -112,6 +112,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private PixelRect[] _resolvedClips = [];
     private PixelRect[] _commandClips = [];
     private byte[] _visualPushConstants = [];
+    private IGraphicsShaderProgram?[] _visualPrograms = [];
+    private uint[] _visualPushConstantSizes = [];
+    private RenderGraphTextureHandle?[] _visualImageTextures = [];
+    private RenderSamplerHandle[] _visualImageSamplers = [];
+    private ShaderBinding?[] _visualImageBindings = [];
     private int[] _clipMarks = [];
     private bool[] _seenVisuals = [];
     private bool[] _seenTexts = [];
@@ -243,6 +248,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _seenVisuals, displayList.Visuals.Length);
         EnsureCapacity(ref _seenTexts, displayList.Text.Length);
         EnsureCapacity(ref _textRunIndices, displayList.Order.Length);
+        EnsureCapacity(ref _visualPrograms, displayList.Order.Length);
+        EnsureCapacity(ref _visualPushConstantSizes, displayList.Order.Length);
+        EnsureCapacity(ref _visualImageTextures, displayList.Order.Length);
+        EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
+        EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
 
         displayList.Visuals.CopyTo(_visuals);
         displayList.Clips.CopyTo(_clips);
@@ -401,6 +411,14 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _orderCount; index++)
         {
+            if (_order[index].Kind == UiDrawKind.Visual && !_commandClips[index].IsEmpty)
+            {
+                TryPrepareVisual(graph, index);
+            }
+        }
+
+        for (var index = 0; index < _orderCount; index++)
+        {
             var draw = _order[index];
             if (draw.Kind == UiDrawKind.Text)
             {
@@ -431,75 +449,130 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
-            var visual = _visuals[draw.Index];
             var clip = _commandClips[index];
             if (clip.IsEmpty)
             {
                 continue;
             }
 
-            var program = ResolveVisualProgram(visual);
-            if (!UiVisualShaderContract.TryDescribe(
-                    program,
-                    visual.Kind,
-                    out var shaderKind,
-                    out var pushConstantSize,
-                    out var shaderDiagnostic))
+            if (_visualPrograms[index] is not { } program)
             {
-                AddDiagnostic($"Visual at Order[{index}] is unsupported: {shaderDiagnostic}");
                 continue;
             }
 
-            var parameterOffset = checked(index * UiVisualShaderContract.MaxPushConstantSize);
-            var packedSize = UiVisualShaderContract.Pack(
-                shaderKind,
-                in visual,
-                _viewport,
-                _visualPushConstants.AsSpan(parameterOffset, checked((int)pushConstantSize)));
-            if (packedSize != pushConstantSize)
+            var visualEnd = index + 1;
+            while (visualEnd < _orderCount &&
+                   _order[visualEnd].Kind == UiDrawKind.Visual &&
+                   !_commandClips[visualEnd].IsEmpty &&
+                   CanJoinVisualSegment(index, visualEnd))
             {
-                AddDiagnostic($"Visual at Order[{index}] generated UI packer wrote {packedSize} bytes; expected {pushConstantSize}.");
-                continue;
-            }
-
-            RenderTextureHandle imageTexture = default;
-            RenderSamplerHandle imageSampler = default;
-            ShaderBinding? imageBinding = null;
-            RenderGraphTextureHandle? imageGraphTexture = null;
-            if (visual.Kind == UiVisualKind.Image)
-            {
-                if (!_registry.TryResolveImage(visual.Resource, out imageTexture, out imageSampler, out imageBinding) || !imageBinding.HasValue)
-                {
-                    AddDiagnostic($"Image resource {visual.Resource.Value} is not registered with a fragment binding.");
-                    continue;
-                }
-
-                imageGraphTexture = graph.ImportTexture(imageTexture);
+                visualEnd++;
             }
 
             var pass = graph.AddRasterPass(
                 new RasterPassDescription(
-                    $"DeltaRender.XAML.{draw.Index}",
+                    $"DeltaRender.XAML.VisualSegment[{index}:{visualEnd})",
                     new RasterPipelineDescription(program, cullMode: RasterCullMode.None, blendMode: RenderBlendMode.Alpha)),
-                new UiVisualPass(
-                    _viewport,
-                    clip,
-                    _visualPushConstants,
-                    parameterOffset,
-                    checked((int)pushConstantSize),
-                    imageGraphTexture,
-                    imageSampler,
-                    imageBinding));
+                new UiVisualSegmentPass(this, index, visualEnd - index));
             graph.UseColorAttachment(
                 pass,
                 0,
                 new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
 
-            if (visual.Kind == UiVisualKind.Image)
+            for (var visualIndex = index; visualIndex < visualEnd; visualIndex++)
             {
-                var graphTexture = imageGraphTexture ?? throw new InvalidOperationException("The image graph resource was not imported.");
-                graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+                if (_visualImageTextures[visualIndex].HasValue)
+                {
+                    var graphTexture = _visualImageTextures[visualIndex] ?? throw new InvalidOperationException("The image graph resource was not imported.");
+                    graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+                }
             }
+
+            index = visualEnd - 1;
+        }
+    }
+
+    private bool TryPrepareVisual(IRenderGraphBuilder graph, int orderIndex)
+    {
+        var draw = _order[orderIndex];
+        var visual = _visuals[draw.Index];
+        var program = ResolveVisualProgram(visual);
+        if (!UiVisualShaderContract.TryDescribe(
+                program,
+                visual.Kind,
+                out var shaderKind,
+                out var pushConstantSize,
+                out var shaderDiagnostic))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] is unsupported: {shaderDiagnostic}");
+            return false;
+        }
+
+        var parameterOffset = checked(orderIndex * UiVisualShaderContract.MaxPushConstantSize);
+        var packedSize = UiVisualShaderContract.Pack(
+            shaderKind,
+            in visual,
+            _viewport,
+            _visualPushConstants.AsSpan(parameterOffset, checked((int)pushConstantSize)));
+        if (packedSize != pushConstantSize)
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] generated UI packer wrote {packedSize} bytes; expected {pushConstantSize}.");
+            return false;
+        }
+
+        _visualPrograms[orderIndex] = program;
+        _visualPushConstantSizes[orderIndex] = pushConstantSize;
+        _visualImageTextures[orderIndex] = null;
+        _visualImageSamplers[orderIndex] = default;
+        _visualImageBindings[orderIndex] = null;
+        if (visual.Kind == UiVisualKind.Image)
+        {
+            if (!_registry.TryResolveImage(visual.Resource, out var imageTexture, out var imageSampler, out var imageBinding) || !imageBinding.HasValue)
+            {
+                AddDiagnostic($"Image resource {visual.Resource.Value} is not registered with a fragment binding.");
+                _visualPrograms[orderIndex] = null;
+                return false;
+            }
+
+            _visualImageTextures[orderIndex] = graph.ImportTexture(imageTexture);
+            _visualImageSamplers[orderIndex] = imageSampler;
+            _visualImageBindings[orderIndex] = imageBinding;
+        }
+
+        return true;
+    }
+
+    private bool CanJoinVisualSegment(int firstOrderIndex, int nextOrderIndex)
+        => ReferenceEquals(_visualPrograms[firstOrderIndex], _visualPrograms[nextOrderIndex]) &&
+           _visualPushConstantSizes[firstOrderIndex] == _visualPushConstantSizes[nextOrderIndex];
+
+    private void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
+    {
+        commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
+        var end = checked(firstOrderIndex + visualCount);
+        for (var orderIndex = firstOrderIndex; orderIndex < end; orderIndex++)
+        {
+            if (_order[orderIndex].Kind != UiDrawKind.Visual || _commandClips[orderIndex].IsEmpty)
+            {
+                continue;
+            }
+
+            commands.SetScissor(_commandClips[orderIndex]);
+            var parameterOffset = checked(orderIndex * UiVisualShaderContract.MaxPushConstantSize);
+            commands.PushConstants(_visualPushConstants.AsSpan(
+                parameterOffset,
+                checked((int)_visualPushConstantSizes[orderIndex])));
+            var imageTexture = _visualImageTextures[orderIndex];
+            var imageBinding = _visualImageBindings[orderIndex];
+            if (imageTexture.HasValue && imageBinding is { } binding)
+            {
+                commands.BindTexture(
+                    binding,
+                    imageTexture.Value,
+                    _visualImageSamplers[orderIndex]);
+            }
+
+            commands.Draw(6);
         }
     }
 
@@ -774,6 +847,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         Array.Clear(_seenVisuals, 0, _visualCount);
         Array.Clear(_seenTexts, 0, _textCount);
         Array.Clear(_textRunIndices, 0, _orderCount);
+        Array.Clear(_visualPrograms, 0, _visualCount);
+        Array.Clear(_visualPushConstantSizes, 0, _visualCount);
+        Array.Clear(_visualImageTextures, 0, _visualCount);
+        Array.Clear(_visualImageSamplers, 0, _visualCount);
+        Array.Clear(_visualImageBindings, 0, _visualCount);
         _visualCount = 0;
         _clipCount = 0;
         _textCount = 0;
@@ -810,28 +888,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private static bool IsZero(float4 value)
         => value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
 
-    private sealed class UiVisualPass(
-        PixelExtent viewport,
-        PixelRect clip,
-        byte[] parameterBytes,
-        int parameterOffset,
-        int parameterSize,
-        RenderGraphTextureHandle? imageTexture,
-        RenderSamplerHandle imageSampler,
-        ShaderBinding? imageBinding) : IRasterPass
+    private sealed class UiVisualSegmentPass(
+        UiDisplayListGraphFeature owner,
+        int firstOrderIndex,
+        int visualCount) : IRasterPass
     {
         public void Record(IRasterCommandContext commands)
-        {
-            commands.SetViewport(new RenderViewport(0, 0, viewport.Width, viewport.Height));
-            commands.SetScissor(clip);
-            commands.PushConstants(parameterBytes.AsSpan(parameterOffset, parameterSize));
-            if (imageTexture.HasValue && imageBinding.HasValue)
-            {
-                commands.BindTexture(imageBinding.Value, imageTexture.Value, imageSampler);
-            }
-
-            commands.Draw(6);
-        }
+            => owner.RecordVisualSegment(commands, firstOrderIndex, visualCount);
     }
 
     private sealed class UiTextPass(TextRenderFeature feature, int firstRun, int runCount) : IRasterPass
