@@ -1,7 +1,6 @@
 {
-  "Version": 4,
   "Stage": 2,
-  "SourceEntryPointName": "Fragment",
+  "SourceEntryPointName": "fullscreen-ui",
   "EntryPointName": "main",
   "TargetProfile": "vulkan1.2",
   "GlslVersion": "460",
@@ -13,17 +12,17 @@
   "Resources": [],
   "Inputs": [
     {
-      "Name": "fragmentCoord",
-      "ParameterName": "fragmentCoord",
+      "Name": "Position",
+      "ParameterName": "Position",
       "GlslName": "gl_FragCoord",
-      "GlslType": "vec2",
+      "GlslType": "vec4",
       "Location": 0,
-      "Builtin": "FragmentCoord"
+      "Builtin": "FragmentPosition"
     },
     {
-      "Name": "uv",
-      "ParameterName": "uv",
-      "GlslName": "varying_0",
+      "Name": "Uv",
+      "ParameterName": "Uv",
+      "GlslName": "Uv",
       "GlslType": "vec2",
       "Location": 0,
       "Builtin": null
@@ -33,8 +32,8 @@
   "VertexBufferBindings": [],
   "Outputs": [
     {
-      "Name": "color",
-      "ParameterName": "color",
+      "Name": "FragmentColor",
+      "ParameterName": "return",
       "GlslName": "fragColor",
       "GlslType": "vec4",
       "Location": 0,
@@ -44,7 +43,7 @@
   "PushConstants": [
     {
       "Name": "DeltaPushConstants",
-      "ParameterName": "constants",
+      "ParameterName": "Constants",
       "GlslType": "DeltaStruct_Delta_Render_FullscreenShaders_FullscreenUi_UiPushConstants",
       "Alignment": 8,
       "Size": 16,

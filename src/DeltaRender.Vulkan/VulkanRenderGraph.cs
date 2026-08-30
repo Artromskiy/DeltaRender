@@ -87,14 +87,16 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var rasterActive = false;
         try
         {
-            foreach (var passIndex in _order)
+            for (var orderPosition = 0; orderPosition < _order.Length; orderPosition++)
             {
+                var passIndex = _order[orderPosition];
                 var pass = _passes[passIndex];
                 EmitBarriers(pass, states);
                 if (pass.Kind == PassKind.Raster)
                 {
                     if (!rasterActive)
                     {
+                        EmitRasterSegmentEntryBarriers(orderPosition, states);
                         BeginRaster(pass);
                         rasterActive = true;
                     }
@@ -519,6 +521,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             var next = ResourceState.For(use.Access, use.Stages);
             if (use.Resource.IsBuffer)
             {
+                if (previous == next)
+                {
+                    continue;
+                }
+
                 var allocation = use.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable while planning a barrier.");
                 buffers.Add(new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = allocation.Buffer, Offset = 0, Size = allocation.AllocationSize });
             }
@@ -532,6 +539,65 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         {
             CommandWriter.PipelineBarrier(PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
         }
+    }
+
+    private void EmitRasterSegmentEntryBarriers(int firstRasterPosition, ResourceState[] states)
+    {
+        var firstPass = _passes[_order[firstRasterPosition]];
+        for (var orderPosition = firstRasterPosition + 1; orderPosition < _order.Length; orderPosition++)
+        {
+            var pass = _passes[_order[orderPosition]];
+            if (pass.Kind != PassKind.Raster)
+            {
+                break;
+            }
+
+            foreach (var use in pass.Uses)
+            {
+                if (!use.Resource.IsBuffer || UsesResource(firstPass, use.Resource))
+                {
+                    continue;
+                }
+
+                var previous = states[use.Resource.Index];
+                var next = ResourceState.For(use.Access, use.Stages);
+                if (previous == next)
+                {
+                    continue;
+                }
+
+                var allocation = use.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable while planning a raster entry barrier.");
+                var barrier = new BufferMemoryBarrier
+                {
+                    SType = StructureType.BufferMemoryBarrier,
+                    SrcAccessMask = previous.Access,
+                    DstAccessMask = next.Access,
+                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                    Buffer = allocation.Buffer,
+                    Offset = 0,
+                    Size = allocation.AllocationSize
+                };
+                CommandWriter.PipelineBarrier(
+                    PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit,
+                    PipelineStageFlags.AllCommandsBit,
+                    in barrier);
+                states[use.Resource.Index] = next;
+            }
+        }
+    }
+
+    private static bool UsesResource(GraphPass pass, GraphResource resource)
+    {
+        foreach (var use in pass.Uses)
+        {
+            if (ReferenceEquals(use.Resource, resource))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void UpdateStates(GraphPass pass, ResourceState[] states)

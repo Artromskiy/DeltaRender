@@ -33,6 +33,20 @@ resource hazards and execution.
 Graph handles are temporary and expire at the next build. Persistent handles
 are generation-checked and cannot be used after release.
 
+## Coordinates and textures
+
+UI bounds, clips and glyph positions use a top-left origin, X to the right and
+Y down. Vulkan rendering uses a positive-height viewport with the same
+top-left origin, so callers pass `PixelRect` values directly and do not apply a
+Y flip. UI shaders use `ndcX = 2*x/width - 1` and
+`ndcY = 2*y/height - 1`; an artifact that applies an additional Y inversion is
+not a canonical UI artifact.
+
+Atlas and texture row zero is the top row, and UV `(0,0)` is top-left while
+`(1,1)` is bottom-right. Any backend conversion is performed once at the
+resource/readback boundary. File encoders must verify the chosen row origin
+with a top/bottom probe. DPI is not implied by these coordinates.
+
 ## Raster and compute
 
 Raster pass descriptions use canonical `DeltaShader.Contract` artifacts. Render

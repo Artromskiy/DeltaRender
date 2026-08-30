@@ -1,5 +1,4 @@
 {
-  "Version": 4,
   "Stage": 2,
   "SourceEntryPointName": "Fragment",
   "EntryPointName": "main",
@@ -11,13 +10,22 @@
   "LocalSizeY": 0,
   "LocalSizeZ": 0,
   "Resources": [],
-  "Inputs": [],
+  "Inputs": [
+    {
+      "Name": "Position",
+      "ParameterName": "Position",
+      "GlslName": "gl_FragCoord",
+      "GlslType": "vec4",
+      "Location": 0,
+      "Builtin": "FragmentPosition"
+    }
+  ],
   "VertexInputs": [],
   "VertexBufferBindings": [],
   "Outputs": [
     {
-      "Name": "color",
-      "ParameterName": "color",
+      "Name": "FragmentColor",
+      "ParameterName": "return",
       "GlslName": "fragColor",
       "GlslType": "vec4",
       "Location": 0,
@@ -27,7 +35,7 @@
   "PushConstants": [
     {
       "Name": "DeltaPushConstants",
-      "ParameterName": "parameters",
+      "ParameterName": "Constants",
       "GlslType": "DeltaStruct_Delta_Render_UIShaders_UiPanel_Parameters",
       "Alignment": 16,
       "Size": 48,

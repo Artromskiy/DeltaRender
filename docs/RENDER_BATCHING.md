@@ -44,6 +44,11 @@ The batching reduction is limited by compatible adjacent segments: changing
 pipeline, material or clip closes the current segment. The batcher does not
 own input polling, ECS/XAML state, shader compilation or text shaping.
 
+Ordered item bounds and clips remain in top-left UI coordinates throughout
+segment construction. A batcher never changes Y to improve grouping; the
+renderer boundary owns the single native-coordinate conversion, if one is
+required.
+
 ## Internal ownership
 
 The public `RenderBatcher` is only the execution-order coordinator. Its

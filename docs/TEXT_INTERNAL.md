@@ -11,6 +11,12 @@ atlas and reusable GPU instance buffer, and emits ordinary transfer/raster
 graph passes. It is deliberately not a display-list adapter and has no
 producer owner/version model.
 
+Atlas packing stores row zero at the top of each page and emits UVs in the
+shared top-left convention. Glyph positions and plane metrics stay in top-left
+UI coordinates until the generated shader artifact performs the canonical
+pixel-to-clip conversion. The feature must not compensate for an inverted
+producer artifact with an extra CPU or scissor flip.
+
 ## Internal stages
 
 The implementation remains a short pipeline:

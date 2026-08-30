@@ -10,24 +10,26 @@ layout(push_constant, std430) uniform DeltaPushConstants
 
 void main()
 {
-    gl_Position= vec4(0.0);
+    uint vertexIndex = gl_VertexIndex;
 
     vec2 local = vec2(0, 0);
 
-            if (uint(gl_VertexIndex)== 1u || uint(gl_VertexIndex)== 2u || uint(gl_VertexIndex)== 4u)
+            if (vertexIndex == 1u || vertexIndex == 2u || vertexIndex == 4u)
             {
-                local.x = 1;
+                local = vec2(1, local.y);
 
             }
-            if (uint(gl_VertexIndex)== 2u || uint(gl_VertexIndex)== 4u || uint(gl_VertexIndex)== 5u)
+            if (vertexIndex == 2u || vertexIndex == 4u || vertexIndex == 5u)
             {
-                local.y = 1;
+                local = vec2(local.x, 1);
 
             }
-    vec2 pixel = vec2(pushConstants.member_Rect.x + local.x * pushConstants.member_Rect.z, pushConstants.member_Rect.y + local.y * pushConstants.member_Rect.w);
+    vec2 pixel = vec2(pushConstants.member_Rect.x+ local.x* pushConstants.member_Rect.z, pushConstants.member_Rect.y+ local.y* pushConstants.member_Rect.w);
 
-    vec2 clip = vec2(            pixel.x / pushConstants.member_Resolution.x * 2 - 1,             1 - pixel.y / pushConstants.member_Resolution.y * 2);
+    vec2 clip = vec2(            pixel.x/ pushConstants.member_Resolution.x* 2 - 1,             pixel.y/ pushConstants.member_Resolution.y* 2 - 1);
 
-    gl_Position= vec4(clip.x, clip.y, 0, 1);
+    {gl_Position = vec4(vec4(clip.x, clip.y, 0, 1));
+    return;
+    }
 
 }

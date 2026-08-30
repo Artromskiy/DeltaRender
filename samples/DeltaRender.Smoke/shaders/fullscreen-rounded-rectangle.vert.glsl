@@ -1,34 +1,32 @@
 #version 460
-layout(location = 0) out vec2 varying_0;
+layout(push_constant, std430) uniform DeltaPushConstants
+{
+    layout(offset = 0) vec2 member_Resolution;
+    layout(offset = 8) float member_Time;
+} pushConstants;
+
+layout(location = 0) out vec2 Uv;
 
 
 void main()
 {
-    gl_Position= vec4(0.0);
+    uint vertexIndex = gl_VertexIndex;
 
-    varying_0= vec2(0.0);
-
-
-            if (uint(gl_VertexIndex)== 0u)
+            if (vertexIndex == 0u)
             {
-    gl_Position= vec4(-1, -1, 0, 1);
-
-    varying_0= vec2(0, 0);
-
-            }
-            if (uint(gl_VertexIndex)== 1u)
+    {gl_Position = vec4(vec4(-1, -1, 0, 1));
+    Uv = vec2(0, 0);
+    return;
+    }        }
+            if (vertexIndex == 1u)
             {
-    gl_Position= vec4(3, -1, 0, 1);
-
-    varying_0= vec2(2, 0);
-
-            }
-            if (uint(gl_VertexIndex)== 2u)
-            {
-    gl_Position= vec4(-1, 3, 0, 1);
-
-    varying_0= vec2(0, 2);
-
-            }
+    {gl_Position = vec4(vec4(3, -1, 0, 1));
+    Uv = vec2(2, 0);
+    return;
+    }        }
+    {gl_Position = vec4(vec4(-1, 3, 0, 1));
+    Uv = vec2(0, 2);
+    return;
+    }
 
 }

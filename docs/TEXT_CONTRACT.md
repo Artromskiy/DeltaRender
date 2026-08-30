@@ -77,6 +77,14 @@ UI rectangles and text remain in one frame submission. The adapter preserves
 producer order; grouping must not reorder an `A-B-A` sequence merely to reduce
 draw calls.
 
+## Coordinates and atlas origin
+
+Text origins, glyph plane positions, bounds and clips use the shared UI
+convention: top-left origin, X right, Y down, depth `0..1`. Atlas UV `(0,0)` is
+the top-left texel and `(1,1)` is the bottom-right texel. Atlas row zero is the
+top row; the adapter does not apply a second row or Y flip. DPI scaling is not
+part of this contract.
+
 Shader bindings, member offsets, strides, push constants and stage visibility
 come only from the final `DeltaShader.Contract` artifact. DeltaRender.Text
 does not publish a second shader ABI or hard-code generated shader names.

@@ -99,6 +99,27 @@ windowed and headless execution does not wait for a queue to become idle.
 Readback handles belong to the last successful build and are invalidated by the
 next build.
 
+### Coordinate and image-origin convention
+
+Render coordinates are UI coordinates: the origin is the top-left, X grows to
+the right, Y grows down, and depth is in the `0..1` range. `PixelRect` bounds
+and scissors use this convention. `RenderViewport` uses a positive height and
+the Vulkan viewport origin is the top-left; callers must not pre-flip Y.
+
+The canonical UI pixel-to-clip conversion is:
+
+```text
+ndcX = 2 * x / width  - 1
+ndcY = 2 * y / height - 1
+```
+
+Texture and atlas data are row-major with row zero explicitly defined as the
+top row. Upload, atlas sampling, readback and file encoding may perform at
+most one intentional row flip at their owning boundary. Readback/file output
+must be checked with an independent top/bottom color probe rather than an
+implicit origin assumption. DPI scaling is outside this convention and
+remains a separate integration concern.
+
 ### Graph builder
 
 `IRenderGraphBuilder` contains only primitives that cannot be reconstructed

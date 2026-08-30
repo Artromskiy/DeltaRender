@@ -1,5 +1,4 @@
 {
-  "Version": 4,
   "Stage": 1,
   "SourceEntryPointName": "Vertex",
   "EntryPointName": "main",
@@ -25,8 +24,8 @@
   "VertexBufferBindings": [],
   "Outputs": [
     {
-      "Name": "position",
-      "ParameterName": "position",
+      "Name": "Position",
+      "ParameterName": "Position",
       "GlslName": "gl_Position",
       "GlslType": "vec4",
       "Location": 0,
@@ -36,7 +35,7 @@
   "PushConstants": [
     {
       "Name": "DeltaPushConstants",
-      "ParameterName": "parameters",
+      "ParameterName": "Constants",
       "GlslType": "DeltaStruct_Delta_Render_UIShaders_UiPanel_Parameters",
       "Alignment": 16,
       "Size": 48,

@@ -1,7 +1,6 @@
 {
-  "Version": 4,
   "Stage": 1,
-  "SourceEntryPointName": "Vertex",
+  "SourceEntryPointName": "fullscreen-ui",
   "EntryPointName": "main",
   "TargetProfile": "vulkan1.2",
   "GlslVersion": "460",
@@ -25,21 +24,56 @@
   "VertexBufferBindings": [],
   "Outputs": [
     {
-      "Name": "position",
-      "ParameterName": "position",
+      "Name": "Position",
+      "ParameterName": "Position",
       "GlslName": "gl_Position",
       "GlslType": "vec4",
       "Location": 0,
       "Builtin": "Position"
     },
     {
-      "Name": "uv",
-      "ParameterName": "uv",
-      "GlslName": "varying_0",
+      "Name": "Uv",
+      "ParameterName": "Uv",
+      "GlslName": "Uv",
       "GlslType": "vec2",
       "Location": 0,
       "Builtin": null
     }
   ],
-  "PushConstants": []
+  "PushConstants": [
+    {
+      "Name": "DeltaPushConstants",
+      "ParameterName": "Constants",
+      "GlslType": "DeltaStruct_Delta_Render_FullscreenShaders_FullscreenUi_UiPushConstants",
+      "Alignment": 8,
+      "Size": 16,
+      "ArrayStride": 16,
+      "Members": [
+        {
+          "Name": "Resolution",
+          "GlslName": "member_Resolution",
+          "GlslType": "vec2",
+          "Offset": 0,
+          "Alignment": 8,
+          "Size": 8,
+          "ArrayStride": 8,
+          "MatrixStride": null,
+          "HostRepresentation": "std430",
+          "Members": []
+        },
+        {
+          "Name": "Time",
+          "GlslName": "member_Time",
+          "GlslType": "float",
+          "Offset": 8,
+          "Alignment": 4,
+          "Size": 4,
+          "ArrayStride": 4,
+          "MatrixStride": null,
+          "HostRepresentation": "std430",
+          "Members": []
+        }
+      ]
+    }
+  ]
 }

@@ -7,7 +7,6 @@ TOOL_PROJECT="$DELTA_SHADER_ROOT/src/DeltaShader.Tool/DeltaShader.Tool.csproj"
 UI_PROJECT="$ROOT/tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj"
 FULLSCREEN_PROJECT="$ROOT/tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj"
 SHADER_DIR="${DELTA_RENDER_SHADER_DIR:-"$ROOT/samples/DeltaRender.Smoke/shaders"}"
-EXPECTED_VERSION=4
 MODE=generate
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 [--check]" >&2
@@ -116,8 +115,9 @@ validate_generated() {
     test -s "$glsl"
     test -s "$spirv"
     test -s "$manifest"
-    test "$(jq -r '.Version' "$manifest")" = "$EXPECTED_VERSION"
+    test "$(jq -r '.Stage' "$manifest")" != "null"
     test "$(jq -r '.EntryPointName' "$manifest")" = "main"
+    test "$(jq -r '.StorageLayout' "$manifest")" = "std430"
     spirv-val --target-env vulkan1.2 "$spirv"
     glslangValidator -V --target-env vulkan1.2 -S "$stage" "$glsl" -o "$WORK/${prefix}.${stage}.validation.spv" >/dev/null
     spirv-val --target-env vulkan1.2 "$WORK/${prefix}.${stage}.validation.spv"

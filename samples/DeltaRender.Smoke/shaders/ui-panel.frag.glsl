@@ -11,6 +11,7 @@ layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    fragColor= pushConstants.member_Color;
+    fragColor = pushConstants.member_Color;
+    return;
 
 }
