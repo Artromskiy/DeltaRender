@@ -43,3 +43,21 @@ batcher is disposed so in-flight work cannot observe a destroyed buffer.
 The batching reduction is limited by compatible adjacent segments: changing
 pipeline, material or clip closes the current segment. The batcher does not
 own input polling, ECS/XAML state, shader compilation or text shaping.
+
+## Internal ownership
+
+The public `RenderBatcher` is only the execution-order coordinator. Its
+implementation is deliberately split by responsibility:
+
+- `RenderBatchResourceRegistry` owns pipeline/material handles and stale-handle
+  validation.
+- `RenderBatchLayout` owns item identity/version checks and ordered or unordered
+  segment mutation.
+- `RenderBatchPipelineState` owns the persistent GPU buffer, growth, dirty ranges
+  and retired allocations.
+- `RenderBatchSegment` owns packed instance slots and its raster draw description.
+- `RenderBatchGraphPasses` contains the small graph-resource wiring shared by
+  segment draws.
+
+These are internal concrete owners, not additional public APIs or compatibility
+facades. The producer-facing contract remains in `RenderBatchingContracts.cs`.
