@@ -388,7 +388,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     text.BaselineOrigin.y,
                     new Vector4(color.x, color.y, color.z, color.w),
                     _commandClips[index],
-                    mergeWithPrevious: previousWasText);
+                    mergeWithPrevious: previousWasText,
+                    producerRunId: text.RunId.Value,
+                    producerRunGeneration: text.RunId.Generation,
+                    producerRunVersion: text.Version);
                 textRunCount++;
                 previousWasText = true;
             }

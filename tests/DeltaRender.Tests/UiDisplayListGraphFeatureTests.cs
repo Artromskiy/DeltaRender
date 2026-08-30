@@ -83,7 +83,16 @@ public sealed class UiDisplayListGraphFeatureTests
         var shaped = textService.Shape(new TextShapeRequest("A".AsMemory(), 24, new[] { font }));
         var visuals = new[] { Solid(1, new UiClipId(0)) };
         var clips = new[] { new UiClipRegion(new float4(10, 12, 50, 30), UiClipId.None) };
-        var texts = new[] { new UiTextDraw(shaped, new float2(4, 5), new float4(0.2f, 0.3f, 0.4f, 1), new UiClipId(0)) };
+        var texts = new[]
+        {
+            UiTextDraw.WithPaint(
+                new UiTextRunId(1, 1),
+                1,
+                shaped,
+                new float2(4, 5),
+                UiTextPaint.Solid(new float4(0.2f, 0.3f, 0.4f, 1)),
+                new UiClipId(0)),
+        };
         var order = new[]
         {
             new UiDrawRef(UiDrawKind.Visual, 0),
@@ -98,7 +107,13 @@ public sealed class UiDisplayListGraphFeatureTests
         var expectedOrder = order[0];
         visuals[0] = Solid(9);
         clips[0] = new UiClipRegion(new float4(0, 0, 1, 1), UiClipId.None);
-        texts[0] = new UiTextDraw(shaped, default, default, UiClipId.None);
+        texts[0] = UiTextDraw.WithPaint(
+            new UiTextRunId(1, 1),
+            2,
+            shaped,
+            default,
+            UiTextPaint.Solid(default),
+            UiClipId.None);
         order[0] = new UiDrawRef(UiDrawKind.Text, 0);
 
         Assert.Equal(expectedVisual, feature.BorrowVisuals()[0]);

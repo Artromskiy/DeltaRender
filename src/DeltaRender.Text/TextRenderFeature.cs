@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Delta.Maths;
 using Delta.Render;
@@ -42,6 +43,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private readonly float _distanceRange;
     private readonly ColorGlyphOptions? _colorOptions;
     private readonly List<GlyphKey> _evictionKeys = new();
+    private readonly Dictionary<TextRunCacheKey, CachedRun> _runCache = new();
     private readonly ShaderBinding _instanceBinding;
     private readonly uint _instanceStride;
     private readonly ShaderBinding _atlasBinding;
@@ -57,6 +59,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private byte[] _instanceBytes;
     private byte[] _uploadedInstanceBytes;
     private TextBatch[] _batches;
+    private TextBatch[] _localRunBatches = new TextBatch[8];
     private int[] _runBatchStarts = new int[8];
     private int[] _runBatchCounts = new int[8];
     private RenderBufferHandle _instanceBuffer;
@@ -66,8 +69,10 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private int _pendingRunCount;
     private int _instanceCount;
     private int _batchCount;
+    private int _localRunBatchCount;
     private int _uploadedInstanceByteCount;
     private ulong _atlasUseStamp;
+    private ulong _atlasEpoch = 1;
     private PixelExtent _viewport;
     private bool _instancePayloadDirty;
     private bool _instanceBufferNeedsUpload = true;
@@ -197,7 +202,10 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         float originY,
         Vector4 color,
         PixelRect clip,
-        bool mergeWithPrevious)
+        bool mergeWithPrevious,
+        uint producerRunId = 0,
+        uint producerRunGeneration = 0,
+        uint producerRunVersion = 0)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -212,7 +220,15 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         EnsurePendingCapacity(_pendingRunCount + 1);
-        _pendingRuns[_pendingRunCount] = new PendingRun(text, originX, originY, color, clip, mergeWithPrevious);
+        _pendingRuns[_pendingRunCount] = new PendingRun(
+            text,
+            originX,
+            originY,
+            color,
+            clip,
+            mergeWithPrevious,
+            new TextRunCacheKey(producerRunId, producerRunGeneration),
+            producerRunVersion);
         return _pendingRunCount++;
     }
 
@@ -411,6 +427,21 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
         {
             var pending = _pendingRuns[runIndex];
+            var runInstanceStart = _instanceCount;
+            _localRunBatchCount = 0;
+            if (TryReuseRun(pending, out var cachedRun))
+            {
+                EnsureInstanceCapacity(_instanceCount + cachedRun.InstanceCount);
+                var destinationOffset = checked((int)((ulong)runInstanceStart * _instanceStride));
+                cachedRun.PackedBytes.AsSpan(0, cachedRun.PackedByteCount)
+                    .CopyTo(_instanceBytes.AsSpan(destinationOffset, cachedRun.PackedByteCount));
+                var cachedFirstBatch = AppendCachedBatches(cachedRun, runInstanceStart, pending.MergeWithPrevious, useStamp);
+                _instanceCount += cachedRun.InstanceCount;
+                _runBatchStarts[runIndex] = cachedFirstBatch < 0 ? 0 : cachedFirstBatch;
+                _runBatchCounts[runIndex] = cachedFirstBatch < 0 ? 0 : _batchCount - cachedFirstBatch;
+                continue;
+            }
+
             var firstBatch = -1;
             foreach (var run in pending.Text.Runs.Span)
             {
@@ -433,6 +464,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                             Color = new float4(pending.Color.X, pending.Color.Y, pending.Color.Z, pending.Color.W),
                         };
                         var batchIndex = AppendBatch(clip, placement.PageIndex, _instanceCount, pending.MergeWithPrevious || firstBatch >= 0);
+                        AppendLocalBatch(clip, placement.PageIndex, _instanceCount - runInstanceStart);
                         firstBatch = firstBatch < 0 ? batchIndex : firstBatch;
                         _instanceCount++;
                     }
@@ -444,6 +476,22 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             _runBatchStarts[runIndex] = firstBatch < 0 ? 0 : firstBatch;
             _runBatchCounts[runIndex] = firstBatch < 0 ? 0 : _batchCount - firstBatch;
+
+            var runInstanceCount = _instanceCount - runInstanceStart;
+            if (runInstanceCount > 0)
+            {
+                var destinationOffset = checked((int)((ulong)runInstanceStart * _instanceStride));
+                var runByteCount = checked((int)((ulong)runInstanceCount * _instanceStride));
+                var written = PackInstances(
+                    _instances.AsSpan(runInstanceStart, runInstanceCount),
+                    _instanceBytes.AsSpan(destinationOffset, runByteCount));
+                if (written != runByteCount)
+                {
+                    throw new InvalidOperationException("The generated text packer wrote a byte count different from ShaderAbi stride.");
+                }
+            }
+
+            StoreCachedRun(pending, runInstanceStart, runInstanceCount);
         }
 
         if (_instanceCount == 0)
@@ -454,11 +502,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         var byteCount = checked((int)((ulong)_instanceCount * _instanceStride));
         var bytes = _instanceBytes.AsSpan(0, byteCount);
-        var written = PackInstances(bytes);
-        if (written != byteCount)
-        {
-            throw new InvalidOperationException("The generated text packer wrote a byte count different from ShaderAbi stride.");
-        }
 
         _instancePayloadDirty = _instanceBufferNeedsUpload ||
             _uploadedInstanceByteCount != byteCount ||
@@ -647,6 +690,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         pageToRecycle.RowHeight = 0;
         pageToRecycle.LastUse = useStamp;
         pageToRecycle.Dirty = true;
+        _atlasEpoch = _atlasEpoch == ulong.MaxValue ? 1 : _atlasEpoch + 1;
         return pageIndexToRecycle;
     }
 
@@ -777,6 +821,108 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         return _batchCount++;
     }
 
+    private void AppendLocalBatch(PixelRect clip, int pageIndex, int instance)
+    {
+        if (_localRunBatchCount > 0)
+        {
+            ref var last = ref _localRunBatches[_localRunBatchCount - 1];
+            if (last.PageIndex == pageIndex && last.Clip == clip && last.Start + last.Count == instance)
+            {
+                last.Count++;
+                return;
+            }
+        }
+
+        EnsureLocalBatchCapacity(_localRunBatchCount + 1);
+        _localRunBatches[_localRunBatchCount++] = new TextBatch(pageIndex, clip, instance, 1);
+    }
+
+    private int AppendCachedBatches(CachedRun cachedRun, int instanceStart, bool mergeWithPrevious, ulong useStamp)
+    {
+        var firstBatch = -1;
+        for (var batchIndex = 0; batchIndex < cachedRun.BatchCount; batchIndex++)
+        {
+            var cachedBatch = cachedRun.Batches[batchIndex];
+            var page = _pages[cachedBatch.PageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+            page.LastUse = useStamp;
+            var batch = AppendBatch(
+                cachedBatch.Clip,
+                cachedBatch.PageIndex,
+                checked(instanceStart + cachedBatch.Start),
+                mergeWithPrevious || batchIndex > 0);
+            firstBatch = firstBatch < 0 ? batch : firstBatch;
+        }
+
+        return firstBatch;
+    }
+
+    private bool TryReuseRun(in PendingRun pending, [NotNullWhen(true)] out CachedRun? cachedRun)
+    {
+        if (!pending.CacheKey.IsValid || !_runCache.TryGetValue(pending.CacheKey, out var candidate))
+        {
+            cachedRun = null;
+            return false;
+        }
+
+        cachedRun = candidate;
+
+        if (cachedRun.Version != pending.Version ||
+            cachedRun.OriginX != pending.OriginX ||
+            cachedRun.OriginY != pending.OriginY ||
+            cachedRun.Color != pending.Color ||
+            cachedRun.Clip != pending.Clip ||
+            cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
+            cachedRun.AtlasEpoch != _atlasEpoch)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void StoreCachedRun(in PendingRun pending, int instanceStart, int instanceCount)
+    {
+        if (!pending.CacheKey.IsValid)
+        {
+            return;
+        }
+
+        if (!_runCache.TryGetValue(pending.CacheKey, out var cachedRun))
+        {
+            cachedRun = new CachedRun();
+            _runCache.Add(pending.CacheKey, cachedRun);
+        }
+
+        var byteCount = checked((int)((ulong)instanceCount * _instanceStride));
+        if (cachedRun.PackedBytes.Length < byteCount)
+        {
+            cachedRun.PackedBytes = new byte[byteCount];
+        }
+
+        if (byteCount > 0)
+        {
+            var sourceOffset = checked((int)((ulong)instanceStart * _instanceStride));
+            _instanceBytes.AsSpan(sourceOffset, byteCount).CopyTo(cachedRun.PackedBytes);
+        }
+
+        if (cachedRun.Batches.Length < _localRunBatchCount)
+        {
+            cachedRun.Batches = new TextBatch[_localRunBatchCount];
+        }
+
+        _localRunBatches.AsSpan(0, _localRunBatchCount).CopyTo(cachedRun.Batches);
+        cachedRun.PackedByteCount = byteCount;
+        cachedRun.InstanceCount = instanceCount;
+        cachedRun.BatchCount = _localRunBatchCount;
+        cachedRun.Version = pending.Version;
+        cachedRun.OriginX = pending.OriginX;
+        cachedRun.OriginY = pending.OriginY;
+        cachedRun.Color = pending.Color;
+        cachedRun.Clip = pending.Clip;
+        cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
+        cachedRun.AtlasEpoch = _atlasEpoch;
+    }
+
     private void EnsureInstanceCapacity(int required)
     {
         if (required <= _instances.Length)
@@ -799,7 +945,11 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _instances = replacement;
         if (_instanceBytes.Length < replacementByteCapacity)
         {
-            _instanceBytes = new byte[replacementByteCapacity];
+            var previousBytes = _instanceBytes;
+            var replacementBytes = new byte[replacementByteCapacity];
+            var retainedByteCount = checked((int)((ulong)_instanceCount * _instanceStride));
+            previousBytes.AsSpan(0, retainedByteCount).CopyTo(replacementBytes);
+            _instanceBytes = replacementBytes;
             _uploadedInstanceBytes = new byte[replacementByteCapacity];
         }
 
@@ -841,6 +991,22 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         Array.Resize(ref _batches, capacity);
     }
 
+    private void EnsureLocalBatchCapacity(int required)
+    {
+        if (required <= _localRunBatches.Length)
+        {
+            return;
+        }
+
+        var capacity = _localRunBatches.Length * 2;
+        while (capacity < required)
+        {
+            capacity = checked(capacity * 2);
+        }
+
+        Array.Resize(ref _localRunBatches, capacity);
+    }
+
     private void EnsureRunBatchCapacity(int required)
     {
         if (required <= _runBatchStarts.Length)
@@ -867,6 +1033,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         Array.Clear(_runBatchStarts, 0, _runBatchStarts.Length);
         Array.Clear(_runBatchCounts, 0, _runBatchCounts.Length);
         _glyphs.Clear();
+        _runCache.Clear();
     }
 
     private static (GlyphImageEncoding Encoding, RenderTextureFormat Format, int BytesPerPixel) DescribeImageFormat(GlyphImageMode mode)
@@ -906,9 +1073,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         return found.Layout.ArrayStride;
     }
 
-    private int PackInstances(Span<byte> destination)
+    private int PackInstances(ReadOnlySpan<GlyphInstance> values, Span<byte> destination)
     {
-        var values = _instances.AsSpan(0, _instanceCount);
         return _mode == GlyphImageMode.Msdf
             ? MsdfTextGraphicsShaderProgram.PackMsdfTextVertexGlyphsElements(values, destination)
             : SdfTextGraphicsShaderProgram.PackSdfTextVertexGlyphsElements(values, destination);
@@ -1062,7 +1228,30 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         float OriginY,
         Vector4 Color,
         PixelRect Clip,
-        bool MergeWithPrevious);
+        bool MergeWithPrevious,
+        TextRunCacheKey CacheKey,
+        uint Version);
+
+    private readonly record struct TextRunCacheKey(uint Value, uint Generation)
+    {
+        public bool IsValid => Value != 0 && Generation != 0;
+    }
+
+    private sealed class CachedRun
+    {
+        public byte[] PackedBytes { get; set; } = [];
+        public TextBatch[] Batches { get; set; } = new TextBatch[4];
+        public int PackedByteCount;
+        public int InstanceCount;
+        public int BatchCount;
+        public uint Version;
+        public float OriginX;
+        public float OriginY;
+        public Vector4 Color;
+        public PixelRect Clip;
+        public bool MergeWithPrevious;
+        public ulong AtlasEpoch;
+    }
 
     private readonly record struct GlyphKey(
         FontInstanceId Font,

@@ -134,9 +134,10 @@ DeltaXAML/editor integration rather than only a reusable Render-side feature.
   `IRenderFrameSession.TryReinitializeAfterDeviceLoss` boundary invalidates
   graph/persistent device resources, preserves a window surface, recreates
   session-local Vulkan state, and requires producers to re-upload resources.
-- [ ] Obtain an approved producer identity/delta contract. Frozen `UiTextDraw`
-  has no Owner, OwnerGeneration or Version; object references and hashes are not
-  valid substitutes. Current fallback is full instance re-encoding.
+- [x] Consume the approved producer identity/delta contract. The XAML adapter
+  forwards `UiTextRunId.Value/Generation` and `UiTextDraw.Version` into the
+  neutral text feature; matching runs reuse packed instances, while the legacy
+  identity-less `AddRun` path remains an explicit full-encoding fallback.
 - [x] Resolve mixed visual/text ordering through the canonical `Order` span;
   the XAML adapter preserves arbitrary visual/text interleaving while the
   text feature batches only adjacent text entries.
@@ -186,8 +187,10 @@ the still-open project-level gates and avoids repeating completed work.
 - [x] Implement bounded multi-page atlas allocation/recycling for
   `DeltaRender.Text`; device-loss recovery invalidates pages and requires
   producer-owned atlas data to be uploaded again after reinitialization.
-- [ ] Obtain an approved producer identity/delta path for incremental text
-  updates; until then full instance re-encoding is the documented fallback.
+- [x] Consume the approved producer identity/delta path for incremental text
+  updates. Matching identity/version and unchanged placement/paint/clip reuse
+  cached packed instances; version, generation, payload or atlas recycling
+  invalidates that cache. Identity-less callers retain full re-encoding.
 - [x] Complete feature-level text warm-frame allocation evidence. After two
   reusable cache-hit warm-up cycles, `PrepareComposite`, composite recording
   and `Clear` allocate zero bytes, and unchanged frames register no transfer

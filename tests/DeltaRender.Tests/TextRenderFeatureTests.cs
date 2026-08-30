@@ -112,6 +112,84 @@ public sealed class TextRenderFeatureTests
     }
 
     [Fact]
+    public void ProducerIdentityAndVersionReuseOnlyMatchingRunPayload()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var firstText = textService.Shape(new TextShapeRequest("A".AsMemory(), 32, new[] { font }));
+        var changedText = textService.Shape(new TextShapeRequest("B".AsMemory(), 32, new[] { font }));
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(800, 600),
+            atlasWidth: 128,
+            atlasHeight: 128);
+        var clip = new PixelRect(0, 0, 800, 600);
+
+        feature.QueueCompositeRun(firstText, 10, 20, Vector4.One, clip, true, 12, 3, 7);
+        var firstGraph = new RecordingGraphBuilder();
+        feature.AddPasses(firstGraph, 1);
+        Assert.Equal(1, firstGraph.RecordTransfer().UploadBufferCount);
+
+        feature.Clear();
+        feature.QueueCompositeRun(firstText, 10, 20, Vector4.One, clip, true, 12, 3, 7);
+        var unchangedGraph = new RecordingGraphBuilder();
+        feature.AddPasses(unchangedGraph, 2);
+        Assert.Equal(0, unchangedGraph.RecordTransfer().UploadBufferCount);
+
+        feature.Clear();
+        feature.QueueCompositeRun(changedText, 10, 20, Vector4.One, clip, true, 12, 3, 8);
+        var changedVersionGraph = new RecordingGraphBuilder();
+        feature.AddPasses(changedVersionGraph, 3);
+        Assert.Equal(1, changedVersionGraph.RecordTransfer().UploadBufferCount);
+    }
+
+    [Fact]
+    public void InstanceBufferGrowthPreservesPreviouslyPackedRuns()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var firstText = textService.Shape(new TextShapeRequest(new string('A', 200).AsMemory(), 32, new[] { font }));
+        var secondText = textService.Shape(new TextShapeRequest(new string('B', 100).AsMemory(), 32, new[] { font }));
+        var firstRun = firstText.Runs.Span[0];
+        var firstGlyph = firstRun.Glyphs.Span[0];
+        var firstImage = textService.GenerateGlyphImage(new GlyphImageRequest(
+            firstRun.Font,
+            firstGlyph.GlyphId,
+            firstRun.PixelsPerEm,
+            GlyphImageMode.Sdf,
+            4f,
+            null));
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(800, 600),
+            atlasWidth: 128,
+            atlasHeight: 128);
+
+        var clip = new PixelRect(0, 0, 800, 600);
+        feature.QueueCompositeRun(firstText, 10, 20, Vector4.One, clip, false, 21, 1, 1);
+        feature.QueueCompositeRun(secondText, 10, 20, Vector4.One, clip, true, 22, 1, 1);
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var upload = graph.RecordTransfer();
+
+        Assert.Equal(300 * 48, upload.LastBufferUpload.Length);
+        Assert.Equal(10f + firstGlyph.OffsetX + firstImage.PlaneBounds.Left, ReadFloat(upload.LastBufferUpload, 0));
+        Assert.Equal(20f + firstGlyph.OffsetY + firstImage.PlaneBounds.Top, ReadFloat(upload.LastBufferUpload, 4));
+    }
+
+    [Fact]
     public void EffectiveClipIsIntersectedWithViewportBeforeScissor()
     {
         using var textService = new SixLaborsTextService();
