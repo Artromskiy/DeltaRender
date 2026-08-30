@@ -1,3 +1,5 @@
+using Delta.Shader.Contract;
+
 namespace Delta.Render.RenderGraph;
 
 internal sealed class RenderBatchPipelineState : IDisposable

@@ -6,8 +6,8 @@ internal sealed class RenderBatchSegment
     private int _capacity;
 
     public RenderBatchSegment(
-        RenderBatchMaterialState material,
         RenderBatchPipelineState pipeline,
+        RenderBatchMaterialState material,
         RenderBatchKey key,
         PixelExtent viewport)
     {
