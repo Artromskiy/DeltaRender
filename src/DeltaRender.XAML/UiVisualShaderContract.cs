@@ -76,34 +76,119 @@ internal static class UiVisualShaderContract
         return true;
     }
 
-    internal static int Pack(
+    internal static bool TryDescribeInstance(
+        IGraphicsShaderProgram program,
+        UiVisualKind visualKind,
+        out UiRectangleShaderKind shaderKind,
+        out ShaderBinding instanceBinding,
+        out uint instanceStride,
+        out uint framePushConstantSize,
+        out uint framePushConstantOffset,
+        out string diagnostic)
+    {
+        if (!TryDescribe(program, visualKind, out shaderKind, out _, out diagnostic))
+        {
+            instanceBinding = default;
+            instanceStride = 0;
+            framePushConstantSize = 0;
+            framePushConstantOffset = 0;
+            return false;
+        }
+
+        var resources = program.Vertex.Abi.Resources;
+        ShaderResourceBinding? instanceResource = null;
+        foreach (var resource in resources)
+        {
+            if (resource.Kind != ShaderResourceKind.StorageBuffer ||
+                !resource.Stages.HasFlag(ShaderStageMask.Vertex) ||
+                (resource.Access & ShaderResourceAccess.Write) != 0)
+            {
+                continue;
+            }
+
+            if (instanceResource is not null)
+            {
+                instanceBinding = default;
+                instanceStride = 0;
+                framePushConstantSize = 0;
+                framePushConstantOffset = 0;
+                diagnostic = "The UI vertex ABI contains more than one read-only storage-buffer instance resource.";
+                return false;
+            }
+
+            instanceResource = resource;
+        }
+
+        if (instanceResource is not { } resolvedResource || resolvedResource.Layout.ArrayStride == 0)
+        {
+            instanceBinding = default;
+            instanceStride = 0;
+            framePushConstantSize = 0;
+            framePushConstantOffset = 0;
+            diagnostic = "The UI vertex ABI does not expose a resolved read-only instance storage buffer.";
+            return false;
+        }
+
+        if (program.Vertex.Abi.PushConstants.Count != 1 || program.Fragment.Abi.PushConstants.Count != 0)
+        {
+            instanceBinding = default;
+            instanceStride = 0;
+            framePushConstantSize = 0;
+            framePushConstantOffset = 0;
+            diagnostic = "The UI graphics ABI must expose one vertex frame push-constant range and no fragment push-constant range.";
+            return false;
+        }
+
+        var vertexPush = program.Vertex.Abi.PushConstants[0];
+        if (vertexPush.Size == 0)
+        {
+            instanceBinding = default;
+            instanceStride = 0;
+            framePushConstantSize = 0;
+            framePushConstantOffset = 0;
+            diagnostic = "The UI vertex ABI must expose a non-empty frame push-constant range.";
+            return false;
+        }
+
+        instanceBinding = resolvedResource.Binding;
+        instanceStride = resolvedResource.Layout.ArrayStride;
+        framePushConstantSize = vertexPush.Size;
+        framePushConstantOffset = vertexPush.Offset;
+        return true;
+    }
+
+    internal static int PackInstance(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
+        Span<byte> destination)
+    {
+        return shaderKind switch
+        {
+            UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexInstancesElement(
+                new SolidRectangleParameters(visual.Bounds, visual.Paint.FillColor),
+                destination),
+            UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexInstancesElement(
+                new RoundedRectangleParameters(
+                    visual.Bounds,
+                    visual.Paint.FillColor,
+                    visual.Paint.StrokeColor,
+                    visual.Paint.CornerRadii,
+                    visual.Paint.StrokeWidth),
+                destination),
+            _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
+        };
+    }
+
+    internal static int PackFrame(
+        UiRectangleShaderKind shaderKind,
         PixelExtent viewport,
         Span<byte> destination)
     {
-        var resolution = new float2(viewport.Width, viewport.Height);
+        var frame = new UiFrameConstants(new float2(viewport.Width, viewport.Height));
         return shaderKind switch
         {
-            UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexParameters(
-                new SolidRectangleParameters
-                {
-                    Resolution = resolution,
-                    Rect = visual.Bounds,
-                    Color = visual.Paint.FillColor,
-                },
-                destination),
-            UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexParameters(
-                new RoundedRectangleParameters
-                {
-                    Resolution = resolution,
-                    Rect = visual.Bounds,
-                    FillColor = visual.Paint.FillColor,
-                    BorderColor = visual.Paint.StrokeColor,
-                    CornerRadii = visual.Paint.CornerRadii,
-                    BorderWidth = visual.Paint.StrokeWidth,
-                },
-                destination),
+            UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }

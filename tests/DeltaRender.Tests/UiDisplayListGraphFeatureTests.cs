@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -10,11 +11,19 @@ using Delta.Text;
 using Delta.Text.Contract;
 using Delta.XAML.Contract;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Delta.Render.Tests;
 
 public sealed class UiDisplayListGraphFeatureTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public UiDisplayListGraphFeatureTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public void ConsumePreservesCanonicalDrawOrder()
     {
@@ -149,12 +158,47 @@ public sealed class UiDisplayListGraphFeatureTests
         var commands = new RecordingRasterCommands();
         graph.RecordRaster(commands);
 
+        Assert.True(graph.RasterPasses.Count > 0, string.Join(" | ", feature.Diagnostics));
         Assert.Single(graph.RasterPasses);
-        Assert.Equal(2, commands.DrawCount);
-        Assert.Equal(2, commands.PushedConstants.Count);
-        Assert.Equal(2, commands.Scissors.Count);
-        Assert.Equal(1f, ReadFloat(commands.PushedConstants[0], 16));
-        Assert.Equal(2f, ReadFloat(commands.PushedConstants[1], 16));
+        Assert.Single(commands.InstanceCounts);
+        Assert.Equal(2u, commands.InstanceCounts[0]);
+        Assert.Single(commands.PushedConstants);
+        Assert.Single(commands.Scissors);
+        Assert.Equal(100f, ReadFloat(commands.PushedConstants[0], 0));
+        Assert.Equal(80f, ReadFloat(commands.PushedConstants[0], 4));
+    }
+
+    [Fact]
+    public void FiveThousandAdjacentVisualsUseOneInstancedDraw()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(4096, 4096));
+        var visuals = new UiVisualDraw[5000];
+        var order = new UiDrawRef[visuals.Length];
+        for (var index = 0; index < visuals.Length; index++)
+        {
+            visuals[index] = Solid(index % 100);
+            order[index] = new UiDrawRef(UiDrawKind.Visual, index);
+        }
+
+        Assert.True(
+            feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        var stopwatch = Stopwatch.StartNew();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+        stopwatch.Stop();
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Single(commands.InstanceCounts);
+        Assert.Equal(5000u, commands.InstanceCounts[0]);
+        _output.WriteLine(
+            $"Contiguous visual benchmark: visuals={visuals.Length}, naiveDraws={visuals.Length}, " +
+            $"instancedDraws={commands.InstanceCounts.Count}, buildAndRecord={stopwatch.Elapsed.TotalMilliseconds:F3} ms");
     }
 
     [Fact]
@@ -481,6 +525,8 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public int DrawCount { get; private set; }
 
+        public List<uint> InstanceCounts { get; } = [];
+
         public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0)
         {
         }
@@ -506,7 +552,10 @@ public sealed class UiDisplayListGraphFeatureTests
         }
 
         public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
-            => DrawCount++;
+        {
+            DrawCount++;
+            InstanceCounts.Add(instanceCount);
+        }
 
         public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
         {

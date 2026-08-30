@@ -30,16 +30,18 @@ public sealed class UiVisualShaderContractTests
             out var pushConstantSize,
             out var diagnostic), diagnostic);
         Assert.Equal(UiRectangleShaderKind.Solid, shaderKind);
-        Assert.Equal(48u, pushConstantSize);
+        Assert.Equal(8u, pushConstantSize);
 
-        Span<byte> packed = stackalloc byte[48];
-        Assert.Equal(48, UiVisualShaderContract.Pack(shaderKind, in visual, new PixelExtent(800, 600), packed));
-        Assert.Equal(800f, ReadFloat(packed, 0));
-        Assert.Equal(600f, ReadFloat(packed, 4));
-        Assert.Equal(10f, ReadFloat(packed, 16));
-        Assert.Equal(40f, ReadFloat(packed, 28));
-        Assert.Equal(0.3f, ReadFloat(packed, 40));
-        Assert.Equal(0.4f, ReadFloat(packed, 44));
+        Span<byte> frame = stackalloc byte[8];
+        Assert.Equal(8, UiVisualShaderContract.PackFrame(shaderKind, new PixelExtent(800, 600), frame));
+        Assert.Equal(800f, ReadFloat(frame, 0));
+        Assert.Equal(600f, ReadFloat(frame, 4));
+
+        Span<byte> packed = stackalloc byte[32];
+        Assert.Equal(32, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Assert.Equal(10f, ReadFloat(packed, 0));
+        Assert.Equal(20f, ReadFloat(packed, 4));
+        Assert.Equal(0.4f, ReadFloat(packed, 28));
     }
 
     [Fact]
@@ -83,17 +85,22 @@ public sealed class UiVisualShaderContractTests
             out var pushConstantSize,
             out var diagnostic), diagnostic);
         Assert.Equal(UiRectangleShaderKind.Rounded, shaderKind);
-        Assert.Equal(96u, pushConstantSize);
+        Assert.Equal(8u, pushConstantSize);
 
-        Span<byte> packed = stackalloc byte[96];
-        Assert.Equal(96, UiVisualShaderContract.Pack(shaderKind, in visual, new PixelExtent(800, 600), packed));
-        Assert.Equal(800f, ReadFloat(packed, 0));
-        Assert.Equal(600f, ReadFloat(packed, 4));
-        Assert.Equal(1f, ReadFloat(packed, 64));
-        Assert.Equal(2f, ReadFloat(packed, 68));
-        Assert.Equal(3f, ReadFloat(packed, 72));
-        Assert.Equal(4f, ReadFloat(packed, 76));
-        Assert.Equal(2.5f, ReadFloat(packed, 80));
+        Span<byte> frame = stackalloc byte[8];
+        Assert.Equal(8, UiVisualShaderContract.PackFrame(shaderKind, new PixelExtent(800, 600), frame));
+        Assert.Equal(800f, ReadFloat(frame, 0));
+        Assert.Equal(600f, ReadFloat(frame, 4));
+
+        Span<byte> packed = stackalloc byte[80];
+        Assert.Equal(80, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Assert.Equal(10f, ReadFloat(packed, 0));
+        Assert.Equal(20f, ReadFloat(packed, 4));
+        Assert.Equal(1f, ReadFloat(packed, 48));
+        Assert.Equal(2f, ReadFloat(packed, 52));
+        Assert.Equal(3f, ReadFloat(packed, 56));
+        Assert.Equal(4f, ReadFloat(packed, 60));
+        Assert.Equal(2.5f, ReadFloat(packed, 64));
     }
 
     private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)
