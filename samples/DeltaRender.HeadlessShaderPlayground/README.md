@@ -10,12 +10,11 @@ to the canonical Delta.Shader contract.
 Generate the square pair from the C# shader producer:
 
 ```bash
-mkdir -p artifacts/headless-shader-playground/shaders
 dotnet build tools/DeltaRender.SquareShaders/DeltaRender.SquareShaders.csproj -c Release
 dotnet run --project /Users/rum/GitProjects/TheFurnace/DeltaShader/src/DeltaShader.Tool/DeltaShader.Tool.csproj \
   -c Release --no-build --no-restore -- build tools/DeltaRender.SquareShaders/DeltaRender.SquareShaders.csproj \
   --backend spirv --profile vulkan1.2 --spirv 1.5 --glsl 460 \
-  --out artifacts/headless-shader-playground/shaders
+  --out ../DeltaShader/src/DeltaShader/CompiledShaders
 ```
 
 Run from the DeltaRender directory:

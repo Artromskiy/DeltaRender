@@ -46,8 +46,22 @@ dotnet run --project samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj \
 On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
-Tool-specific shader regeneration is documented in
+DeltaShader is the sole shader source and compilation owner. The canonical
+publisher keeps all compiled shader outputs in one flat directory:
+
+```bash
+(cd ../DeltaShader && ./eng/prepare-compiled-shaders.sh)
+```
+
+Consume outputs from `../DeltaShader/src/DeltaShader/CompiledShaders`; do not
+create a Render-local shader catalog or copy generated outputs into
+`DeltaRender/artifacts`. Tool-specific shader validation is documented in
 [tools/DeltaRender.UIShaders/README.md](tools/DeltaRender.UIShaders/README.md).
+For the CPU/GPU Maths smoke, refresh the same flat catalog with:
+
+```bash
+(cd ../DeltaShader && ./eng/prepare-maths-conformance-artifacts.sh)
+```
 The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The

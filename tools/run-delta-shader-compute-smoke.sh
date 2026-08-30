@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CASES="${DELTA_RENDER_MATH_CASES:-"$ROOT/../DeltaMaths/Tests/DeltaMaths.Conformance/shader-conformance.json"}"
-ARTIFACTS="${DELTA_RENDER_MATH_ARTIFACTS:-"$ROOT/../DeltaShader/artifacts/maths-conformance"}"
+ARTIFACTS="${DELTA_RENDER_MATH_ARTIFACTS:-"$ROOT/../DeltaShader/src/DeltaShader/CompiledShaders"}"
 REPORT="${DELTA_RENDER_MATH_REPORT:-"$ROOT/artifacts/math-conformance/render-report.json"}"
 TEXT_REPORT="${DELTA_RENDER_MATH_TEXT_REPORT:-"$ROOT/artifacts/math-conformance/render-report.txt"}"
 RUNNER_PROJECT="$ROOT/tools/DeltaRender.MathConformance/DeltaRender.MathConformance.csproj"
