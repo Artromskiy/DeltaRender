@@ -23,26 +23,17 @@ namespace Delta.Render.Text;
 public sealed class TextRenderFeature : IRenderFeature, IDisposable
 {
     private const int InitialInstanceCapacity = 256;
-    private const int DefaultMaxAtlasPages = 8;
     private const uint DefaultAtlasSize = 2048;
     private const uint DefaultPadding = 1;
 
     private readonly IRenderFrameSession _session;
-    private readonly ITextService _textService;
+    private readonly TextAtlas _atlas;
     private readonly TextUploadPass _uploadPass;
     private readonly TextDrawPass _drawPass;
     private readonly RasterPipelineDescription _pipeline;
     private readonly RasterPassDescription _rasterPassDescription;
     private readonly GlyphImageMode _mode;
-    private readonly GlyphImageEncoding _encoding;
-    private readonly RenderTextureFormat _atlasFormat;
-    private readonly int _atlasBytesPerPixel;
-    private readonly uint _atlasWidth;
-    private readonly uint _atlasHeight;
-    private readonly uint _padding;
     private readonly float _distanceRange;
-    private readonly ColorGlyphOptions? _colorOptions;
-    private readonly List<GlyphKey> _evictionKeys = new();
     private readonly Dictionary<TextRunCacheKey, CachedRun> _runCache = new();
     private readonly ShaderBinding _instanceBinding;
     private readonly uint _instanceStride;
@@ -50,8 +41,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private readonly uint _pushConstantSize;
     private readonly byte[] _pushConstantBytes;
     private PendingRun[] _pendingRuns = new PendingRun[8];
-    private readonly Dictionary<GlyphKey, GlyphPlacement> _glyphs = new();
-    private AtlasPage?[] _pages;
     private RenderGraphTextureHandle[] _pageGraphHandles;
     private int[] _uploadPageIndices;
 
@@ -64,15 +53,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private int[] _runBatchCounts = new int[8];
     private RenderBufferHandle _instanceBuffer;
     private RenderSamplerHandle _sampler;
-    private int _pageCount;
     private int _uploadPageCount;
     private int _pendingRunCount;
     private int _instanceCount;
     private int _batchCount;
     private int _localRunBatchCount;
     private int _uploadedInstanceByteCount;
-    private ulong _atlasUseStamp;
-    private ulong _atlasEpoch = 1;
     private PixelExtent _viewport;
     private bool _instancePayloadDirty;
     private bool _instanceBufferNeedsUpload = true;
@@ -117,9 +103,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         var shaderLayout = TextShaderPacking.Resolve(shaderProgram, mode);
-        _encoding = shaderLayout.Encoding;
-        _atlasFormat = shaderLayout.AtlasFormat;
-        _atlasBytesPerPixel = shaderLayout.AtlasBytesPerPixel;
         _instanceBinding = shaderLayout.InstanceBinding;
         _instanceStride = shaderLayout.InstanceStride;
         _atlasBinding = shaderLayout.AtlasBinding;
@@ -127,15 +110,21 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _pushConstantBytes = new byte[checked((int)_pushConstantSize)];
 
         _session = session;
-        _textService = textService;
         _mode = mode;
-        _atlasWidth = atlasWidth;
-        _atlasHeight = atlasHeight;
-        _padding = padding;
         _distanceRange = mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf ? distanceRange : 0;
-        _colorOptions = colorOptions;
+        _atlas = new TextAtlas(
+            session,
+            textService,
+            mode,
+            shaderLayout.Encoding,
+            shaderLayout.AtlasFormat,
+            shaderLayout.AtlasBytesPerPixel,
+            atlasWidth,
+            atlasHeight,
+            padding,
+            _distanceRange,
+            colorOptions);
         _viewport = viewport;
-        _pages = new AtlasPage[4];
         _pageGraphHandles = new RenderGraphTextureHandle[4];
         _uploadPageIndices = new int[4];
         _instances = new GlyphInstance[InitialInstanceCapacity];
@@ -155,8 +144,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         RenderSamplerHandle sampler = default;
         try
         {
-            _pages.RefAt(0) = CreateAtlasPage();
-            _pageCount = 1;
             sampler = session.CreateSampler(new RenderSamplerDescription());
             instanceBuffer = session.CreateBuffer(new RenderBufferDescription(
                 checked((ulong)InitialInstanceCapacity * _instanceStride),
@@ -176,14 +163,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 session.Release(sampler);
             }
 
-            for (var index = _pageCount - 1; index >= 0; index--)
-            {
-                var page = _pages.RefAt(index);
-                if (page is not null && page.Texture.IsValid)
-                {
-                    session.Release(page.Texture);
-                }
-            }
+            _atlas.Dispose();
             throw;
         }
     }
@@ -289,13 +269,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         var instances = graph.ImportBuffer(_instanceBuffer);
         _instanceGraphHandle = instances;
-        EnsureUploadPageCapacity(_pageCount);
+        EnsureUploadPageCapacity(_atlas.PageCount);
         _uploadPageCount = 0;
-        for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
+        for (var pageIndex = 0; pageIndex < _atlas.PageCount; pageIndex++)
         {
-            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-            _pageGraphHandles.RefAt(pageIndex) = graph.ImportTexture(page.Texture);
-            if (page.Dirty)
+            _pageGraphHandles.RefAt(pageIndex) = graph.ImportTexture(_atlas.GetTexture(pageIndex));
+            if (_atlas.IsDirty(pageIndex))
             {
                 _uploadPageIndices.RefAt(_uploadPageCount++) = pageIndex;
             }
@@ -412,22 +391,14 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             _session.Release(sampler);
         }
 
-        for (var pageIndex = _pageCount - 1; pageIndex >= 0; pageIndex--)
-        {
-            var page = _pages.RefAt(pageIndex);
-            if (page is not null && page.Texture.IsValid)
-            {
-                _session.Release(page.Texture);
-                page.Texture = default;
-            }
-        }
+        _atlas.Dispose();
     }
 
     private void BuildInstances()
     {
         _instanceCount = 0;
         _batchCount = 0;
-        var useStamp = NextAtlasUseStamp();
+        var useStamp = _atlas.NextUseStamp();
         EnsureRunBatchCapacity(_pendingRunCount);
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
         {
@@ -458,7 +429,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 var glyphPenY = 0f;
                 foreach (var glyph in run.Glyphs.Span)
                 {
-                    var placement = GetOrCreateGlyph(run, glyph, useStamp);
+                    var placement = _atlas.GetOrCreateGlyph(run, glyph, useStamp);
                     if (!placement.IsEmpty && TryClip(pending.Clip, _viewport, out var clip))
                     {
                         EnsureInstanceCapacity(_instanceCount + 1);
@@ -521,283 +492,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             !bytes.SequenceEqual(_uploadedInstanceBytes.AsSpan(0, byteCount));
     }
 
-    private GlyphPlacement GetOrCreateGlyph(in ShapedRun run, in ShapedGlyph glyph, ulong useStamp)
-    {
-        var key = new GlyphKey(run.Font, glyph.GlyphId, run.PixelsPerEm, _mode, _encoding, _distanceRange, _padding, _colorOptions);
-        if (_glyphs.TryGetValue(key, out var placement))
-        {
-            if (!placement.IsEmpty)
-            {
-                var cachedPage = _pages.RefAt(placement.PageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-                cachedPage.LastUse = useStamp;
-            }
-
-            return placement;
-        }
-
-        var image = _textService.GenerateGlyphImage(new GlyphImageRequest(
-            run.Font,
-            glyph.GlyphId,
-            run.PixelsPerEm,
-            _mode,
-            _distanceRange,
-            _colorOptions));
-        ValidateImage(image, key);
-        if (image.IsEmpty)
-        {
-            placement = GlyphPlacement.Empty;
-            _glyphs.Add(key, placement);
-            return placement;
-        }
-
-        var width = checked((uint)image.Width);
-        var height = checked((uint)image.Height);
-        if (width > _atlasWidth || height > _atlasHeight)
-        {
-            throw new InvalidOperationException("A glyph image does not fit in the configured text atlas.");
-        }
-
-        var pageIndex = FindPage(width, height);
-        if (pageIndex < 0)
-        {
-            pageIndex = CreateAtlasPageSlot(useStamp);
-        }
-
-        var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-        PreparePagePlacement(page, width, height);
-        var destinationX = page.CursorX;
-        var destinationY = page.CursorY;
-
-        CopyImage(image, page.Pixels, destinationX, destinationY);
-        placement = new GlyphPlacement(
-            pageIndex,
-            image.PlaneBounds,
-            new Vector4(
-                (float)destinationX / _atlasWidth,
-                (float)destinationY / _atlasHeight,
-                (float)(destinationX + width) / _atlasWidth,
-                (float)(destinationY + height) / _atlasHeight));
-        _glyphs.Add(key, placement);
-        page.CursorX = checked(destinationX + width + _padding);
-        page.RowHeight = Math.Max(page.RowHeight, height);
-        page.LastUse = useStamp;
-        page.Dirty = true;
-        return placement;
-    }
-
-    private ulong NextAtlasUseStamp()
-    {
-        if (_atlasUseStamp == ulong.MaxValue)
-        {
-            _atlasUseStamp = 1;
-            for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
-            {
-                var page = _pages.RefAt(pageIndex);
-                if (page is not null)
-                {
-                    page.LastUse = 0;
-                }
-            }
-
-            return _atlasUseStamp;
-        }
-
-        return ++_atlasUseStamp;
-    }
-
-    private int FindPage(uint width, uint height)
-    {
-        for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
-        {
-            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-            if (CanPlace(page, width, height))
-            {
-                return pageIndex;
-            }
-        }
-
-        return -1;
-    }
-
-    private bool CanPlace(AtlasPage page, uint width, uint height)
-    {
-        var destinationY = page.CursorY;
-        if (page.CursorX > _atlasWidth - width)
-        {
-            destinationY = checked(destinationY + page.RowHeight + _padding);
-        }
-
-        return destinationY <= _atlasHeight - height;
-    }
-
-    private void PreparePagePlacement(AtlasPage page, uint width, uint height)
-    {
-        if (page.CursorX > _atlasWidth - width)
-        {
-            page.CursorX = 0;
-            page.CursorY = checked(page.CursorY + page.RowHeight + _padding);
-            page.RowHeight = 0;
-        }
-
-        if (page.CursorY > _atlasHeight - height)
-        {
-            throw new InvalidOperationException("The selected text atlas page cannot fit the glyph image.");
-        }
-    }
-
-    private int CreateAtlasPageSlot(ulong useStamp)
-    {
-        if (_pageCount < DefaultMaxAtlasPages)
-        {
-            EnsurePageCapacity(_pageCount + 1);
-            var page = CreateAtlasPage();
-            _pages.RefAt(_pageCount) = page;
-            return _pageCount++;
-        }
-
-        return RecycleAtlasPage(useStamp);
-    }
-
-    private int RecycleAtlasPage(ulong useStamp)
-    {
-        var pageIndexToRecycle = -1;
-        var oldestUseStamp = ulong.MaxValue;
-        for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
-        {
-            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-            if (page.LastUse == useStamp)
-            {
-                continue;
-            }
-
-            if (pageIndexToRecycle < 0 || page.LastUse < oldestUseStamp)
-            {
-                pageIndexToRecycle = pageIndex;
-                oldestUseStamp = page.LastUse;
-            }
-        }
-
-        if (pageIndexToRecycle < 0)
-        {
-            throw new InvalidOperationException("The text atlas is full and every page is in use by the current frame.");
-        }
-
-        _evictionKeys.Clear();
-        foreach (var entry in _glyphs)
-        {
-            if (entry.Value.PageIndex == pageIndexToRecycle)
-            {
-                _evictionKeys.Add(entry.Key);
-            }
-        }
-
-        foreach (var key in _evictionKeys)
-        {
-            _glyphs.Remove(key);
-        }
-
-        var pageToRecycle = _pages.RefAt(pageIndexToRecycle) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-        Array.Clear(pageToRecycle.Pixels);
-        pageToRecycle.CursorX = 0;
-        pageToRecycle.CursorY = 0;
-        pageToRecycle.RowHeight = 0;
-        pageToRecycle.LastUse = useStamp;
-        pageToRecycle.Dirty = true;
-        _atlasEpoch = _atlasEpoch == ulong.MaxValue ? 1 : _atlasEpoch + 1;
-        return pageIndexToRecycle;
-    }
-
-    private AtlasPage CreateAtlasPage()
-    {
-        var pixels = new byte[checked((int)((ulong)_atlasWidth * _atlasHeight * (uint)_atlasBytesPerPixel))];
-        var page = new AtlasPage(pixels);
-        try
-        {
-            page.Texture = _session.CreateTexture(new RenderTextureDescription(
-                _atlasWidth,
-                _atlasHeight,
-                _atlasFormat,
-                RenderTextureUsage.Sampled | RenderTextureUsage.TransferDestination));
-            return page;
-        }
-        catch
-        {
-            if (page.Texture.IsValid)
-            {
-                _session.Release(page.Texture);
-            }
-
-            throw;
-        }
-    }
-
-    private void EnsurePageCapacity(int required)
-    {
-        if (required <= _pages.Length)
-        {
-            return;
-        }
-
-        var capacity = GrowCapacity(_pages.Length, required);
-        ResizeArray(ref _pages, capacity);
-        ResizeArray(ref _pageGraphHandles, capacity);
-    }
-
     private void EnsureUploadPageCapacity(int required)
         => EnsureArrayCapacity(ref _uploadPageIndices, required);
-
-    private void CopyImage(GlyphImage image, byte[] destinationPixels, uint destinationX, uint destinationY)
-    {
-        var sourceBytesPerPixel = image.Encoding == GlyphImageEncoding.MsdfRgb8 ? 3 : _atlasBytesPerPixel;
-        var sourceRowBytes = checked(image.Width * sourceBytesPerPixel);
-        var destinationRowBytes = checked((int)_atlasWidth * _atlasBytesPerPixel);
-        var source = image.Pixels.Span;
-        for (var row = 0; row < image.Height; row++)
-        {
-            var sourceRow = source.Slice(row * sourceRowBytes, sourceRowBytes);
-            var destinationOffset = checked(((int)destinationY + row) * destinationRowBytes + (int)destinationX * _atlasBytesPerPixel);
-            var destinationRow = destinationPixels.AsSpan(destinationOffset, checked(image.Width * _atlasBytesPerPixel));
-            if (sourceBytesPerPixel == _atlasBytesPerPixel)
-            {
-                sourceRow.CopyTo(destinationRow);
-                continue;
-            }
-
-            for (var pixel = 0; pixel < image.Width; pixel++)
-            {
-                var sourcePixel = sourceRow.Slice(pixel * 3, 3);
-                var destinationPixel = destinationRow.Slice(pixel * 4, 4);
-                sourcePixel.CopyTo(destinationPixel);
-                destinationPixel[3] = byte.MaxValue;
-            }
-        }
-    }
-
-    private void ValidateImage(GlyphImage image, GlyphKey key)
-    {
-        ArgumentNullException.ThrowIfNull(image);
-        if (image.Font != key.Font || image.GlyphId != key.GlyphId || image.PixelsPerEm != key.PixelsPerEm ||
-            image.Encoding != key.Encoding || image.DistanceRange != key.DistanceRange)
-        {
-            throw new InvalidOperationException("The text service returned a glyph image that does not match its request.");
-        }
-
-        if (image.Width < 0 || image.Height < 0 || image.Width > _atlasWidth || image.Height > _atlasHeight)
-        {
-            throw new InvalidOperationException("The text service returned invalid glyph image dimensions.");
-        }
-
-        var expectedLength = checked((long)image.Width * image.Height * (_encoding == GlyphImageEncoding.MsdfRgb8 ? 3 : _atlasBytesPerPixel));
-        if (image.Pixels.Length != expectedLength)
-        {
-            throw new InvalidOperationException("The text service returned a glyph image with an invalid pixel payload length.");
-        }
-
-        if (!IsFinite(image.PlaneBounds))
-        {
-            throw new InvalidOperationException("The text service returned non-finite glyph plane bounds.");
-        }
-    }
 
     private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge, int count = 1)
     {
@@ -840,8 +536,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         for (var batchIndex = 0; batchIndex < cachedRun.BatchCount; batchIndex++)
         {
             var cachedBatch = cachedRun.Batches.RefAt(batchIndex);
-            var page = _pages.RefAt(cachedBatch.PageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-            page.LastUse = useStamp;
+            _atlas.TouchPage(cachedBatch.PageIndex, useStamp);
             var batch = AppendBatch(
                 cachedBatch.Clip,
                 cachedBatch.PageIndex,
@@ -870,7 +565,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             cachedRun.Color != pending.Color ||
             cachedRun.Clip != pending.Clip ||
             cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
-            cachedRun.AtlasEpoch != _atlasEpoch)
+            cachedRun.AtlasEpoch != _atlas.Epoch)
         {
             return false;
         }
@@ -918,7 +613,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         cachedRun.Color = pending.Color;
         cachedRun.Clip = pending.Clip;
         cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
-        cachedRun.AtlasEpoch = _atlasEpoch;
+        cachedRun.AtlasEpoch = _atlas.Epoch;
     }
 
     private void EnsureInstanceCapacity(int required)
@@ -988,7 +683,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _batchCount = 0;
         Array.Clear(_runBatchStarts, 0, _runBatchStarts.Length);
         Array.Clear(_runBatchCounts, 0, _runBatchCounts.Length);
-        _glyphs.Clear();
         _runCache.Clear();
     }
 
@@ -1033,9 +727,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private static bool IsFinite(Vector4 value)
         => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) && float.IsFinite(value.W);
 
-    private static bool IsFinite(TextBounds value)
-        => float.IsFinite(value.Left) && float.IsFinite(value.Top) && float.IsFinite(value.Right) && float.IsFinite(value.Bottom);
-
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private readonly record struct PendingRun(
@@ -1069,23 +760,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         public ulong AtlasEpoch;
     }
 
-    private readonly record struct GlyphKey(
-        FontInstanceId Font,
-        uint GlyphId,
-        float PixelsPerEm,
-        GlyphImageMode Mode,
-        GlyphImageEncoding Encoding,
-        float DistanceRange,
-        uint Padding,
-        ColorGlyphOptions? Color);
-
-    private readonly record struct GlyphPlacement(int PageIndex, TextBounds PlaneBounds, Vector4 UvRect)
-    {
-        public static GlyphPlacement Empty => new(-1, default, default);
-
-        public bool IsEmpty => PageIndex < 0;
-    }
-
     private struct TextBatch
     {
         public TextBatch(int pageIndex, PixelRect clip, int start, int count)
@@ -1102,17 +776,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         public int Count;
     }
 
-    private sealed class AtlasPage(byte[] pixels)
-    {
-        public RenderTextureHandle Texture;
-        public byte[] Pixels { get; } = pixels;
-        public uint CursorX;
-        public uint CursorY;
-        public uint RowHeight;
-        public ulong LastUse;
-        public bool Dirty;
-    }
-
     private sealed class TextUploadPass(TextRenderFeature owner) : ITransferPass
     {
         public void Record(ITransferCommandContext commands)
@@ -1121,12 +784,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
                 {
-                    var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex)) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+                    var pageIndex = owner._uploadPageIndices.RefAt(uploadIndex);
                     commands.UploadTexture(
-                        owner._pageGraphHandles.RefAt(owner._uploadPageIndices.RefAt(uploadIndex)),
-                        new PixelRect(0, 0, checked((int)owner._atlasWidth), checked((int)owner._atlasHeight)),
-                        page.Pixels,
-                        checked(owner._atlasWidth * (uint)owner._atlasBytesPerPixel));
+                        owner._pageGraphHandles.RefAt(pageIndex),
+                        new PixelRect(0, 0, checked((int)owner._atlas.Width), checked((int)owner._atlas.Height)),
+                        owner._atlas.GetPixels(pageIndex),
+                        checked(owner._atlas.Width * (uint)owner._atlas.BytesPerPixel));
                 }
 
                 if (owner._instancePayloadDirty)
@@ -1144,11 +807,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
                 {
-                    var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex));
-                    if (page is not null)
-                    {
-                        page.Dirty = true;
-                    }
+                    owner._atlas.MarkDirty(owner._uploadPageIndices.RefAt(uploadIndex));
                 }
 
                 throw;
@@ -1156,11 +815,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
             {
-                var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex));
-                if (page is not null)
-                {
-                    page.Dirty = false;
-                }
+                owner._atlas.MarkUploaded(owner._uploadPageIndices.RefAt(uploadIndex));
             }
 
         }
