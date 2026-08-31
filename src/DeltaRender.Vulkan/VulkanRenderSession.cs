@@ -61,13 +61,12 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private RenderTargetHandle _target;
     private bool _recording;
     private bool _disposed;
-    private BufferAllocation _staging;
-    private readonly List<BufferAllocation> _retiredStaging = new();
-    private ulong _stagingCursor;
+    private readonly VulkanStagingBuffer _stagingBuffer;
 
     private VulkanRenderSession(VulkanRenderer renderer, VulkanSurfaceLease? surfaceLease, WindowMetrics metrics, bool windowed, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        _stagingBuffer = new VulkanStagingBuffer(this);
         _profilingEnabled = options.EnableProfiling;
         _profiler = null;
         _surfaceLease = surfaceLease;
@@ -152,6 +151,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private VulkanRenderSession(VulkanRenderer renderer, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        _stagingBuffer = new VulkanStagingBuffer(this);
         _profilingEnabled = options.EnableProfiling;
         _profiler = null;
         _hasTarget = false;
@@ -394,7 +394,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal bool IsWindowed => _windowed;
     internal bool HasTarget => _hasTarget;
     internal uint MaxBoundDescriptorSets => Capabilities.MaxBoundDescriptorSets;
-    internal BufferAllocation StagingBuffer => _staging;
+    internal BufferAllocation StagingBuffer => _stagingBuffer.Current;
 
     internal void ConfigureDepthStencilAttachment(PersistentTexture? texture, in DepthStencilAttachmentDescription description)
     {
@@ -558,9 +558,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         WaitForFrame();
-        ReclaimRetiredStaging();
+        _stagingBuffer.ReclaimCompleted();
         ReclaimDeferredTransients();
-        _stagingCursor = 0;
         if (_windowed)
         {
             var swapchainExtension = _renderer.GetKhrSwapchain();
@@ -657,48 +656,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal void WaitForReadback() => WaitForFrame();
 
     internal ulong AllocateStaging(ReadOnlySpan<byte> data)
-    {
-        if (data.IsEmpty)
-        {
-            return _stagingCursor;
-        }
-
-        var offset = Align(_stagingCursor, 4);
-        EnsureStaging(checked(offset + (ulong)data.Length));
-        void* pointer = null;
-        VulkanCall.Ensure(Api.MapMemory(Device, _staging.Memory, offset, (ulong)data.Length, 0, &pointer), "MapMemory(staging upload)");
-        try
-        {
-            data.CopyTo(new Span<byte>(pointer, data.Length));
-            if (!_staging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
-            {
-                var range = new MappedMemoryRange
-                {
-                    SType = StructureType.MappedMemoryRange,
-                    Memory = _staging.Memory,
-                    Offset = 0,
-                    Size = (nuint)_staging.AllocationSize
-                };
-                VulkanCall.Ensure(Api.FlushMappedMemoryRanges(Device, 1, &range), "FlushMappedMemoryRanges(staging upload)");
-            }
-        }
-        finally
-        {
-            Api.UnmapMemory(Device, _staging.Memory);
-        }
-
-        _stagingCursor = checked(offset + (ulong)data.Length);
-        return offset;
-    }
+        => _stagingBuffer.Allocate(data);
 
     internal ulong ReserveStaging(int size)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
-        var offset = Align(_stagingCursor, 4);
-        EnsureStaging(checked(offset + (ulong)size));
-        _stagingCursor = checked(offset + (ulong)size);
-        return offset;
-    }
+        => _stagingBuffer.Reserve(size);
 
     public ValueTask DisposeAsync()
     {
@@ -766,20 +727,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     }
 
     private void DisposeStaging()
-    {
-        if (VulkanBufferAllocation.IsLive(in _staging))
-        {
-            DestroyAllocation(_staging);
-            _staging = default;
-        }
-
-        foreach (var allocation in _retiredStaging)
-        {
-            DestroyAllocation(allocation);
-        }
-
-        _retiredStaging.Clear();
-    }
+        => _stagingBuffer.Dispose();
 
     private void DisposeTargetResources()
     {
@@ -827,44 +775,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         return _nextGeneration++;
     }
-
-    private void EnsureStaging(ulong required)
-    {
-        if (VulkanBufferAllocation.IsLive(in _staging) && _staging.AllocationSize >= required)
-        {
-            return;
-        }
-
-        if (VulkanBufferAllocation.IsLive(in _staging))
-        {
-            _retiredStaging.Add(_staging);
-            _staging = default;
-        }
-
-        var capacity = 4096UL;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
-
-        _staging = CreateNativeBuffer(
-            capacity,
-            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
-            MemoryPropertyFlags.HostVisibleBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-    }
-
-    private void ReclaimRetiredStaging()
-    {
-        foreach (var allocation in _retiredStaging)
-        {
-            DestroyAllocation(allocation);
-        }
-
-        _retiredStaging.Clear();
-    }
-
-    private static ulong Align(ulong value, ulong alignment) => checked((value + alignment - 1) / alignment * alignment);
 
     private readonly record struct HeadlessTarget(Image Image, DeviceMemory Memory, ImageView View, Framebuffer Framebuffer);
     private readonly record struct TransientBufferKey(ulong SizeInBytes, RenderBufferUsage Usage);

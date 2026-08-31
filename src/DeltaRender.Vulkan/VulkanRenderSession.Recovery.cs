@@ -118,8 +118,7 @@ internal sealed unsafe partial class VulkanRenderSession
         _deferredBuffers.Clear();
         _deferredTextures.Clear();
         _resources.Clear();
-        _staging = default;
-        _stagingCursor = 0;
+        _stagingBuffer.InvalidateDeviceLocalState();
         _renderPass = default;
         _swapchain = default;
         _swapchainViews = [];
