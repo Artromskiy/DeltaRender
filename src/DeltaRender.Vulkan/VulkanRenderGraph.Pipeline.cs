@@ -415,6 +415,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         {
             maxSet = -1;
             var result = new List<GraphBinding>(resources.Count);
+            var seen = new HashSet<ShaderBinding>();
             foreach (var resource in resources)
             {
                 if (resource.DescriptorCount != 1)
@@ -423,7 +424,7 @@ internal sealed unsafe partial class VulkanRenderGraph
                 }
 
                 maxSet = Math.Max(maxSet, checked((int)resource.Binding.Set));
-                if (result.Any(item => item.Binding == resource.Binding))
+                if (!seen.Add(resource.Binding))
                 {
                     continue;
                 }
