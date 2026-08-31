@@ -98,6 +98,15 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
             return;
         }
 
+        if (descriptorSets.IsEmpty)
+        {
+            _lastDescriptorSetCount = 0;
+            _lastDescriptorBindPoint = bindPoint;
+            _lastDescriptorLayout = layout;
+            _hasDescriptorSets = true;
+            return;
+        }
+
         if (_lastDescriptorSets.Length < descriptorSets.Length)
         {
             Array.Resize(ref _lastDescriptorSets, descriptorSets.Length);
@@ -130,7 +139,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
             return false;
         }
 
-        for (var index = 0; index < descriptorSets.Length; index++)
+        for (int index = 0; index < descriptorSets.Length; index++)
         {
             if (_lastDescriptorSets[index].Handle != descriptorSets[index].Handle)
             {
@@ -173,18 +182,18 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         PipelineStageFlags destinationStage,
         ReadOnlySpan<BufferMemoryBarrier> buffers,
         ReadOnlySpan<ImageMemoryBarrier> images)
-        => session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, buffers, images);
+        => session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, [], buffers, images);
 
     internal unsafe void PipelineBarrier(PipelineStageFlags sourceStage, PipelineStageFlags destinationStage, in BufferMemoryBarrier barrier)
     {
         var value = barrier;
-        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, new ReadOnlySpan<BufferMemoryBarrier>(&value, 1), ReadOnlySpan<ImageMemoryBarrier>.Empty);
+        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, [], new ReadOnlySpan<BufferMemoryBarrier>(&value, 1), []);
     }
 
     internal unsafe void PipelineBarrier(PipelineStageFlags sourceStage, PipelineStageFlags destinationStage, in ImageMemoryBarrier barrier)
     {
         var value = barrier;
-        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, ReadOnlySpan<MemoryBarrier>.Empty, ReadOnlySpan<BufferMemoryBarrier>.Empty, new ReadOnlySpan<ImageMemoryBarrier>(&value, 1));
+        session.Api.CmdPipelineBarrier(session.CommandBuffer, sourceStage, destinationStage, DependencyFlags.None, [], [], new ReadOnlySpan<ImageMemoryBarrier>(&value, 1));
     }
 
     internal unsafe void CopyImageToBuffer(Image source, ImageLayout layout, Silk.NET.Vulkan.Buffer destination, BufferImageCopy copy)
