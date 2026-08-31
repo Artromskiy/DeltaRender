@@ -5,13 +5,13 @@ using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
 
-internal abstract unsafe class VulkanCommandContext(VulkanRenderGraph graph, VulkanRenderGraph.VulkanGraphPipeline pipeline)
+internal abstract unsafe class VulkanCommandContext(VulkanRenderGraph graph, VulkanGraphPipeline pipeline)
 {
     protected VulkanRenderGraph Graph { get; } = graph;
 
-    protected VulkanRenderGraph.VulkanGraphPipeline Pipeline { get; private set; } = pipeline;
+    protected VulkanGraphPipeline Pipeline { get; private set; } = pipeline;
 
-    internal void Rebind(VulkanRenderGraph.VulkanGraphPipeline pipeline)
+    internal void Rebind(VulkanGraphPipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         Pipeline = pipeline;

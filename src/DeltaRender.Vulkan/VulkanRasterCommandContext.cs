@@ -3,7 +3,7 @@ using Delta.Render.RenderGraph;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed unsafe class VulkanRasterCommandContext(VulkanRenderGraph graph, VulkanRenderGraph.VulkanGraphPipeline? pipeline)
+internal sealed unsafe class VulkanRasterCommandContext(VulkanRenderGraph graph, VulkanGraphPipeline? pipeline)
     : VulkanCommandContext(graph, pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.")), IRasterCommandContext
 {
     public void SetViewport(in RenderViewport viewport)

@@ -34,8 +34,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private VulkanSemaphore _imageAvailable;
     private VulkanSemaphore _renderComplete;
     private readonly VulkanResourceRegistry _resources = new();
-    private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanRenderGraph.VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
-    private readonly VulkanPipelineCache<IShaderArtifact, VulkanRenderGraph.VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly VulkanPipelineCache<IShaderArtifact, VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanTransientResourcePool<TransientBufferKey, BufferAllocation> _transientBuffers = new();
     private readonly VulkanTransientResourcePool<TransientTextureKey, PersistentTexture> _transientTextures = new();
     private readonly List<DeferredBuffer> _deferredBuffers = new();
@@ -515,10 +515,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _depthDescription = hasAttachment ? description : default;
     }
 
-    internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
+    internal VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
     {
         var copy = description;
-        return _rasterPipelines.GetOrCreate(copy.ShaderProgram, () => VulkanRenderGraph.VulkanGraphPipeline.CreateRaster(this, copy));
+        return _rasterPipelines.GetOrCreate(copy.ShaderProgram, () => VulkanGraphPipeline.CreateRaster(this, copy));
     }
 
     private bool IsSameDepthDescription(in DepthStencilAttachmentDescription description)
@@ -537,8 +537,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _rasterPipelines.Clear();
     }
 
-    internal VulkanRenderGraph.VulkanGraphPipeline GetOrCreateComputePipeline(IShaderArtifact artifact)
-        => _computePipelines.GetOrCreate(artifact, () => VulkanRenderGraph.VulkanGraphPipeline.CreateCompute(this, artifact));
+    internal VulkanGraphPipeline GetOrCreateComputePipeline(IShaderArtifact artifact)
+        => _computePipelines.GetOrCreate(artifact, () => VulkanGraphPipeline.CreateCompute(this, artifact));
 
     internal bool TryGetBuffer(RenderBufferHandle handle, [NotNullWhen(true)] out PersistentBuffer? buffer)
         => _resources.TryGetBuffer(handle, out buffer);

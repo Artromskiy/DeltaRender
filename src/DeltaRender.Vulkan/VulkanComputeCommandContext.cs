@@ -2,7 +2,7 @@ using Delta.Render.RenderGraph;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed unsafe class VulkanComputeCommandContext(VulkanRenderGraph graph, VulkanRenderGraph.VulkanGraphPipeline? pipeline)
+internal sealed unsafe class VulkanComputeCommandContext(VulkanRenderGraph graph, VulkanGraphPipeline? pipeline)
     : VulkanCommandContext(graph, pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.")), IComputeCommandContext
 {
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
