@@ -111,7 +111,7 @@ internal sealed class RenderBatchPipelineState : IDisposable
         }
 
         var end = checked(offset + length);
-        for (var index = 0; index < _dirty.Count; index++)
+        for (var index = _dirty.Count - 1; index >= 0; index--)
         {
             var existing = _dirty[index];
             if (existing.Segment != segment || end < existing.Offset || offset > existing.End)
