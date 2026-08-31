@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render;
@@ -59,6 +60,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
     }
 
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Execute is the graph recovery boundary; it must abort the active Vulkan frame and return Failed for feature-recording failures.")]
     public RenderGraphExecutionResult Execute()
     {
         ThrowIfDisposed();
