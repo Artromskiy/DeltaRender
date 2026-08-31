@@ -171,6 +171,42 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void RoundedSliceVisualUsesNineInstancesInOneDraw()
+    {
+        var program = RoundedRectangleSliceGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(800, 500));
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(100, 100, 600, 300),
+            new UiVisualPaint(
+                new float4(0.2f, 0.5f, 0.9f, 1),
+                default,
+                0,
+                new float4(48, 20, 72, 12)),
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(new UiDisplayList(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[] { new UiDrawRef(UiDrawKind.Visual, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Single(commands.InstanceCounts);
+        Assert.Equal(9u, commands.InstanceCounts[0]);
+    }
+
+    [Fact]
     public void CompatibleVisualsWithDifferentClipsUseOnePassAndPreserveScissorCommands()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
@@ -202,7 +238,9 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(2, commands.DrawCount);
         Assert.Equal(feature.GetEffectiveClip(0), commands.Scissors[0]);
         Assert.Equal(feature.GetEffectiveClip(1), commands.Scissors[1]);
-        Assert.Equal(new[] { 1u, 1u }, commands.InstanceCounts);
+        Assert.Equal(2, commands.InstanceCounts.Count);
+        Assert.Equal(1u, commands.InstanceCounts[0]);
+        Assert.Equal(1u, commands.InstanceCounts[1]);
     }
 
     [Fact]
