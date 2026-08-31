@@ -137,7 +137,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
                 try
                 {
-                    _barrierPlanner.Emit(pass, states);
+                    if (pass.Uses.Count != 0)
+                    {
+                        _barrierPlanner.Emit(pass, states);
+                    }
                     if (pass.Kind == PassKind.Raster)
                     {
                         if (!rasterActive)
