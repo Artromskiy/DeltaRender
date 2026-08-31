@@ -10,12 +10,15 @@ internal sealed class VulkanGraphDependencyPlanner
     private int[] _lastWriter = [];
     private List<int>[] _readers = [];
     private readonly List<int> _ready = [];
-    private int[] _order = [];
 
-    internal int[] Compile(IReadOnlyList<VulkanRenderGraph.GraphPass> passes, int resourceCount)
+    internal int Compile(IReadOnlyList<VulkanRenderGraph.GraphPass> passes, int resourceCount, Span<int> order)
     {
         ArgumentNullException.ThrowIfNull(passes);
         ArgumentOutOfRangeException.ThrowIfNegative(resourceCount);
+        if (order.Length < passes.Count)
+        {
+            throw new ArgumentException("The destination order span is too small for the graph.", nameof(order));
+        }
 
         EnsureStorage(passes.Count, resourceCount);
         Array.Clear(_indegree, 0, passes.Count);
@@ -48,7 +51,7 @@ internal sealed class VulkanGraphDependencyPlanner
             }
         }
 
-        for (var index = 0; index < _indegree.Length; index++)
+        for (var index = 0; index < passes.Count; index++)
         {
             if (_indegree[index] == 0)
             {
@@ -71,7 +74,7 @@ internal sealed class VulkanGraphDependencyPlanner
 
             var current = _ready[readyIndex];
             _ready.RemoveAt(readyIndex);
-            _order[count++] = current;
+            order[count++] = current;
             foreach (var next in _edges[current])
             {
                 if (--_indegree[next] == 0)
@@ -81,60 +84,66 @@ internal sealed class VulkanGraphDependencyPlanner
             }
         }
 
-        if (count != _order.Length)
+        if (count != passes.Count)
         {
             throw new InvalidOperationException("Render graph contains a dependency cycle.");
         }
 
-        return _order;
+        return count;
     }
+
+    internal int PassCapacity => _edges.Length;
+    internal int ResourceCapacity => _lastWriter.Length;
 
     private void EnsureStorage(int passCount, int resourceCount)
     {
-        if (_edges.Length != passCount)
+        if (_edges.Length < passCount)
         {
-            _edges = new HashSet<int>[passCount];
-            for (var index = 0; index < passCount; index++)
+            var capacity = GrowCapacity(_edges.Length, passCount);
+            _edges = new HashSet<int>[capacity];
+            for (var index = 0; index < capacity; index++)
             {
                 _edges[index] = new HashSet<int>();
             }
         }
-        else
+
+        for (var index = 0; index < passCount; index++)
         {
-            for (var index = 0; index < passCount; index++)
-            {
-                _edges[index].Clear();
-            }
+            _edges[index].Clear();
         }
 
-        if (_indegree.Length != passCount)
+        if (_indegree.Length < passCount)
         {
-            _indegree = new int[passCount];
-            _order = new int[passCount];
+            _indegree = new int[GrowCapacity(_indegree.Length, passCount)];
         }
 
-        if (_lastWriter.Length != resourceCount)
+        if (_lastWriter.Length < resourceCount)
         {
-            _lastWriter = new int[resourceCount];
+            _lastWriter = new int[GrowCapacity(_lastWriter.Length, resourceCount)];
         }
 
-        if (_readers.Length != resourceCount)
+        if (_readers.Length < resourceCount)
         {
-            _readers = new List<int>[resourceCount];
-            for (var index = 0; index < resourceCount; index++)
+            var capacity = GrowCapacity(_readers.Length, resourceCount);
+            _readers = new List<int>[capacity];
+            for (var index = 0; index < capacity; index++)
             {
                 _readers[index] = new List<int>();
             }
         }
-        else
+
+        for (var index = 0; index < resourceCount; index++)
         {
-            for (var index = 0; index < resourceCount; index++)
-            {
-                _readers[index].Clear();
-            }
+            _readers[index].Clear();
         }
 
         _ready.Clear();
+    }
+
+    private static int GrowCapacity(int current, int required)
+    {
+        var capacity = current == 0 ? 8 : checked(current * 2);
+        return Math.Max(capacity, required);
     }
 
     private void AddEdge(int from, int to)

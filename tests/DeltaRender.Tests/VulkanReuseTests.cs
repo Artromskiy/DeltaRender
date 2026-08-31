@@ -7,6 +7,32 @@ namespace Delta.Render.Tests;
 public sealed class VulkanReuseTests
 {
     [Fact]
+    public void DependencyPlannerReusesCapacityWhenGraphShrinksAndGrows()
+    {
+        var planner = new VulkanGraphDependencyPlanner();
+        var passes = new List<VulkanRenderGraph.GraphPass>
+        {
+            new("first", VulkanRenderGraph.PassKind.Transfer, null),
+            new("second", VulkanRenderGraph.PassKind.Transfer, null),
+        };
+        Span<int> order = stackalloc int[16];
+
+        Assert.Equal(2, planner.Compile(passes, 1, order));
+        var initialPassCapacity = planner.PassCapacity;
+        var initialResourceCapacity = planner.ResourceCapacity;
+
+        passes.RemoveAt(1);
+        Assert.Equal(1, planner.Compile(passes, 1, order));
+        Assert.Equal(initialPassCapacity, planner.PassCapacity);
+        Assert.Equal(initialResourceCapacity, planner.ResourceCapacity);
+
+        passes.Add(new VulkanRenderGraph.GraphPass("second", VulkanRenderGraph.PassKind.Transfer, null));
+        Assert.Equal(2, planner.Compile(passes, 1, order));
+        Assert.Equal(initialPassCapacity, planner.PassCapacity);
+        Assert.Equal(initialResourceCapacity, planner.ResourceCapacity);
+    }
+
+    [Fact]
     public void PipelineCacheCreatesOnceAndReportsWarmHit()
     {
         var cache = new VulkanPipelineCache<object, int>(ReferenceEqualityComparer.Instance);

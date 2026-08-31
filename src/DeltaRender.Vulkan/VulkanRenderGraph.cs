@@ -18,6 +18,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private readonly VulkanGraphReadback _readback;
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
+    private int _orderCount;
     private VulkanRasterCommandContext? _rasterContext;
     private VulkanComputeCommandContext? _computeContext;
     private VulkanTransferCommandContext? _transferContext;
@@ -51,7 +52,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             }
 
             ConfigureRenderPass();
-            _order = _dependencyPlanner.Compile(_passes, _resources.Count);
+            EnsureOrderCapacity(_passes.Count);
+            _orderCount = _dependencyPlanner.Compile(_passes, _resources.Count, _order);
             ValidateRasterSegment();
             ValidateRasterPipelines();
             _built = true;
@@ -79,7 +81,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new InvalidOperationException("A render graph must be built before Execute.");
         }
 
-        if (_order.Length == 0)
+        if (_orderCount == 0)
         {
             _built = false;
             _session.ProfilerState?.Complete(RenderGraphExecutionStatus.NoWork, _resources.Count);
@@ -117,8 +119,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var recordStart = profiler?.StartPhase() ?? 0;
         try
         {
-            profiler?.BeginGpuFrame(_session.CommandBuffer, _order.Length);
-            for (var orderPosition = 0; orderPosition < _order.Length; orderPosition++)
+            profiler?.BeginGpuFrame(_session.CommandBuffer, _orderCount);
+            for (var orderPosition = 0; orderPosition < _orderCount; orderPosition++)
             {
                 var passIndex = _order.RefAt(orderPosition);
                 var pass = _passes[passIndex];
@@ -253,6 +255,17 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         var capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
         _states = new ResourceState[Math.Max(capacity, required)];
+    }
+
+    private void EnsureOrderCapacity(int required)
+    {
+        if (_order.Length >= required)
+        {
+            return;
+        }
+
+        var capacity = _order.Length == 0 ? 8 : checked(_order.Length * 2);
+        _order = new int[Math.Max(capacity, required)];
     }
 
     public int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination)
@@ -549,7 +562,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private void EmitRasterSegmentEntryBarriers(int firstRasterPosition, ResourceState[] states)
     {
         var firstPass = _passes[_order.RefAt(firstRasterPosition)];
-        for (var orderPosition = firstRasterPosition + 1; orderPosition < _order.Length; orderPosition++)
+        for (var orderPosition = firstRasterPosition + 1; orderPosition < _orderCount; orderPosition++)
         {
             var pass = _passes[_order.RefAt(orderPosition)];
             if (pass.Kind != PassKind.Raster)
@@ -652,7 +665,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         _resources.Clear();
         _passes.Clear();
         _readback.Reset();
-        _order = Array.Empty<int>();
+        _orderCount = 0;
         _depthAttachmentResource = null;
         _targetResource = null;
         _depthAttachment = default;
