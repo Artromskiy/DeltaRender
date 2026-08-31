@@ -88,7 +88,7 @@ internal sealed unsafe partial class VulkanRenderGraph
     }
 
     internal readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);
-    private readonly record struct ResourceState(PipelineStageFlags Stages, AccessFlags Access, ImageLayout Layout)
+    internal readonly record struct ResourceState(PipelineStageFlags Stages, AccessFlags Access, ImageLayout Layout)
     {
         internal static ResourceState For(RenderResourceAccess access, RenderPipelineStages stages)
         {
@@ -163,14 +163,4 @@ internal sealed unsafe partial class VulkanRenderGraph
         }
     }
 
-    private sealed class ReadbackRequest(GraphResource resource, int size, ulong sourceOffset, PixelRect region = default, bool isTexture = false)
-    {
-        internal GraphResource Resource = resource;
-        internal int Size = size;
-        internal ulong SourceOffset = sourceOffset;
-        internal ulong StagingOffset;
-        internal bool Submitted;
-        internal PixelRect Region = region;
-        internal bool IsTexture = isTexture;
-    }
 }

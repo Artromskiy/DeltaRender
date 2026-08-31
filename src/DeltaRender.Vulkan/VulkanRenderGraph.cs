@@ -15,7 +15,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private readonly List<GraphResource> _resources = new();
     private readonly List<GraphPass> _passes = new();
     private readonly List<GraphPass> _passPool = new();
-    private readonly List<ReadbackRequest> _readbacks = new();
+    private readonly VulkanGraphReadback _readback;
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
     private VulkanRasterCommandContext? _rasterContext;
@@ -28,7 +28,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private bool _built;
     private bool _disposed;
 
-    internal VulkanRenderGraph(VulkanRenderSession session) => _session = session ?? throw new ArgumentNullException(nameof(session));
+    internal VulkanRenderGraph(VulkanRenderSession session)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _readback = new VulkanGraphReadback(this);
+    }
 
     public void Build(ulong frameNumber, ReadOnlySpan<IRenderFeature> features)
     {
@@ -209,7 +213,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 CommandWriter.EndRenderPass();
             }
 
-            RecordReadbacks(states);
+            _readback.Record(states);
             profiler?.EndRecord(recordStart);
             var submitStart = profiler?.StartPhase() ?? 0;
             if (!_session.EndGraphFrame())
@@ -254,47 +258,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination)
     {
         ThrowIfDisposed();
-        if (!readback.IsValid || readback.Value > (uint)_readbacks.Count)
-        {
-            throw new ArgumentException("The readback handle is invalid.", nameof(readback));
-        }
-
-        var request = _readbacks[(int)readback.Value - 1];
-        if (!request.Submitted)
-        {
-            throw new InvalidOperationException("The readback is not associated with a submitted graph.");
-        }
-
-        if (destination.Length < request.Size)
-        {
-            throw new ArgumentException($"The destination requires at least {request.Size} bytes.", nameof(destination));
-        }
-
-        _session.WaitForReadback();
-        var staging = _session.StagingBuffer;
-        void* pointer = null;
-        var mapped = _session.Api.MapMemory(_session.Device, staging.Memory, request.StagingOffset, (ulong)request.Size, 0, &pointer);
-        if (mapped != Result.Success)
-        {
-            throw new InvalidOperationException($"MapMemory(readback) failed: {mapped}");
-        }
-
-        try
-        {
-            new ReadOnlySpan<byte>(pointer, request.Size).CopyTo(destination);
-            if (!staging.MemoryProperties.HasFlag(MemoryPropertyFlags.HostCoherentBit))
-            {
-                var range = new MappedMemoryRange { SType = StructureType.MappedMemoryRange, Memory = staging.Memory, Offset = 0, Size = (nuint)staging.AllocationSize };
-                VulkanCall.Ensure(_session.Api.InvalidateMappedMemoryRanges(_session.Device, 1, &range), "InvalidateMappedMemoryRanges");
-                new ReadOnlySpan<byte>(pointer, request.Size).CopyTo(destination);
-            }
-        }
-        finally
-        {
-            _session.Api.UnmapMemory(_session.Device, staging.Memory);
-        }
-
-        return request.Size;
+        return _readback.Copy(readback, destination);
     }
 
     public ValueTask DisposeAsync()
@@ -490,35 +454,12 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     public RenderGraphReadbackHandle ReadbackBuffer(RenderGraphBufferHandle buffer, in BufferRange range)
     {
-        ThrowIfMutable();
-        var resource = GetBuffer(buffer);
-        var allocation = resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable.");
-        if (range.IsEmpty || range.Offset > allocation.AllocationSize || range.SizeInBytes > allocation.AllocationSize - range.Offset || range.SizeInBytes > int.MaxValue)
-        {
-            throw new ArgumentException("The readback range is outside the buffer.", nameof(range));
-        }
-
-        _readbacks.Add(new ReadbackRequest(resource, checked((int)range.SizeInBytes), range.Offset));
-        return new RenderGraphReadbackHandle((uint)_readbacks.Count);
+        return _readback.AddBuffer(buffer, range);
     }
 
     public RenderGraphReadbackHandle ReadbackTexture(RenderGraphTextureHandle texture, in PixelRect region)
     {
-        ThrowIfMutable();
-        if (region.IsEmpty || region.X < 0 || region.Y < 0)
-        {
-            throw new ArgumentException("The texture readback region is invalid.", nameof(region));
-        }
-
-        var resource = GetTexture(texture);
-        if (_session.IsWindowed)
-        {
-            throw new NotSupportedException("Windowed texture readback is not supported by the current graph session.");
-        }
-
-        var size = checked(region.Width * region.Height * 4);
-        _readbacks.Add(new ReadbackRequest(resource, size, 0, region, true));
-        return new RenderGraphReadbackHandle((uint)_readbacks.Count);
+        return _readback.AddTexture(texture, region);
     }
 
     internal GraphResource ResolveBuffer(RenderGraphBufferHandle handle) => GetBuffer(handle);
@@ -549,63 +490,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal BufferAllocation StagingBuffer => _session.StagingBuffer;
     internal VulkanRenderSession Session => _session;
-
-    private void RecordReadbacks(ReadOnlySpan<ResourceState> states)
-    {
-        foreach (var request in _readbacks)
-        {
-            var offset = _session.ReserveStaging(request.Size);
-            var staging = _session.StagingBuffer;
-            request.StagingOffset = offset;
-            request.Submitted = true;
-            if (request.IsTexture)
-            {
-                var image = request.Resource.IsTarget ? _session.GraphImage : request.Resource.Image;
-                if (image.Handle == default)
-                {
-                    throw new InvalidOperationException("The texture readback image is unavailable.");
-                }
-
-                var previous = states.RefAt(request.Resource.Index);
-                var imageBarrier = new ImageMemoryBarrier
-                {
-                    SType = StructureType.ImageMemoryBarrier,
-                    SrcAccessMask = previous.Access,
-                    DstAccessMask = AccessFlags.TransferReadBit,
-                    OldLayout = previous.Layout,
-                    NewLayout = ImageLayout.TransferSrcOptimal,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Image = image,
-                    SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 }
-                };
-                var previousStages = previous.Stages;
-                CommandWriter.PipelineBarrier(previousStages == 0 ? PipelineStageFlags.TopOfPipeBit : previousStages, PipelineStageFlags.TransferBit, in imageBarrier);
-                var copy = new BufferImageCopy
-                {
-                    BufferOffset = offset,
-                    BufferRowLength = 0,
-                    BufferImageHeight = 0,
-                    ImageSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, MipLevel = 0, BaseArrayLayer = 0, LayerCount = 1 },
-                    ImageOffset = new Offset3D(request.Region.X, request.Region.Y, 0),
-                    ImageExtent = new Extent3D((uint)request.Region.Width, (uint)request.Region.Height, 1)
-                };
-                CommandWriter.CopyImageToBuffer(image, ImageLayout.TransferSrcOptimal, staging.Buffer, copy);
-            }
-            else
-            {
-                var buffer = request.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The buffer readback resource is unavailable.");
-                var previous = states.RefAt(request.Resource.Index);
-                var sourceBarrier = new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = AccessFlags.TransferReadBit, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = buffer.Buffer, Offset = request.SourceOffset, Size = (ulong)request.Size };
-                CommandWriter.PipelineBarrier(previous.Stages == 0 ? PipelineStageFlags.TopOfPipeBit : previous.Stages, PipelineStageFlags.TransferBit, in sourceBarrier);
-                var copy = new BufferCopy { SrcOffset = request.SourceOffset, DstOffset = offset, Size = (ulong)request.Size };
-                _session.Api.CmdCopyBuffer(_session.CommandBuffer, buffer.Buffer, staging.Buffer, 1, &copy);
-            }
-
-            var hostBarrier = new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = AccessFlags.TransferWriteBit, DstAccessMask = AccessFlags.HostReadBit, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = staging.Buffer, Offset = offset, Size = (ulong)request.Size };
-            CommandWriter.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, in hostBarrier);
-        }
-    }
 
     private void BeginRaster(GraphPass pass)
     {
@@ -767,7 +651,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         _resources.Clear();
         _passes.Clear();
-        _readbacks.Clear();
+        _readback.Reset();
         _order = Array.Empty<int>();
         _depthAttachmentResource = null;
         _targetResource = null;
@@ -860,7 +744,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         pass.Uses.Add(new GraphUse(resource, access, stages));
     }
 
-    private void ThrowIfMutable()
+    internal void ThrowIfMutable()
     {
         ThrowIfDisposed();
         if (_built)
@@ -869,7 +753,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private static BufferUsageFlags ToBufferUsage(RenderBufferUsage usage)
     {
