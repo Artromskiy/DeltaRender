@@ -46,7 +46,7 @@ internal static class Program
             var session = renderer.CreateHeadlessSession(width, height, new RenderSessionOptions(profilingEnabled));
             await using var sessionScope = session.ConfigureAwait(false);
             var graph = session.CreateRenderGraph();
-            var feature = new RasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
+            var feature = new HeadlessRasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
             IRenderFeature[] features = [feature];
             for (var frameNumber = 0UL; frameNumber < frames; frameNumber++)
             {
@@ -158,63 +158,4 @@ internal static class Program
         stream.Write(rgb);
     }
 
-    private sealed class RasterFeature : IRenderFeature
-    {
-        private readonly IGraphicsShaderProgram _program;
-        private readonly RenderTargetHandle _target;
-        private readonly uint _width;
-        private readonly uint _height;
-        private readonly uint _vertexCount;
-        private readonly byte[] _pushConstants = new byte[16];
-        private readonly RasterPass _pass;
-
-        internal RasterFeature(IGraphicsShaderProgram program, RenderTargetHandle target, uint width, uint height, uint vertexCount, float time)
-        {
-            _program = program;
-            _target = target;
-            _width = width;
-            _height = height;
-            _vertexCount = vertexCount;
-            Time = time;
-            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(0, 4), width);
-            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(4, 4), height);
-            BinaryPrimitives.WriteSingleLittleEndian(_pushConstants.AsSpan(8, 4), time);
-            _pass = new RasterPass(width, height, _vertexCount, _pushConstants);
-        }
-
-        internal float Time { get; }
-        internal RenderGraphReadbackHandle Readback { get; private set; }
-
-        public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
-        {
-            var target = graph.ImportTarget(_target);
-            var pass = graph.AddRasterPass(new RasterPassDescription("headless-shader-playground", new RasterPipelineDescription(_program, cullMode: RasterCullMode.None)), _pass);
-            graph.UseColorAttachment(pass, 0, new ColorAttachmentDescription(target, AttachmentLoadOperation.Clear, AttachmentStoreOperation.Store, new ClearColor(0.04f, 0.05f, 0.08f, 1f)));
-            Readback = graph.ReadbackTexture(target, new PixelRect(0, 0, checked((int)_width), checked((int)_height)));
-        }
-    }
-
-    private sealed class RasterPass : IRasterPass
-    {
-        private readonly RenderViewport _viewport;
-        private readonly PixelRect _scissor;
-        private readonly uint _vertexCount;
-        private readonly byte[] _pushConstants;
-
-        internal RasterPass(uint width, uint height, uint vertexCount, byte[] pushConstants)
-        {
-            _viewport = new RenderViewport(0, 0, width, height);
-            _scissor = new PixelRect(0, 0, checked((int)width), checked((int)height));
-            _vertexCount = vertexCount;
-            _pushConstants = pushConstants;
-        }
-
-        public void Record(IRasterCommandContext commands)
-        {
-            commands.SetViewport(in _viewport);
-            commands.SetScissor(in _scissor);
-            commands.PushConstants(_pushConstants);
-            commands.Draw(_vertexCount);
-        }
-    }
 }
