@@ -16,11 +16,12 @@ internal sealed class VulkanHeadlessFrameSlots
 
     public ulong CurrentFrameNumber => CurrentIndex < 0 ? 0 : _slotFrameNumbers[CurrentIndex];
 
-    public void Advance()
+    public int Advance()
     {
         CurrentIndex = _nextSlot;
         _nextSlot = (_nextSlot + 1) % _slotFrameNumbers.Length;
         _slotFrameNumbers[CurrentIndex]++;
+        return CurrentIndex;
     }
 
     public void Reset()

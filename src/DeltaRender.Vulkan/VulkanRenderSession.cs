@@ -20,6 +20,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
     private readonly VulkanHeadlessFrameSlots? _headlessFrameSlots;
+    private VulkanHeadlessFrameSlot[] _headlessFrameResources = [];
     private readonly bool _hasTarget;
     private PhysicalDevice _physicalDevice;
     private Queue _graphicsQueue;
@@ -62,17 +63,17 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private RenderTargetHandle _target;
     private bool _recording;
     private bool _disposed;
-    private readonly VulkanStagingBuffer _stagingBuffer;
+    private VulkanStagingBuffer _stagingBuffer = null!;
 
     private VulkanRenderSession(VulkanRenderer renderer, VulkanSurfaceLease? surfaceLease, WindowMetrics metrics, bool windowed, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
-        _stagingBuffer = new VulkanStagingBuffer(this);
         _profilingEnabled = options.EnableProfiling;
         _profiler = null;
         _surfaceLease = surfaceLease;
         _windowed = windowed;
         _headlessFrameSlots = windowed ? null : new VulkanHeadlessFrameSlots(options.HeadlessFrameSlots);
+        _stagingBuffer = windowed ? new VulkanStagingBuffer(this) : null!;
         _hasTarget = true;
         _surface = surfaceLease is null ? default : new SurfaceKHR { Handle = surfaceLease.Handle };
         var deviceContext = renderer.GetDeviceContext(windowed);
@@ -97,6 +98,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         ImageView[] views = [];
         Framebuffer[] framebuffers = [];
         HeadlessTarget headless = default;
+        VulkanHeadlessFrameSlot[] headlessResources = [];
         KhrSwapchain? swapchainExtension = null;
         try
         {
@@ -127,6 +129,38 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             commandPool = commandResources.CommandPool;
             commandBuffer = commandResources.CommandBuffer;
 
+            if (!_windowed)
+            {
+                headlessResources = new VulkanHeadlessFrameSlot[_headlessFrameSlots?.Count ?? 1];
+                for (var index = 0; index < headlessResources.Length; index++)
+                {
+                    var slot = new VulkanHeadlessFrameSlot(this);
+                    headlessResources[index] = slot;
+                    if (index == 0)
+                    {
+                        slot.Fence = fence;
+                        slot.CommandPool = commandPool;
+                        slot.CommandBuffer = commandBuffer;
+                        slot.TargetImage = headless.Image;
+                        slot.TargetMemory = headless.Memory;
+                        slot.TargetView = headless.View;
+                        slot.TargetFramebuffer = headless.Framebuffer;
+                    }
+                    else
+                    {
+                        var target = CreateHeadlessTarget(_extent, renderPass);
+                        slot.TargetImage = target.Image;
+                        slot.TargetMemory = target.Memory;
+                        slot.TargetView = target.View;
+                        slot.TargetFramebuffer = target.Framebuffer;
+                        var resources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
+                        slot.Fence = resources.Fence;
+                        slot.CommandPool = resources.CommandPool;
+                        slot.CommandBuffer = resources.CommandBuffer;
+                    }
+                }
+            }
+
             _renderPass = renderPass;
             _commandPool = commandPool;
             _commandBuffer = commandBuffer;
@@ -140,11 +174,17 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             _targetMemory = headless.Memory;
             _targetView = headless.View;
             _targetFramebuffer = headless.Framebuffer;
+            _headlessFrameResources = headlessResources;
             _target = new RenderTargetHandle(unchecked((ulong)Interlocked.Increment(ref _nextTarget)), _nextGeneration++);
+            if (!_windowed)
+            {
+                ActivateHeadlessFrameSlot(0);
+            }
             surfaceLease?.TransferToSession();
         }
         catch
         {
+            DestroyHeadlessFrameResources(renderer.Api, _device, headlessResources, skipFirst: !_windowed);
             DestroyPartial(renderer.Api, _device, swapchainExtension, renderPass, swapchain, views, framebuffers, headless, imageAvailable, renderComplete, fence, commandPool, commandBuffer);
             throw;
         }
@@ -153,12 +193,12 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private VulkanRenderSession(VulkanRenderer renderer, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
-        _stagingBuffer = new VulkanStagingBuffer(this);
         _profilingEnabled = options.EnableProfiling;
         _profiler = null;
         _hasTarget = false;
         _windowed = false;
         _headlessFrameSlots = new VulkanHeadlessFrameSlots(options.HeadlessFrameSlots);
+        _stagingBuffer = null!;
         _surfaceLease = null;
         _surface = default;
         var deviceContext = renderer.GetDeviceContext(windowed: false);
@@ -173,10 +213,26 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _format = Format.R8G8B8A8Unorm;
         _renderPass = default;
 
-        var commandResources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
-        _frameFence = commandResources.Fence;
-        _commandPool = commandResources.CommandPool;
-        _commandBuffer = commandResources.CommandBuffer;
+        _headlessFrameResources = new VulkanHeadlessFrameSlot[_headlessFrameSlots.Count];
+        try
+        {
+            for (var index = 0; index < _headlessFrameResources.Length; index++)
+            {
+                var slot = new VulkanHeadlessFrameSlot(this);
+                _headlessFrameResources[index] = slot;
+                var commandResources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
+                slot.Fence = commandResources.Fence;
+                slot.CommandPool = commandResources.CommandPool;
+                slot.CommandBuffer = commandResources.CommandBuffer;
+            }
+
+            ActivateHeadlessFrameSlot(0);
+        }
+        catch
+        {
+            DestroyHeadlessFrameResources(renderer.Api, _device, _headlessFrameResources);
+            throw;
+        }
     }
 
     private static (Fence Fence, CommandPool CommandPool, CommandBuffer CommandBuffer) CreateCommandResources(Vk api, Device device, uint graphicsFamily)
@@ -356,7 +412,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             throw new ArgumentException("The target extent must be non-empty.", nameof(extent));
         }
 
-        WaitForFrame();
+        if (_headlessFrameResources.Length != 0)
+        {
+            WaitForAllHeadlessFrames();
+        }
+        else
+        {
+            WaitForFrame();
+        }
         if (_hasDepthStencilAttachment)
         {
             ConfigureDepthStencilAttachment(null, default);
@@ -369,14 +432,41 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
         else
         {
-            var replacement = CreateHeadlessTarget(newExtent, _renderPass);
-            var old = new HeadlessTarget(_targetImage, _targetMemory, _targetView, _targetFramebuffer);
-            _targetImage = replacement.Image;
-            _targetMemory = replacement.Memory;
-            _targetView = replacement.View;
-            _targetFramebuffer = replacement.Framebuffer;
+            var replacements = new HeadlessTarget[_headlessFrameResources.Length];
+            try
+            {
+                for (var index = 0; index < replacements.Length; index++)
+                {
+                    replacements[index] = CreateHeadlessTarget(newExtent, _renderPass);
+                }
+            }
+            catch
+            {
+                for (var index = 0; index < replacements.Length; index++)
+                {
+                    if (replacements[index].Image.Handle != default)
+                    {
+                        DestroyHeadlessTarget(replacements[index]);
+                    }
+                }
+
+                throw;
+            }
+
+            for (var index = 0; index < _headlessFrameResources.Length; index++)
+            {
+                var slot = _headlessFrameResources[index];
+                var old = new HeadlessTarget(slot.TargetImage, slot.TargetMemory, slot.TargetView, slot.TargetFramebuffer);
+                var replacement = replacements[index];
+                slot.TargetImage = replacement.Image;
+                slot.TargetMemory = replacement.Memory;
+                slot.TargetView = replacement.View;
+                slot.TargetFramebuffer = replacement.Framebuffer;
+                DestroyHeadlessTarget(old);
+            }
+
             _extent = newExtent;
-            DestroyHeadlessTarget(old);
+            ActivateHeadlessFrameSlot(_headlessFrameSlots?.CurrentIndex >= 0 ? _headlessFrameSlots.CurrentIndex : 0);
         }
     }
 
@@ -398,6 +488,46 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal bool HasTarget => _hasTarget;
     internal uint MaxBoundDescriptorSets => Capabilities.MaxBoundDescriptorSets;
     internal BufferAllocation StagingBuffer => _stagingBuffer.Current;
+
+    private void ActivateHeadlessFrameSlot(int index)
+    {
+        var slot = _headlessFrameResources[index];
+        _commandPool = slot.CommandPool;
+        _commandBuffer = slot.CommandBuffer;
+        _frameFence = slot.Fence;
+        _stagingBuffer = slot.StagingBuffer;
+        if (_hasTarget)
+        {
+            _targetImage = slot.TargetImage;
+            _targetMemory = slot.TargetMemory;
+            _targetView = slot.TargetView;
+            _targetFramebuffer = slot.TargetFramebuffer;
+        }
+    }
+
+    private void DestroyHeadlessFrameResources(Vk api, Device device, VulkanHeadlessFrameSlot[] resources, bool skipFirst = false)
+    {
+        for (var index = resources.Length - 1; index >= 0; index--)
+        {
+            var slot = resources[index];
+            if (skipFirst && index == 0)
+            {
+                slot.StagingBuffer.Dispose();
+                continue;
+            }
+
+            slot.StagingBuffer.Dispose();
+            if (slot.TargetFramebuffer.Handle != default || slot.TargetView.Handle != default || slot.TargetImage.Handle != default || slot.TargetMemory.Handle != default)
+            {
+                DestroyHeadlessTarget(api, device, new HeadlessTarget(slot.TargetImage, slot.TargetMemory, slot.TargetView, slot.TargetFramebuffer));
+            }
+
+            if (slot.CommandBuffer.Handle != default || slot.CommandPool.Handle != default || slot.Fence.Handle != default)
+            {
+                DestroyCommandResources(api, device, slot.Fence, slot.CommandPool, slot.CommandBuffer);
+            }
+        }
+    }
 
     internal void ConfigureDepthStencilAttachment(PersistentTexture? texture, in DepthStencilAttachmentDescription description)
     {
@@ -468,6 +598,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             hasAttachment ? ToAttachmentStore(description.StencilStore) : AttachmentStoreOp.DontCare);
         ImageView[] nextViews = [];
         Framebuffer[] nextFramebuffers = [];
+        Framebuffer[] nextHeadlessFramebuffers = [];
         Framebuffer nextTargetFramebuffer = default;
         try
         {
@@ -477,7 +608,19 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             }
             else
             {
-                nextTargetFramebuffer = CreateFramebuffer(Api, Device, nextRenderPass, _targetView, nextDepthView, hasAttachment, _extent, "CreateFramebuffer(target)");
+                nextHeadlessFramebuffers = new Framebuffer[_headlessFrameResources.Length];
+                for (var index = 0; index < nextHeadlessFramebuffers.Length; index++)
+                {
+                    nextHeadlessFramebuffers[index] = CreateFramebuffer(
+                        Api,
+                        Device,
+                        nextRenderPass,
+                        _headlessFrameResources[index].TargetView,
+                        nextDepthView,
+                        hasAttachment,
+                        _extent,
+                        "CreateFramebuffer(target)");
+                }
             }
         }
         catch
@@ -486,6 +629,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             if (nextTargetFramebuffer.Handle != default)
             {
                 Api.DestroyFramebuffer(Device, nextTargetFramebuffer, null);
+            }
+
+            foreach (var framebuffer in nextHeadlessFramebuffers)
+            {
+                if (framebuffer.Handle != default)
+                {
+                    Api.DestroyFramebuffer(Device, framebuffer, null);
+                }
             }
 
             Api.DestroyRenderPass(Device, nextRenderPass, null);
@@ -497,9 +648,15 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             DestroySwapchainViews(Api, Device, _swapchainViews, _swapchainFramebuffers);
         }
-        else if (_targetFramebuffer.Handle != default)
+        else
         {
-            Api.DestroyFramebuffer(Device, _targetFramebuffer, null);
+            foreach (var slot in _headlessFrameResources)
+            {
+                if (slot.TargetFramebuffer.Handle != default)
+                {
+                    Api.DestroyFramebuffer(Device, slot.TargetFramebuffer, null);
+                }
+            }
         }
 
         if (_renderPass.Handle != default)
@@ -510,7 +667,19 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _renderPass = nextRenderPass;
         _swapchainViews = nextViews;
         _swapchainFramebuffers = nextFramebuffers;
-        _targetFramebuffer = nextTargetFramebuffer;
+        if (_windowed)
+        {
+            _targetFramebuffer = nextTargetFramebuffer;
+        }
+        else
+        {
+            for (var index = 0; index < _headlessFrameResources.Length; index++)
+            {
+                _headlessFrameResources[index].TargetFramebuffer = nextHeadlessFramebuffers[index];
+            }
+
+            ActivateHeadlessFrameSlot(_headlessFrameSlots?.CurrentIndex >= 0 ? _headlessFrameSlots.CurrentIndex : 0);
+        }
         _depthImage = depthTexture?.Image ?? default;
         _depthView = depthTexture?.View ?? default;
         _depthFormat = nextDepthFormat;
@@ -560,8 +729,12 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             return false;
         }
 
+        if (_headlessFrameSlots is not null)
+        {
+            ActivateHeadlessFrameSlot(_headlessFrameSlots.Advance());
+        }
+
         WaitForFrame();
-        _headlessFrameSlots?.Advance();
         _stagingBuffer.ReclaimCompleted();
         ReclaimDeferredTransients();
         if (_windowed)
@@ -657,6 +830,23 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         VulkanCall.Ensure(Api.WaitForFences(Device, 1, _frameFence, true, ulong.MaxValue), "WaitForFence");
     }
 
+    private void WaitForAllHeadlessFrames()
+    {
+        if (_headlessFrameResources.Length == 0)
+        {
+            WaitForFrame();
+            return;
+        }
+
+        foreach (var slot in _headlessFrameResources)
+        {
+            if (slot.Fence.Handle != default)
+            {
+                VulkanCall.Ensure(Api.WaitForFences(Device, 1, slot.Fence, true, ulong.MaxValue), "WaitForHeadlessFrameFence");
+            }
+        }
+    }
+
     internal void WaitForReadback() => WaitForFrame();
 
     internal ulong AllocateStaging(ReadOnlySpan<byte> data)
@@ -731,7 +921,18 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     }
 
     private void DisposeStaging()
-        => _stagingBuffer.Dispose();
+    {
+        if (_headlessFrameResources.Length == 0)
+        {
+            _stagingBuffer.Dispose();
+            return;
+        }
+
+        foreach (var slot in _headlessFrameResources)
+        {
+            slot.StagingBuffer.Dispose();
+        }
+    }
 
     private void DisposeTargetResources()
     {
@@ -748,13 +949,26 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
         else if (_hasTarget)
         {
-            DestroyHeadlessTarget(new HeadlessTarget(_targetImage, _targetMemory, _targetView, _targetFramebuffer));
+            foreach (var slot in _headlessFrameResources)
+            {
+                DestroyHeadlessTarget(new HeadlessTarget(slot.TargetImage, slot.TargetMemory, slot.TargetView, slot.TargetFramebuffer));
+            }
         }
     }
 
     private void DisposeCommandResources()
     {
-        DestroyCommandResources(Api, Device, _frameFence, _commandPool, _commandBuffer);
+        if (_headlessFrameResources.Length == 0)
+        {
+            DestroyCommandResources(Api, Device, _frameFence, _commandPool, _commandBuffer);
+        }
+        else
+        {
+            foreach (var slot in _headlessFrameResources)
+            {
+                DestroyCommandResources(Api, Device, slot.Fence, slot.CommandPool, slot.CommandBuffer);
+            }
+        }
 
         if (_renderPass.Handle != default)
         {

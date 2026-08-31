@@ -44,6 +44,7 @@ internal sealed unsafe partial class VulkanRenderSession
         ImageView[] views = [];
         Framebuffer[] framebuffers = [];
         HeadlessTarget headless = default;
+        VulkanHeadlessFrameSlot[] headlessResources = [];
         KhrSwapchain? swapchainExtension = _windowed ? _renderer.GetKhrSwapchain() : null;
         try
         {
@@ -82,6 +83,38 @@ internal sealed unsafe partial class VulkanRenderSession
             commandPool = commandResources.CommandPool;
             commandBuffer = commandResources.CommandBuffer;
 
+            if (!_windowed)
+            {
+                headlessResources = new VulkanHeadlessFrameSlot[_headlessFrameSlots?.Count ?? 1];
+                for (var index = 0; index < headlessResources.Length; index++)
+                {
+                    var slot = new VulkanHeadlessFrameSlot(this);
+                    headlessResources[index] = slot;
+                    if (index == 0)
+                    {
+                        slot.Fence = fence;
+                        slot.CommandPool = commandPool;
+                        slot.CommandBuffer = commandBuffer;
+                        slot.TargetImage = headless.Image;
+                        slot.TargetMemory = headless.Memory;
+                        slot.TargetView = headless.View;
+                        slot.TargetFramebuffer = headless.Framebuffer;
+                    }
+                    else
+                    {
+                        var target = CreateHeadlessTarget(_extent, renderPass);
+                        slot.TargetImage = target.Image;
+                        slot.TargetMemory = target.Memory;
+                        slot.TargetView = target.View;
+                        slot.TargetFramebuffer = target.Framebuffer;
+                        var resources = CreateCommandResources(Api, _device, _graphicsFamily);
+                        slot.Fence = resources.Fence;
+                        slot.CommandPool = resources.CommandPool;
+                        slot.CommandBuffer = resources.CommandBuffer;
+                    }
+                }
+            }
+
             _renderPass = renderPass;
             _commandPool = commandPool;
             _commandBuffer = commandBuffer;
@@ -95,13 +128,19 @@ internal sealed unsafe partial class VulkanRenderSession
             _targetMemory = headless.Memory;
             _targetView = headless.View;
             _targetFramebuffer = headless.Framebuffer;
+            _headlessFrameResources = headlessResources;
             _activeImage = 0;
             _target = _hasTarget ? new RenderTargetHandle(unchecked((ulong)Interlocked.Increment(ref _nextTarget)), NextGeneration()) : default;
+            if (!_windowed)
+            {
+                ActivateHeadlessFrameSlot(0);
+            }
             _renderer.Diagnostics.Merge(diagnostics);
             return true;
         }
         catch (Exception exception)
         {
+            DestroyHeadlessFrameResources(Api, _device, headlessResources, skipFirst: !_windowed);
             DestroyPartial(Api, _device, swapchainExtension, renderPass, swapchain, views, framebuffers, headless, imageAvailable, renderComplete, fence, commandPool, commandBuffer);
             diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-RECOVERY", exception.Message);
             _renderer.Diagnostics.Merge(diagnostics);
@@ -118,7 +157,18 @@ internal sealed unsafe partial class VulkanRenderSession
         _deferredBuffers.Clear();
         _deferredTextures.Clear();
         _resources.Clear();
-        _stagingBuffer.InvalidateDeviceLocalState();
+        if (_headlessFrameResources.Length == 0)
+        {
+            _stagingBuffer.InvalidateDeviceLocalState();
+        }
+        else
+        {
+            foreach (var slot in _headlessFrameResources)
+            {
+                slot.StagingBuffer.InvalidateDeviceLocalState();
+            }
+        }
+        _headlessFrameResources = [];
         _renderPass = default;
         _swapchain = default;
         _swapchainViews = [];
