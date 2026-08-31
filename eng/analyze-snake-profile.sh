@@ -13,6 +13,7 @@ sample_count=${SNAKE_PROFILE_COUNT:-100}
 
 python3 - "$input" "$tsv_output" "$summary_output" "$sample_count" <<'PY'
 import collections
+import math
 import pathlib
 import re
 import statistics
@@ -135,9 +136,16 @@ with tsv_path.open("w", encoding="utf-8") as output:
             )
 
 
+def percentile(values, fraction):
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(len(ordered) * fraction) - 1))
+    return ordered[index]
+
+
 def stats(values):
     return (
         statistics.median(values),
+        percentile(values, 0.95),
         min(values),
         max(values),
         statistics.fmean(values),
@@ -145,8 +153,8 @@ def stats(values):
 
 
 def format_stats(values, suffix="ns"):
-    median, minimum, maximum, mean = stats(values)
-    return f"median={median:.3f} {suffix} min={minimum:.3f} {suffix} max={maximum:.3f} {suffix} mean={mean:.3f} {suffix}"
+    median, p95, minimum, maximum, mean = stats(values)
+    return f"median={median:.3f} {suffix} p95={p95:.3f} {suffix} min={minimum:.3f} {suffix} max={maximum:.3f} {suffix} mean={mean:.3f} {suffix}"
 
 
 groups = collections.defaultdict(lambda: {"cpu": [], "gpu": []})
