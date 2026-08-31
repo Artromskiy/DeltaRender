@@ -20,6 +20,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly UiDisplayListResourceRegistry _registry;
     private readonly TextRenderFeature? _textFeature;
     private readonly UiVisualUploadPass _visualUploadPass;
+    private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
 
@@ -31,7 +32,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private int _visualSegmentPassCount;
     private UiTextPass?[] _textPasses = [];
     private int _textPassCount;
-    private PixelRect[] _resolvedClips = [];
     private PixelRect[] _commandClips = [];
     private byte[] _visualInstanceBytes = [];
     private byte[] _uploadedVisualInstanceBytes = [];
@@ -46,7 +46,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
-    private int[] _clipMarks = [];
     private int[] _visualSeenEpochs = [];
     private int[] _textSeenEpochs = [];
     private int[] _textRunIndices = [];
@@ -75,7 +74,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint _preparedVisualPushConstantSize;
     private uint _preparedVisualPushConstantOffset;
     private bool _hasPreparedVisualDescription;
-    private int _clipMarkEpoch;
     private int _validationEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -125,6 +123,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
         _visualUploadPass = new UiVisualUploadPass(this);
+        _clipResolver = new UiClipResolver(viewport, _diagnostics);
         if (session is not null)
         {
             _visualInstanceAlignment = Math.Max(1UL, session.Capabilities.MinStorageBufferOffsetAlignment);
@@ -199,9 +198,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _clips, displayList.Clips.Length);
         EnsureCapacity(ref _texts, displayList.Text.Length);
         EnsureCapacity(ref _order, displayList.Order.Length);
-        EnsureCapacity(ref _resolvedClips, displayList.Clips.Length);
         EnsureCapacity(ref _commandClips, displayList.Order.Length);
-        EnsureCapacity(ref _clipMarks, displayList.Clips.Length);
         var validationEpoch = NextValidationEpoch();
         EnsureCapacity(ref _visualSeenEpochs, displayList.Visuals.Length);
         EnsureCapacity(ref _textSeenEpochs, displayList.Text.Length);
@@ -226,16 +223,15 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _clipCount = displayList.Clips.Length;
         _textCount = displayList.Text.Length;
         _orderCount = displayList.Order.Length;
+        _clipResolver.SetFrame(_clips, _clipCount);
 
         for (var index = 0; index < _clipCount; index++)
         {
-            if (!TryResolveClip(new UiClipId(index), out var resolvedClip))
+            if (!_clipResolver.TryResolve(new UiClipId(index), out _))
             {
                 ClearFrameStorage();
                 return false;
             }
-
-            _resolvedClips.RefAt(index) = resolvedClip;
         }
 
         _visualSegmentPassCount = 0;
@@ -851,7 +847,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private bool ValidateVisual(UiVisualDraw visual, int orderIndex, out PixelRect clip)
     {
         clip = default;
-        if (!TryGetClip(visual.Clip, out clip, orderIndex))
+        if (!_clipResolver.TryGetClip(visual.Clip, out clip, orderIndex))
         {
             return false;
         }
@@ -938,7 +934,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)
     {
         clip = default;
-        if (!TryGetClip(text.Clip, out clip, orderIndex))
+        if (!_clipResolver.TryGetClip(text.Clip, out clip, orderIndex))
         {
             return false;
         }
@@ -957,80 +953,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         return true;
-    }
-
-    private bool TryGetClip(UiClipId id, out PixelRect clip, int orderIndex)
-    {
-        if (!id.IsValid)
-        {
-            clip = UiDisplayListGeometry.ViewportRect(_viewport);
-            return true;
-        }
-
-        if ((uint)id.Value >= (uint)_clipCount)
-        {
-            clip = default;
-            AddDiagnostic($"Order[{orderIndex}] references missing clip {id.Value}.");
-            return false;
-        }
-
-        clip = _resolvedClips.RefAt(id.Value);
-        return true;
-    }
-
-    private bool TryResolveClip(UiClipId id, out PixelRect result)
-    {
-        result = UiDisplayListGeometry.ViewportRect(_viewport);
-        var stamp = NextClipStamp();
-        var current = id;
-        while (current.IsValid)
-        {
-            if ((uint)current.Value >= (uint)_clipCount)
-            {
-                AddDiagnostic($"Clip {id.Value} has a missing parent/reference {current.Value}.");
-                return false;
-            }
-
-            if (_clipMarks.RefAt(current.Value) == stamp)
-            {
-                AddDiagnostic($"Clip {id.Value} contains a parent cycle.");
-                return false;
-            }
-
-            _clipMarks.RefAt(current.Value) = stamp;
-            var region = _clips.RefAt(current.Value);
-            if (region.Kind != UiClipKind.Rectangle)
-            {
-                AddDiagnostic($"Clip {current.Value} uses unsupported kind {region.Kind}; only rectangular clips are currently accepted.");
-                return false;
-            }
-
-            if (!UiDisplayListGeometry.TryConvertBounds(region.Bounds, out var local))
-            {
-                AddDiagnostic($"Clip {current.Value} has invalid bounds.");
-                return false;
-            }
-
-            result = UiDisplayListGeometry.Intersect(result, local);
-            current = region.Parent;
-        }
-
-        return true;
-    }
-
-    private int NextClipStamp()
-    {
-        if (_clipMarkEpoch == int.MaxValue)
-        {
-            Array.Clear(_clipMarks, 0, _clipCount);
-            _clipMarkEpoch = 1;
-        }
-        else
-        {
-            _clipMarkEpoch++;
-        }
-
-        return _clipMarkEpoch;
     }
 
     private int NextValidationEpoch()
@@ -1068,6 +990,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _packedVisualFrameSize = 0;
         _packedVisualFrameOffset = 0;
         _hasFrame = false;
+        _clipResolver.Clear();
     }
 
     private void AddDiagnostic(string message) => _diagnostics.Add(message);
