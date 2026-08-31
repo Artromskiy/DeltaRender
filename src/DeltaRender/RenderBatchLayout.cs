@@ -199,73 +199,102 @@ internal sealed class RenderBatchLayout
     private void InsertOrdered(int itemIndex, ReadOnlySpan<byte> payload)
     {
         ref var item = ref _items[itemIndex];
-        for (var segmentIndex = 0; segmentIndex < _orderedSegments.Count; segmentIndex++)
+        var segmentIndex = FindFirstOrderedSegment(item.Order, item.Id);
+        if (segmentIndex == _orderedSegments.Count)
         {
-            var segment = _orderedSegments[segmentIndex];
-            var first = _items[segment.ItemIndices[0]];
-            var last = _items[segment.ItemIndices[segment.Count - 1]];
-            if (Compare(item.Order, item.Id, first.Order, first.Id) < 0)
+            if (segmentIndex > 0 && _orderedSegments[segmentIndex - 1].Key == item.Key)
             {
-                if (segment.Key == item.Key)
+                var segment = _orderedSegments[segmentIndex - 1];
+                segment.Append(itemIndex, payload);
+                item.Segment = segment;
+                item.Position = segment.Count - 1;
+                return;
+            }
+
+            InsertNewOrderedSegment(segmentIndex, itemIndex, payload);
+            return;
+        }
+
+        var candidate = _orderedSegments[segmentIndex];
+        var first = _items[candidate.ItemIndices[0]];
+        if (Compare(item.Order, item.Id, first.Order, first.Id) < 0)
+        {
+            if (segmentIndex > 0 && _orderedSegments[segmentIndex - 1].Key == item.Key)
+            {
+                var previous = _orderedSegments[segmentIndex - 1];
+                var previousLast = _items[previous.ItemIndices[previous.Count - 1]];
+                if (Compare(previousLast.Order, previousLast.Id, item.Order, item.Id) < 0)
                 {
-                    segment.Insert(0, itemIndex, payload);
-                    RefreshPositions(segment);
-                    MergeAdjacentOrderedSegments(segmentIndex);
+                    previous.Append(itemIndex, payload);
+                    item.Segment = previous;
+                    item.Position = previous.Count - 1;
                     return;
                 }
+            }
 
-                InsertNewOrderedSegment(segmentIndex, itemIndex, payload);
+            if (candidate.Key == item.Key)
+            {
+                candidate.Insert(0, itemIndex, payload);
+                RefreshPositions(candidate);
+                MergeAdjacentOrderedSegments(segmentIndex);
                 return;
             }
 
-            if (Compare(item.Order, item.Id, last.Order, last.Id) > 0)
-            {
-                if (segment.Key == item.Key &&
-                    (segmentIndex == _orderedSegments.Count - 1 ||
-                     Compare(item.Order, item.Id, _items[_orderedSegments[segmentIndex + 1].ItemIndices[0]].Order, _items[_orderedSegments[segmentIndex + 1].ItemIndices[0]].Id) < 0))
-                {
-                    segment.Append(itemIndex, payload);
-                    item.Segment = segment;
-                    item.Position = segment.Count - 1;
-                    return;
-                }
+            InsertNewOrderedSegment(segmentIndex, itemIndex, payload);
+            return;
+        }
 
-                continue;
-            }
+        var position = 0;
+        while (position < candidate.Count &&
+               Compare(_items[candidate.ItemIndices[position]].Order, _items[candidate.ItemIndices[position]].Id, item.Order, item.Id) < 0)
+        {
+            position++;
+        }
 
-            var position = 0;
-            while (position < segment.Count &&
-                   Compare(_items[segment.ItemIndices[position]].Order, _items[segment.ItemIndices[position]].Id, item.Order, item.Id) < 0)
-            {
-                position++;
-            }
+        if (candidate.Key == item.Key)
+        {
+            candidate.Insert(position, itemIndex, payload);
+            RefreshPositions(candidate);
+            return;
+        }
 
-            if (segment.Key == item.Key)
-            {
-                segment.Insert(position, itemIndex, payload);
-                RefreshPositions(segment);
-                return;
-            }
+        if (position == 0)
+        {
+            InsertNewOrderedSegment(segmentIndex, itemIndex, payload);
+            return;
+        }
 
-            if (position == 0)
-            {
-                InsertNewOrderedSegment(segmentIndex, itemIndex, payload);
-                return;
-            }
-
-            if (position == segment.Count)
-            {
-                InsertNewOrderedSegment(segmentIndex + 1, itemIndex, payload);
-                return;
-            }
-
-            var right = segment.Split(position);
-            _orderedSegments.Insert(segmentIndex + 1, right);
+        if (position == candidate.Count)
+        {
             InsertNewOrderedSegment(segmentIndex + 1, itemIndex, payload);
             return;
         }
 
-        InsertNewOrderedSegment(_orderedSegments.Count, itemIndex, payload);
+        var right = candidate.Split(position);
+        _orderedSegments.Insert(segmentIndex + 1, right);
+        InsertNewOrderedSegment(segmentIndex + 1, itemIndex, payload);
+    }
+
+    private int FindFirstOrderedSegment(RenderBatchOrderKey order, RenderBatchItemId id)
+    {
+        var low = 0;
+        var high = _orderedSegments.Count;
+        while (low < high)
+        {
+            var middle = low + ((high - low) >> 1);
+            var segment = _orderedSegments[middle];
+            var last = _items[segment.ItemIndices[segment.Count - 1]];
+            if (Compare(order, id, last.Order, last.Id) <= 0)
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle + 1;
+            }
+        }
+
+        return low;
     }
 
     private void InsertNewOrderedSegment(int segmentIndex, int itemIndex, ReadOnlySpan<byte> payload)
