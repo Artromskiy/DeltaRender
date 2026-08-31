@@ -10,10 +10,15 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
     private PixelRect _lastScissor;
     private Pipeline _lastGraphicsPipeline;
     private Pipeline _lastComputePipeline;
+    private DescriptorSet[] _lastDescriptorSets = [];
+    private int _lastDescriptorSetCount;
+    private PipelineLayout _lastDescriptorLayout;
+    private PipelineBindPoint _lastDescriptorBindPoint;
     private bool _hasViewport;
     private bool _hasScissor;
     private bool _hasGraphicsPipeline;
     private bool _hasComputePipeline;
+    private bool _hasDescriptorSets;
 
     internal void ResetState()
     {
@@ -21,6 +26,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         _hasScissor = false;
         _hasGraphicsPipeline = false;
         _hasComputePipeline = false;
+        _hasDescriptorSets = false;
     }
 
     internal void SetViewport(in RenderViewport viewport)
@@ -84,6 +90,24 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         PipelineLayout layout,
         ReadOnlySpan<DescriptorSet> descriptorSets)
     {
+        if (_hasDescriptorSets &&
+            _lastDescriptorBindPoint == bindPoint &&
+            _lastDescriptorLayout.Handle == layout.Handle &&
+            DescriptorSetsMatch(descriptorSets))
+        {
+            return;
+        }
+
+        if (_lastDescriptorSets.Length < descriptorSets.Length)
+        {
+            Array.Resize(ref _lastDescriptorSets, descriptorSets.Length);
+        }
+
+        descriptorSets.CopyTo(_lastDescriptorSets);
+        _lastDescriptorSetCount = descriptorSets.Length;
+        _lastDescriptorBindPoint = bindPoint;
+        _lastDescriptorLayout = layout;
+        _hasDescriptorSets = true;
         fixed (DescriptorSet* descriptorSetPointer = descriptorSets)
         {
             session.Api.CmdBindDescriptorSets(
@@ -94,8 +118,26 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
                 (uint)descriptorSets.Length,
                 descriptorSetPointer,
                 0,
-                null);
+            null);
         }
+    }
+
+    private bool DescriptorSetsMatch(ReadOnlySpan<DescriptorSet> descriptorSets)
+    {
+        if (descriptorSets.Length != _lastDescriptorSetCount)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < descriptorSets.Length; index++)
+        {
+            if (_lastDescriptorSets[index].Handle != descriptorSets[index].Handle)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     internal void EndRenderPass()
