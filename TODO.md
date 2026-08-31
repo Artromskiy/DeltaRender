@@ -80,16 +80,56 @@ contract and not in DeltaXAML.
   and resolution through generated `DeltaShader.UI` typed helpers, using the
   producer's cached ABI accessors and reusable feature-owned storage. A
   mismatched or unknown program is rejected with a deterministic diagnostic.
-- [x] Support the current solid/rounded/image/text path when the matching
-  generated rectangle artifact is supplied. Gradients and non-rectangular
-  clips still require explicit shader artifacts and must not silently fall
-  back.
+- [x] Support the current solid/rounded/text path when the matching generated
+  rectangle or text artifact is supplied. Image, gradient and non-rectangular
+  clip values are tracked as explicit renderer gaps below and must not
+  silently fall back.
 - [x] Headless evidence for borrowed lifetime, paint-only updates, registry cache
   hits and zero-allocation unchanged frames is covered. Tests include synchronous
   order copy, nested rectangular clips, deterministic cycle diagnostics,
   unsupported paint rejection, resource registration and rejection of borrowed
   frame access after feature disposal. Native submission remains separate
   acceptance work.
+
+#### Producer values not yet rendered by the current adapter
+
+This audit compares the values emitted by `DeltaXAML` with the actual branches in
+`src/DeltaRender.XAML/`. The entries below are renderer-owned gaps, not requests
+to duplicate XAML state or silently fall back to a solid rectangle.
+
+- [x] Solid rectangles, rounded rectangles and local border/stroke data are
+  accepted by the matching generated `DeltaShader.UI` artifacts. Independent
+  corner radii are preserved in the packed instance payload; the rounded-slice
+  path is covered by headless readback evidence.
+- [ ] Complete `UiVisualKind.Image`: `DeltaXAML` emits an image resource identity
+  and the registry can import its texture, but `UiVisualShaderContract` has no
+  image ABI classifier, so `AddPasses` currently diagnoses the visual as an
+  unsupported kind before recording it. Add a generated image artifact mapping,
+  typed payload packing and ordered texture binding.
+- [ ] Complete custom and gradient visuals: `UiBrush` emits stable linear/radial
+  gradient identities through `UiVisualKind.Custom`, while the registry can store
+  a program; the current classifier still rejects `Custom` and does not pack
+  gradient parameters or resolve gradient resources. Add explicit generated
+  artifact/resource mappings with diagnostics for incompatible payloads.
+- [ ] Render rounded clips. `DeltaXAML` can emit `UiClipKind.RoundedRectangle`
+  with four radii and parent links, but `UiClipResolver` currently accepts only
+  rectangular regions and reports rounded clips as unsupported. Add the
+  renderer-owned stencil/mask/analytic path while preserving nested clip order.
+- [ ] Complete text paint submission. `DeltaXAML` emits outline color/width and
+  a text-effect resource identity, but `ValidateText` rejects non-zero effect
+  data and `TextShaderPacking` always packs zero outline parameters. Add a
+  matching generated text-effect artifact/resource path; do not ignore these
+  fields or substitute another shader.
+- [ ] Close native text pixel evidence for the XAML adapter. Graph construction,
+  atlas allocation and cache/version forwarding are covered, but the latest
+  2048/Snake headless evidence still records text commands without non-clear
+  text pixels. Keep this as an end-to-end shader/atlas/readback gate until a
+  shaped text sample changes the target pixels.
+- [ ] Coordinate the text metadata boundary. `DeltaXAML` retains wrapping,
+  trimming, line-height, weight, style and decorations, while frozen
+  `UiTextDraw` exposes only shaped text, baseline and `UiTextPaint`. The
+  renderer cannot apply those semantics until the producer/contract owners
+  publish an approved neutral extension; it must not infer them from strings.
 
 ### P1 - DeltaRender.Text: reusable implementation slice
 
