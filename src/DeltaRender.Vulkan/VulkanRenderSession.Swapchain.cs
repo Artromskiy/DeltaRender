@@ -11,7 +11,7 @@ internal sealed unsafe partial class VulkanRenderSession
 {
     private void RecreateSwapchain(Extent2D extent)
     {
-        var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
+        var swapchainExtension = _renderer.GetKhrSwapchain();
         if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
         {
             throw new InvalidOperationException("The Vulkan surface no longer has swapchain support.");
@@ -222,7 +222,7 @@ internal sealed unsafe partial class VulkanRenderSession
                 PresentMode = ChoosePresentMode(modes),
                 Clipped = true
             };
-            var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
+            var swapchainExtension = _renderer.GetKhrSwapchain();
             VulkanCall.Ensure(swapchainExtension.CreateSwapchain(Device, createInfo, null, out var swapchain), "CreateSwapchain");
             return swapchain;
         }

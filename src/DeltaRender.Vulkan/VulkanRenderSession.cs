@@ -20,7 +20,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
     private readonly bool _hasTarget;
-    private KhrSwapchain? _swapchainExtension;
     private PhysicalDevice _physicalDevice;
     private Queue _graphicsQueue;
     private Queue _presentQueue;
@@ -97,11 +96,12 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         ImageView[] views = [];
         Framebuffer[] framebuffers = [];
         HeadlessTarget headless = default;
+        KhrSwapchain? swapchainExtension = null;
         try
         {
             if (_windowed)
             {
-                _swapchainExtension = renderer.GetKhrSwapchain();
+                swapchainExtension = renderer.GetKhrSwapchain();
                 if (!renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
                 {
                     throw new InvalidOperationException("The Vulkan surface has no swapchain support.");
@@ -110,7 +110,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 _format = ChooseSurfaceFormat(formats);
                 renderPass = CreateRenderPass(renderer.Api, _device, _format, ImageLayout.PresentSrcKhr);
                 swapchain = CreateSwapchain(_surface, _extent, capabilities, formats, modes);
-                (views, framebuffers) = CreateSwapchainViews(renderer.Api, _swapchainExtension, _device, _extent, renderPass, swapchain, _format);
+                (views, framebuffers) = CreateSwapchainViews(renderer.Api, renderer.GetKhrSwapchain(), _device, _extent, renderPass, swapchain, _format);
                 VulkanCall.Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out imageAvailable), "CreateSemaphore(image available)");
                 VulkanCall.Ensure(renderer.Api.CreateSemaphore(_device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out renderComplete), "CreateSemaphore(render complete)");
             }
@@ -144,7 +144,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
         catch
         {
-            DestroyPartial(renderer.Api, _device, _swapchainExtension, renderPass, swapchain, views, framebuffers, headless, imageAvailable, renderComplete, fence, commandPool, commandBuffer);
+            DestroyPartial(renderer.Api, _device, swapchainExtension, renderPass, swapchain, views, framebuffers, headless, imageAvailable, renderComplete, fence, commandPool, commandBuffer);
             throw;
         }
     }
@@ -169,7 +169,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         _format = Format.R8G8B8A8Unorm;
         _renderPass = default;
-        _swapchainExtension = null;
 
         var commandResources = CreateCommandResources(renderer.Api, _device, _graphicsFamily);
         _frameFence = commandResources.Fence;
@@ -471,7 +470,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             if (_windowed)
             {
-                (nextViews, nextFramebuffers) = CreateSwapchainViews(Api, _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension."), Device, _extent, nextRenderPass, _swapchain, _format, nextDepthView, hasAttachment);
+                (nextViews, nextFramebuffers) = CreateSwapchainViews(Api, _renderer.GetKhrSwapchain(), Device, _extent, nextRenderPass, _swapchain, _format, nextDepthView, hasAttachment);
             }
             else
             {
@@ -564,7 +563,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _stagingCursor = 0;
         if (_windowed)
         {
-            var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
+            var swapchainExtension = _renderer.GetKhrSwapchain();
             var result = swapchainExtension.AcquireNextImage(Device, _swapchain, ulong.MaxValue, _imageAvailable, default, ref _activeImage);
             if (result == Result.ErrorDeviceLost)
             {
@@ -614,7 +613,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 var swapchain = _swapchain;
                 var imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
-                var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
+                var swapchainExtension = _renderer.GetKhrSwapchain();
                 var result = swapchainExtension.QueuePresent(_presentQueue, present);
                 if (result == Result.ErrorDeviceLost)
                 {
@@ -789,7 +788,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             DestroySwapchainViews(_renderer.Api, Device, _swapchainViews, _swapchainFramebuffers);
             if (_swapchain.Handle != default)
             {
-                var swapchainExtension = _swapchainExtension ?? throw new InvalidOperationException("The windowed session has no swapchain extension.");
+                var swapchainExtension = _renderer.GetKhrSwapchain();
                 swapchainExtension.DestroySwapchain(Device, _swapchain, null);
             }
             DestroySemaphore(_imageAvailable);

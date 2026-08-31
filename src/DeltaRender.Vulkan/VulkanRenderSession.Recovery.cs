@@ -52,7 +52,6 @@ internal sealed unsafe partial class VulkanRenderSession
 
             if (_windowed)
             {
-                _swapchainExtension = swapchainExtension;
                 if (!_renderer.QuerySwapchainSupport(_surface, out var capabilities, out var formats, out var modes))
                 {
                     throw new InvalidOperationException("The Vulkan surface has no swapchain support after device recovery.");
@@ -129,7 +128,6 @@ internal sealed unsafe partial class VulkanRenderSession
         _hasDepthStencilAttachment = false;
         _depthDescription = default;
         _target = default;
-        _swapchainExtension = null;
         _commandPool = default;
         _commandBuffer = default;
         _frameFence = default;
