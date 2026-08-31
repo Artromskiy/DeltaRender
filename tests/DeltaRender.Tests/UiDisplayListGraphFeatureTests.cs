@@ -1,6 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Diagnostics;
 using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -141,7 +141,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void AdjacentVisualsUseOneRasterSegmentWithoutReorderingDraws()
     {
-        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
         var visuals = new[] { Solid(1), Solid(2) };
@@ -171,9 +171,33 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void UnchangedWarmVisualPassSkipsInstanceUpload()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var displayList = new UiDisplayList(
+            new[] { Solid(1) },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            new[] { new UiDrawRef(UiDrawKind.Visual, 0) });
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+
+        var firstGraph = new RecordingGraphBuilder();
+        feature.AddPasses(firstGraph, 1);
+        Assert.Equal(1, firstGraph.RecordTransfer().UploadBufferCount);
+
+        var warmGraph = new RecordingGraphBuilder();
+        feature.AddPasses(warmGraph, 2);
+        Assert.Equal(0, warmGraph.RecordTransfer().UploadBufferCount);
+        Assert.Single(warmGraph.RasterPasses);
+    }
+
+    [Fact]
     public void RoundedSliceVisualUsesNineInstancesInOneDraw()
     {
-        var program = RoundedRectangleSliceGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var program = RoundedRectangleSliceGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(800, 500));
         var visual = UiVisualDraw.WithPaint(
@@ -209,8 +233,8 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void ZeroRadiusRoundedVisualUsesSolidProgramWhenSupplied()
     {
-        var roundedProgram = RoundedRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
-        var solidProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var roundedProgram = RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var solidProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(
             session,
@@ -245,7 +269,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void CompatibleVisualsWithDifferentClipsUseOnePassAndPreserveScissorCommands()
     {
-        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
         var clips = new[]
@@ -289,11 +313,11 @@ public sealed class UiDisplayListGraphFeatureTests
         using var textFeature = new TextRenderFeature(
             session,
             textService,
-            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
             new PixelExtent(100, 80));
         using var feature = new UiDisplayListGraphFeature(
             session,
-            SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
             new PixelExtent(100, 80),
             textFeature: textFeature);
 
@@ -330,11 +354,11 @@ public sealed class UiDisplayListGraphFeatureTests
         using var textFeature = new TextRenderFeature(
             session,
             textService,
-            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
             new PixelExtent(100, 80));
         using var feature = new UiDisplayListGraphFeature(
             session,
-            SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
             new PixelExtent(100, 80),
             textFeature: textFeature);
         var displayList = new UiDisplayList(
@@ -371,7 +395,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void FiveThousandAdjacentVisualsUseOneInstancedDraw()
     {
-        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(4096, 4096));
         var visuals = new UiVisualDraw[5000];
@@ -610,7 +634,7 @@ public sealed class UiDisplayListGraphFeatureTests
     private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)
         => BitConverter.Int32BitsToSingle(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]));
 
-    private static readonly byte[] MinimalSpirv =
+    private static readonly byte[] _minimalSpirv =
     [
         0x03, 0x02, 0x23, 0x07,
         0x00, 0x00, 0x01, 0x00,
@@ -665,6 +689,7 @@ public sealed class UiDisplayListGraphFeatureTests
     private sealed class RecordingGraphBuilder : IRenderGraphBuilder
     {
         private uint _nextHandle = 1;
+        private ITransferPass? _transferPass;
 
         public List<IRasterPass> RasterPasses { get; } = [];
 
@@ -688,7 +713,10 @@ public sealed class UiDisplayListGraphFeatureTests
             => new(_nextHandle++);
 
         public RenderGraphPassHandle AddTransferPass(string name, ITransferPass pass)
-            => new(_nextHandle++);
+        {
+            _transferPass = pass;
+            return new RenderGraphPassHandle(_nextHandle++);
+        }
 
         public void UseColorAttachment(RenderGraphPassHandle pass, uint index, in ColorAttachmentDescription attachment)
         {
@@ -718,6 +746,48 @@ public sealed class UiDisplayListGraphFeatureTests
             {
                 pass.Record(commands);
             }
+        }
+
+        public RecordingTransferCommands RecordTransfer()
+        {
+            var commands = new RecordingTransferCommands();
+            _transferPass?.Record(commands);
+            return commands;
+        }
+    }
+
+    private sealed class RecordingTransferCommands : ITransferCommandContext
+    {
+        public int UploadBufferCount { get; private set; }
+
+        public void CopyBuffer(
+            RenderGraphBufferHandle source,
+            RenderGraphBufferHandle destination,
+            ulong sizeInBytes,
+            ulong sourceOffset = 0,
+            ulong destinationOffset = 0)
+        {
+        }
+
+        public void CopyTexture(
+            RenderGraphTextureHandle source,
+            in PixelRect sourceRegion,
+            RenderGraphTextureHandle destination,
+            in PixelRect destinationRegion)
+        {
+        }
+
+        public void UploadBuffer(RenderGraphBufferHandle destination, ReadOnlySpan<byte> data, ulong destinationOffset = 0)
+        {
+            UploadBufferCount++;
+        }
+
+        public void UploadTexture(
+            RenderGraphTextureHandle destination,
+            in PixelRect destinationRegion,
+            ReadOnlySpan<byte> data,
+            uint sourceRowPitch)
+        {
         }
     }
 

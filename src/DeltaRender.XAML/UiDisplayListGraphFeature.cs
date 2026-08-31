@@ -65,6 +65,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderBufferHandle _visualInstanceBuffer;
     private RenderGraphBufferHandle _visualInstanceGraphHandle;
     private bool _visualInstancePayloadDirty = true;
+    private bool _visualInstancesPrepared;
     private bool _flatVisualInstanceBuffer;
     private bool _hasPackedVisualFrame;
     private UiRectangleShaderKind _packedVisualFrameKind;
@@ -623,6 +624,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     private bool PrepareVisualInstances()
     {
+        if (_visualInstancesPrepared)
+        {
+            return true;
+        }
+
         _flatVisualInstanceBuffer = HasUniformVisualInstanceLayout();
         ulong byteCursor = 0;
         var previousOrderIndex = -1;
@@ -669,6 +675,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualInstancePayloadDirty = _uploadedVisualInstanceByteCount != _visualInstanceByteCount ||
             !_visualInstanceBytes.AsSpan(0, _visualInstanceByteCount).SequenceEqual(
                 _uploadedVisualInstanceBytes.AsSpan(0, Math.Min(_uploadedVisualInstanceByteCount, _visualInstanceByteCount)));
+        _visualInstancesPrepared = true;
         return true;
     }
 
@@ -1020,6 +1027,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _orderCount = 0;
         _visualInstanceByteCount = 0;
         _visualInstanceGraphHandle = default;
+        _visualInstancesPrepared = false;
         _flatVisualInstanceBuffer = false;
         _hasPackedVisualFrame = false;
         _packedVisualFrameKind = default;
