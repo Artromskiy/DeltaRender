@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 using Delta.Render;
 
 namespace Delta.Render.Vulkan;
@@ -38,6 +40,10 @@ internal sealed class VulkanSurfaceLease
         _transferred = true;
     }
 
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Surface release is a native boundary; exact-once ownership must convert an unexpected deleter failure into diagnostics.")]
     internal bool TryRelease(out RenderDiagnosticBag diagnostics)
     {
         diagnostics = new RenderDiagnosticBag();
