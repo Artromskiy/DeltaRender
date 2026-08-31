@@ -107,7 +107,7 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         if (VulkanBufferAllocation.IsLive(in allocation))
         {
-            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage)));
+            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage), CurrentHeadlessFrameSlot));
         }
     }
 
@@ -115,7 +115,7 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         if (texture.Image.Handle != default)
         {
-            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage)));
+            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage), CurrentHeadlessFrameSlot));
         }
     }
 
@@ -137,6 +137,12 @@ internal sealed unsafe partial class VulkanRenderSession
 
     internal void ReclaimDeferredTransientsForBuild()
     {
+        if (_headlessFrameSlots is not null)
+        {
+            PrepareHeadlessFrameSlot();
+            return;
+        }
+
         if (_deferredTextures.Count == 0 && _deferredBuffers.Count == 0)
         {
             return;
@@ -144,6 +150,33 @@ internal sealed unsafe partial class VulkanRenderSession
 
         WaitForFrame();
         ReclaimDeferredTransients();
+    }
+
+    private void ReclaimDeferredTransientsForSlot(int slotIndex)
+    {
+        for (var index = _deferredTextures.Count - 1; index >= 0; index--)
+        {
+            var deferred = _deferredTextures[index];
+            if (deferred.FrameSlot != slotIndex)
+            {
+                continue;
+            }
+
+            _transientTextures.Return(deferred.Key, deferred.Texture);
+            _deferredTextures.RemoveAt(index);
+        }
+
+        for (var index = _deferredBuffers.Count - 1; index >= 0; index--)
+        {
+            var deferred = _deferredBuffers[index];
+            if (deferred.FrameSlot != slotIndex)
+            {
+                continue;
+            }
+
+            _transientBuffers.Return(deferred.Key, deferred.Allocation);
+            _deferredBuffers.RemoveAt(index);
+        }
     }
 
     internal void DestroyAllocation(BufferAllocation allocation)

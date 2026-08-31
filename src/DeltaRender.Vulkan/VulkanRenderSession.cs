@@ -62,6 +62,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private uint _nextGeneration = 1;
     private RenderTargetHandle _target;
     private bool _recording;
+    private bool _headlessFramePrepared;
     private bool _disposed;
     private VulkanStagingBuffer _stagingBuffer = null!;
 
@@ -489,6 +490,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal uint MaxBoundDescriptorSets => Capabilities.MaxBoundDescriptorSets;
     internal BufferAllocation StagingBuffer => _stagingBuffer.Current;
 
+    private int CurrentHeadlessFrameSlot => _headlessFrameSlots?.CurrentIndex ?? -1;
+
     private void ActivateHeadlessFrameSlot(int index)
     {
         var slot = _headlessFrameResources[index];
@@ -731,12 +734,19 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         if (_headlessFrameSlots is not null)
         {
-            ActivateHeadlessFrameSlot(_headlessFrameSlots.Advance());
-        }
+            if (!_headlessFramePrepared)
+            {
+                PrepareHeadlessFrameSlot();
+            }
 
-        WaitForFrame();
-        _stagingBuffer.ReclaimCompleted();
-        ReclaimDeferredTransients();
+            _headlessFramePrepared = false;
+        }
+        else
+        {
+            WaitForFrame();
+            _stagingBuffer.ReclaimCompleted();
+            ReclaimDeferredTransients();
+        }
         if (_windowed)
         {
             var swapchainExtension = _renderer.GetKhrSwapchain();
@@ -811,6 +821,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         finally
         {
             _recording = false;
+            _headlessFramePrepared = false;
         }
     }
 
@@ -823,6 +834,21 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         Api.ResetCommandBuffer(_commandBuffer, 0);
         _recording = false;
+        _headlessFramePrepared = false;
+    }
+
+    private void PrepareHeadlessFrameSlot()
+    {
+        if (_headlessFrameSlots is null || _headlessFramePrepared)
+        {
+            return;
+        }
+
+        ActivateHeadlessFrameSlot(_headlessFrameSlots.Advance());
+        WaitForFrame();
+        _stagingBuffer.ReclaimCompleted();
+        ReclaimDeferredTransientsForSlot(_headlessFrameSlots.CurrentIndex);
+        _headlessFramePrepared = true;
     }
 
     internal void WaitForFrame()
@@ -997,6 +1023,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly record struct HeadlessTarget(Image Image, DeviceMemory Memory, ImageView View, Framebuffer Framebuffer);
     private readonly record struct TransientBufferKey(ulong SizeInBytes, RenderBufferUsage Usage);
     private readonly record struct TransientTextureKey(uint Width, uint Height, RenderTextureFormat Format, uint MipLevels, uint Layers, uint Samples, RenderTextureUsage Usage);
-    private readonly record struct DeferredBuffer(BufferAllocation Allocation, TransientBufferKey Key);
-    private readonly record struct DeferredTexture(PersistentTexture Texture, TransientTextureKey Key);
+    private readonly record struct DeferredBuffer(BufferAllocation Allocation, TransientBufferKey Key, int FrameSlot);
+    private readonly record struct DeferredTexture(PersistentTexture Texture, TransientTextureKey Key, int FrameSlot);
 }

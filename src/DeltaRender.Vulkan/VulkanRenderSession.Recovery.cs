@@ -196,6 +196,7 @@ internal sealed unsafe partial class VulkanRenderSession
         _presentFamily = uint.MaxValue;
         _memoryProperties = default;
         _recording = false;
+        _headlessFramePrepared = false;
         _headlessFrameSlots?.Reset();
         _ = NextGeneration();
     }
