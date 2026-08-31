@@ -363,10 +363,10 @@ public sealed class RenderBatchingTests
         var material = batcher.RegisterMaterial([]);
         var clip = new PixelRect(0, 0, 64, 64);
 
+        Span<byte> payload = stackalloc byte[4];
         for (var index = 0; index < displayList.Order.Length; index++)
         {
             var draw = displayList.Order[index];
-            Span<byte> payload = stackalloc byte[4];
             payload[0] = (byte)(10 + index);
             var pipeline = draw.Kind == UiDrawKind.Text ? pipelines[1] : pipelines[0];
             var change = new RenderBatchItemChange(

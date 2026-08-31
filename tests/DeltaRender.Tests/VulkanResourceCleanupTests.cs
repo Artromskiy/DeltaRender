@@ -24,6 +24,6 @@ public sealed class VulkanResourceCleanupTests
             }));
 
         Assert.Equal(ExpectedOrder, order);
-        Assert.Contains("injected cleanup failure", aggregate.ToString());
+        Assert.Contains("injected cleanup failure", aggregate.ToString(), StringComparison.Ordinal);
     }
 }
