@@ -152,7 +152,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         RenderSamplerHandle sampler = default;
         try
         {
-            _pages[0] = CreateAtlasPage();
+            _pages.RefAt(0) = CreateAtlasPage();
             _pageCount = 1;
             sampler = session.CreateSampler(new RenderSamplerDescription());
             instanceBuffer = session.CreateBuffer(new RenderBufferDescription(
@@ -175,7 +175,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             for (var index = _pageCount - 1; index >= 0; index--)
             {
-                var page = _pages[index];
+                var page = _pages.RefAt(index);
                 if (page is not null && page.Texture.IsValid)
                 {
                     session.Release(page.Texture);
@@ -220,7 +220,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         EnsurePendingCapacity(_pendingRunCount + 1);
-        _pendingRuns[_pendingRunCount] = new PendingRun(
+        _pendingRuns.RefAt(_pendingRunCount) = new PendingRun(
             text,
             originX,
             originY,
@@ -290,11 +290,11 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _uploadPageCount = 0;
         for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
         {
-            var page = _pages[pageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
-            _pageGraphHandles[pageIndex] = graph.ImportTexture(page.Texture);
+            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+            _pageGraphHandles.RefAt(pageIndex) = graph.ImportTexture(page.Texture);
             if (page.Dirty)
             {
-                _uploadPageIndices[_uploadPageCount++] = pageIndex;
+                _uploadPageIndices.RefAt(_uploadPageCount++) = pageIndex;
             }
         }
 
@@ -308,7 +308,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
             {
-                graph.UseTexture(upload, _pageGraphHandles[_uploadPageIndices[uploadIndex]], RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+                graph.UseTexture(upload, _pageGraphHandles.RefAt(_uploadPageIndices.RefAt(uploadIndex)), RenderResourceAccess.Write, RenderPipelineStages.Transfer);
             }
         }
 
@@ -321,7 +321,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         graph.UseBuffer(pass, _instanceGraphHandle, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
         for (var batchIndex = 0; batchIndex < _batchCount; batchIndex++)
         {
-            graph.UseTexture(pass, _pageGraphHandles[_batches[batchIndex].PageIndex], RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+            graph.UseTexture(pass, _pageGraphHandles.RefAt(_batches.RefAt(batchIndex).PageIndex), RenderResourceAccess.Read, RenderPipelineStages.Fragment);
         }
     }
 
@@ -353,8 +353,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         var lastBatch = 0;
         for (var runIndex = firstRun; runIndex < firstRun + runCount; runIndex++)
         {
-            var batchStart = _runBatchStarts[runIndex];
-            var batchCount = _runBatchCounts[runIndex];
+            var batchStart = _runBatchStarts.RefAt(runIndex);
+            var batchCount = _runBatchCounts.RefAt(runIndex);
             if (batchCount == 0)
             {
                 continue;
@@ -371,10 +371,10 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         for (var batchIndex = firstBatch; batchIndex < lastBatch; batchIndex++)
         {
-            var batch = _batches[batchIndex];
+            var batch = _batches.RefAt(batchIndex);
             commands.BindTexture(
                 _atlasBinding,
-                _pageGraphHandles[batch.PageIndex],
+                _pageGraphHandles.RefAt(batch.PageIndex),
                 _sampler);
             commands.SetScissor(batch.Clip);
             commands.Draw(6, checked((uint)batch.Count), 0, checked((uint)batch.Start));
@@ -407,7 +407,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         for (var pageIndex = _pageCount - 1; pageIndex >= 0; pageIndex--)
         {
-            var page = _pages[pageIndex];
+            var page = _pages.RefAt(pageIndex);
             if (page is not null && page.Texture.IsValid)
             {
                 _session.Release(page.Texture);
@@ -424,7 +424,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         EnsureRunBatchCapacity(_pendingRunCount);
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
         {
-            var pending = _pendingRuns[runIndex];
+            var pending = _pendingRuns.RefAt(runIndex);
             var penX = 0f;
             var penY = 0f;
             var runInstanceStart = _instanceCount;
@@ -437,8 +437,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                     .CopyTo(_instanceBytes.AsSpan(destinationOffset, cachedRun.PackedByteCount));
                 var cachedFirstBatch = AppendCachedBatches(cachedRun, runInstanceStart, pending.MergeWithPrevious, useStamp);
                 _instanceCount += cachedRun.InstanceCount;
-                _runBatchStarts[runIndex] = cachedFirstBatch < 0 ? 0 : cachedFirstBatch;
-                _runBatchCounts[runIndex] = cachedFirstBatch < 0 ? 0 : _batchCount - cachedFirstBatch;
+                _runBatchStarts.RefAt(runIndex) = cachedFirstBatch < 0 ? 0 : cachedFirstBatch;
+                _runBatchCounts.RefAt(runIndex) = cachedFirstBatch < 0 ? 0 : _batchCount - cachedFirstBatch;
                 continue;
             }
 
@@ -458,7 +458,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                         var glyphX = runX + glyphPenX + glyph.OffsetX;
                         var glyphY = runY + glyphPenY + glyph.OffsetY;
                         var plane = placement.PlaneBounds;
-                        _instances[_instanceCount] = new GlyphInstance
+                        _instances.RefAt(_instanceCount) = new GlyphInstance
                         {
                             PixelMin = new float2(glyphX + plane.Left, glyphY + plane.Top),
                             PixelMax = new float2(glyphX + plane.Right, glyphY + plane.Bottom),
@@ -479,8 +479,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 penY += run.AdvanceY;
             }
 
-            _runBatchStarts[runIndex] = firstBatch < 0 ? 0 : firstBatch;
-            _runBatchCounts[runIndex] = firstBatch < 0 ? 0 : _batchCount - firstBatch;
+            _runBatchStarts.RefAt(runIndex) = firstBatch < 0 ? 0 : firstBatch;
+            _runBatchCounts.RefAt(runIndex) = firstBatch < 0 ? 0 : _batchCount - firstBatch;
 
             var runInstanceCount = _instanceCount - runInstanceStart;
             if (runInstanceCount > 0)
@@ -520,7 +520,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         {
             if (!placement.IsEmpty)
             {
-                var cachedPage = _pages[placement.PageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+                var cachedPage = _pages.RefAt(placement.PageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
                 cachedPage.LastUse = useStamp;
             }
 
@@ -555,7 +555,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             pageIndex = CreateAtlasPageSlot(useStamp);
         }
 
-        var page = _pages[pageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+        var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
         PreparePagePlacement(page, width, height);
         var destinationX = page.CursorX;
         var destinationY = page.CursorY;
@@ -584,7 +584,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             _atlasUseStamp = 1;
             for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
             {
-                var page = _pages[pageIndex];
+                var page = _pages.RefAt(pageIndex);
                 if (page is not null)
                 {
                     page.LastUse = 0;
@@ -601,7 +601,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
         {
-            var page = _pages[pageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
             if (CanPlace(page, width, height))
             {
                 return pageIndex;
@@ -643,7 +643,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         {
             EnsurePageCapacity(_pageCount + 1);
             var page = CreateAtlasPage();
-            _pages[_pageCount] = page;
+            _pages.RefAt(_pageCount) = page;
             return _pageCount++;
         }
 
@@ -656,7 +656,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         var oldestUseStamp = ulong.MaxValue;
         for (var pageIndex = 0; pageIndex < _pageCount; pageIndex++)
         {
-            var page = _pages[pageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+            var page = _pages.RefAt(pageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
             if (page.LastUse == useStamp)
             {
                 continue;
@@ -688,7 +688,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             _glyphs.Remove(key);
         }
 
-        var pageToRecycle = _pages[pageIndexToRecycle] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+        var pageToRecycle = _pages.RefAt(pageIndexToRecycle) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
         Array.Clear(pageToRecycle.Pixels);
         pageToRecycle.CursorX = 0;
         pageToRecycle.CursorY = 0;
@@ -807,7 +807,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         if (allowMerge && _batchCount > 0)
         {
-            ref var last = ref _batches[_batchCount - 1];
+            ref var last = ref _batches.RefAt(_batchCount - 1);
             if (last.PageIndex == pageIndex && last.Clip == clip && last.Start + last.Count == instance)
             {
                 last.Count = checked(last.Count + count);
@@ -816,7 +816,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         EnsureBatchCapacity(_batchCount + 1);
-        _batches[_batchCount] = new TextBatch(pageIndex, clip, instance, count);
+        _batches.RefAt(_batchCount) = new TextBatch(pageIndex, clip, instance, count);
         return _batchCount++;
     }
 
@@ -824,7 +824,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         if (_localRunBatchCount > 0)
         {
-            ref var last = ref _localRunBatches[_localRunBatchCount - 1];
+            ref var last = ref _localRunBatches.RefAt(_localRunBatchCount - 1);
             if (last.PageIndex == pageIndex && last.Clip == clip && last.Start + last.Count == instance)
             {
                 last.Count++;
@@ -833,7 +833,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         EnsureLocalBatchCapacity(_localRunBatchCount + 1);
-        _localRunBatches[_localRunBatchCount++] = new TextBatch(pageIndex, clip, instance, 1);
+        _localRunBatches.RefAt(_localRunBatchCount++) = new TextBatch(pageIndex, clip, instance, 1);
     }
 
     private int AppendCachedBatches(CachedRun cachedRun, int instanceStart, bool mergeWithPrevious, ulong useStamp)
@@ -841,8 +841,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         var firstBatch = -1;
         for (var batchIndex = 0; batchIndex < cachedRun.BatchCount; batchIndex++)
         {
-            var cachedBatch = cachedRun.Batches[batchIndex];
-            var page = _pages[cachedBatch.PageIndex] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+            var cachedBatch = cachedRun.Batches.RefAt(batchIndex);
+            var page = _pages.RefAt(cachedBatch.PageIndex) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
             page.LastUse = useStamp;
             var batch = AppendBatch(
                 cachedBatch.Clip,
@@ -1300,9 +1300,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
                 {
-                    var page = owner._pages[owner._uploadPageIndices[uploadIndex]] ?? throw new InvalidOperationException("The text atlas page is unavailable.");
+                    var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex)) ?? throw new InvalidOperationException("The text atlas page is unavailable.");
                     commands.UploadTexture(
-                        owner._pageGraphHandles[owner._uploadPageIndices[uploadIndex]],
+                        owner._pageGraphHandles.RefAt(owner._uploadPageIndices.RefAt(uploadIndex)),
                         new PixelRect(0, 0, checked((int)owner._atlasWidth), checked((int)owner._atlasHeight)),
                         page.Pixels,
                         checked(owner._atlasWidth * (uint)owner._atlasBytesPerPixel));
@@ -1323,7 +1323,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
                 {
-                    var page = owner._pages[owner._uploadPageIndices[uploadIndex]];
+                    var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex));
                     if (page is not null)
                     {
                         page.Dirty = true;
@@ -1335,7 +1335,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
             {
-                var page = owner._pages[owner._uploadPageIndices[uploadIndex]];
+                var page = owner._pages.RefAt(owner._uploadPageIndices.RefAt(uploadIndex));
                 if (page is not null)
                 {
                     page.Dirty = false;

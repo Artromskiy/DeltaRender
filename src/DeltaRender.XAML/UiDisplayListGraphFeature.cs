@@ -245,7 +245,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             throw new ArgumentOutOfRangeException(nameof(orderIndex));
         }
 
-        return _commandClips[orderIndex];
+        return _commandClips.RefAt(orderIndex);
     }
 
     /// <summary>
@@ -292,16 +292,18 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _clipCount; index++)
         {
-            if (!TryResolveClip(new UiClipId(index), out _resolvedClips[index]))
+            if (!TryResolveClip(new UiClipId(index), out var resolvedClip))
             {
                 ClearFrameStorage();
                 return false;
             }
+
+            _resolvedClips.RefAt(index) = resolvedClip;
         }
 
         for (var index = 0; index < _orderCount; index++)
         {
-            var draw = _order[index];
+            var draw = _order.RefAt(index);
             if (!draw.IsValid)
             {
                 AddDiagnostic($"Order[{index}] is not a valid visual or text reference.");
@@ -316,19 +318,19 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     continue;
                 }
 
-                if (_seenVisuals[draw.Index])
+                if (_seenVisuals.RefAt(draw.Index))
                 {
                     AddDiagnostic($"Order[{index}] references visual {draw.Index} more than once.");
                     continue;
                 }
 
-                _seenVisuals[draw.Index] = true;
-                if (!ValidateVisual(_visuals[draw.Index], index, out var clip))
+                _seenVisuals.RefAt(draw.Index) = true;
+                if (!ValidateVisual(_visuals.RefAt(draw.Index), index, out var clip))
                 {
                     continue;
                 }
 
-                _commandClips[index] = clip;
+                _commandClips.RefAt(index) = clip;
             }
             else
             {
@@ -338,25 +340,25 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     continue;
                 }
 
-                if (_seenTexts[draw.Index])
+                if (_seenTexts.RefAt(draw.Index))
                 {
                     AddDiagnostic($"Order[{index}] references text {draw.Index} more than once.");
                     continue;
                 }
 
-                _seenTexts[draw.Index] = true;
-                if (!ValidateText(_texts[draw.Index], index, out var clip))
+                _seenTexts.RefAt(draw.Index) = true;
+                if (!ValidateText(_texts.RefAt(draw.Index), index, out var clip))
                 {
                     continue;
                 }
 
-                _commandClips[index] = clip;
+                _commandClips.RefAt(index) = clip;
             }
         }
 
         for (var index = 0; index < _visualCount; index++)
         {
-            if (!_seenVisuals[index])
+            if (!_seenVisuals.RefAt(index))
             {
                 AddDiagnostic($"Visual {index} is not present in the canonical Order span.");
             }
@@ -364,7 +366,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _textCount; index++)
         {
-            if (!_seenTexts[index])
+            if (!_seenTexts.RefAt(index))
             {
                 AddDiagnostic($"Text {index} is not present in the canonical Order span.");
             }
@@ -410,21 +412,21 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 var previousWasText = false;
                 for (var index = 0; index < _orderCount; index++)
                 {
-                    var draw = _order[index];
+                    var draw = _order.RefAt(index);
                     if (draw.Kind != UiDrawKind.Text)
                     {
                         previousWasText = false;
                         continue;
                     }
 
-                    var text = _texts[draw.Index];
+                    var text = _texts.RefAt(draw.Index);
                     var color = text.Paint.FillColor;
-                    _textRunIndices[index] = _textFeature.QueueCompositeRun(
+                    _textRunIndices.RefAt(index) = _textFeature.QueueCompositeRun(
                         text.Text,
                         text.BaselineOrigin.x,
                         text.BaselineOrigin.y,
                         new Vector4(color.x, color.y, color.z, color.w),
-                        _commandClips[index],
+                        _commandClips.RefAt(index),
                         mergeWithPrevious: previousWasText,
                         producerRunId: text.RunId.Value,
                         producerRunGeneration: text.RunId.Generation,
@@ -439,7 +441,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _orderCount; index++)
         {
-            if (_order[index].Kind == UiDrawKind.Visual && !_commandClips[index].IsEmpty)
+            if (_order.RefAt(index).Kind == UiDrawKind.Visual && !_commandClips.RefAt(index).IsEmpty)
             {
                 TryPrepareVisual(graph, index);
             }
@@ -463,7 +465,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _orderCount; index++)
         {
-            var draw = _order[index];
+            var draw = _order.RefAt(index);
             if (draw.Kind == UiDrawKind.Text)
             {
                 if (!textPrepared || _textFeature is null)
@@ -472,13 +474,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 }
 
                 var end = index + 1;
-                while (end < _orderCount && _order[end].Kind == UiDrawKind.Text)
+                while (end < _orderCount && _order.RefAt(end).Kind == UiDrawKind.Text)
                 {
                     end++;
                 }
 
-                var firstRun = _textRunIndices[index];
-                var lastRun = _textRunIndices[end - 1];
+                var firstRun = _textRunIndices.RefAt(index);
+                var lastRun = _textRunIndices.RefAt(end - 1);
                 var textPass = graph.AddRasterPass(
                     new RasterPassDescription(
                         "DeltaRender.XAML.Text",
@@ -493,21 +495,21 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
-            var clip = _commandClips[index];
+            var clip = _commandClips.RefAt(index);
             if (clip.IsEmpty)
             {
                 continue;
             }
 
-            if (_visualPrograms[index] is not { } program)
+            if (_visualPrograms.RefAt(index) is not { } program)
             {
                 continue;
             }
 
             var visualEnd = index + 1;
             while (visualEnd < _orderCount &&
-                   _order[visualEnd].Kind == UiDrawKind.Visual &&
-                   !_commandClips[visualEnd].IsEmpty &&
+                   _order.RefAt(visualEnd).Kind == UiDrawKind.Visual &&
+                   !_commandClips.RefAt(visualEnd).IsEmpty &&
                    CanJoinVisualSegment(index, visualEnd))
             {
                 visualEnd++;
@@ -526,9 +528,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             for (var visualIndex = index; visualIndex < visualEnd; visualIndex++)
             {
-                if (_visualImageTextures[visualIndex].HasValue)
+                if (_visualImageTextures.RefAt(visualIndex).HasValue)
                 {
-                    var graphTexture = _visualImageTextures[visualIndex] ?? throw new InvalidOperationException("The image graph resource was not imported.");
+                    var graphTexture = _visualImageTextures.RefAt(visualIndex) ?? throw new InvalidOperationException("The image graph resource was not imported.");
                     graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
                 }
             }
@@ -539,8 +541,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     private bool TryPrepareVisual(IRenderGraphBuilder graph, int orderIndex)
     {
-        var draw = _order[orderIndex];
-        var visual = _visuals[draw.Index];
+        var draw = _order.RefAt(orderIndex);
+        var visual = _visuals.RefAt(draw.Index);
         var program = ResolveVisualProgram(visual);
         if (!UiVisualShaderContract.TryDescribeInstance(
                 program,
@@ -566,27 +568,27 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        _visualPrograms[orderIndex] = program;
-        _visualPushConstantSizes[orderIndex] = pushConstantSize;
-        _visualInstanceStrides[orderIndex] = instanceStride;
-        _visualInstanceBindings[orderIndex] = instanceBinding;
-        _visualShaderKinds[orderIndex] = shaderKind;
-        _visualFramePushConstantOffsets[orderIndex] = pushConstantOffset;
-        _visualImageTextures[orderIndex] = null;
-        _visualImageSamplers[orderIndex] = default;
-        _visualImageBindings[orderIndex] = null;
+        _visualPrograms.RefAt(orderIndex) = program;
+        _visualPushConstantSizes.RefAt(orderIndex) = pushConstantSize;
+        _visualInstanceStrides.RefAt(orderIndex) = instanceStride;
+        _visualInstanceBindings.RefAt(orderIndex) = instanceBinding;
+        _visualShaderKinds.RefAt(orderIndex) = shaderKind;
+        _visualFramePushConstantOffsets.RefAt(orderIndex) = pushConstantOffset;
+        _visualImageTextures.RefAt(orderIndex) = null;
+        _visualImageSamplers.RefAt(orderIndex) = default;
+        _visualImageBindings.RefAt(orderIndex) = null;
         if (visual.Kind == UiVisualKind.Image)
         {
             if (!_registry.TryResolveImage(visual.Resource, out var imageTexture, out var imageSampler, out var imageBinding) || !imageBinding.HasValue)
             {
                 AddDiagnostic($"Image resource {visual.Resource.Value} is not registered with a fragment binding.");
-                _visualPrograms[orderIndex] = null;
+                _visualPrograms.RefAt(orderIndex) = null;
                 return false;
             }
 
-            _visualImageTextures[orderIndex] = graph.ImportTexture(imageTexture);
-            _visualImageSamplers[orderIndex] = imageSampler;
-            _visualImageBindings[orderIndex] = imageBinding;
+            _visualImageTextures.RefAt(orderIndex) = graph.ImportTexture(imageTexture);
+            _visualImageSamplers.RefAt(orderIndex) = imageSampler;
+            _visualImageBindings.RefAt(orderIndex) = imageBinding;
         }
 
         return true;
@@ -599,9 +601,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var previousOrderIndex = -1;
         for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
         {
-            if (_order[orderIndex].Kind != UiDrawKind.Visual ||
-                _commandClips[orderIndex].IsEmpty ||
-                _visualPrograms[orderIndex] is null)
+            if (_order.RefAt(orderIndex).Kind != UiDrawKind.Visual ||
+                _commandClips.RefAt(orderIndex).IsEmpty ||
+                _visualPrograms.RefAt(orderIndex) is null)
             {
                 previousOrderIndex = -1;
                 continue;
@@ -613,13 +615,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 byteCursor = Align(byteCursor, _visualInstanceAlignment);
             }
 
-            var stride = _visualInstanceStrides[orderIndex];
+            var stride = _visualInstanceStrides.RefAt(orderIndex);
             var offset = checked((int)byteCursor);
             var end = checked(offset + (int)stride);
             EnsureCapacity(ref _visualInstanceBytes, end);
-            var visual = _visuals[_order[orderIndex].Index];
+            var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
             var written = UiVisualShaderContract.PackInstance(
-                _visualShaderKinds[orderIndex],
+                _visualShaderKinds.RefAt(orderIndex),
                 in visual,
                 _visualInstanceBytes.AsSpan(offset, checked((int)stride)));
             if (written != stride)
@@ -628,7 +630,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 return false;
             }
 
-            _visualInstanceOffsets[orderIndex] = offset;
+            _visualInstanceOffsets.RefAt(orderIndex) = offset;
             byteCursor = checked(byteCursor + stride);
             previousOrderIndex = orderIndex;
         }
@@ -648,7 +650,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var found = false;
         for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
         {
-            if (_order[orderIndex].Kind != UiDrawKind.Visual || _commandClips[orderIndex].IsEmpty || _visualPrograms[orderIndex] is not { } candidate)
+            if (_order.RefAt(orderIndex).Kind != UiDrawKind.Visual || _commandClips.RefAt(orderIndex).IsEmpty || _visualPrograms.RefAt(orderIndex) is not { } candidate)
             {
                 continue;
             }
@@ -656,13 +658,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             if (!found)
             {
                 program = candidate;
-                stride = _visualInstanceStrides[orderIndex];
-                binding = _visualInstanceBindings[orderIndex];
+                stride = _visualInstanceStrides.RefAt(orderIndex);
+                binding = _visualInstanceBindings.RefAt(orderIndex);
                 found = true;
                 continue;
             }
 
-            if (!ReferenceEquals(program, candidate) || stride != _visualInstanceStrides[orderIndex] || binding != _visualInstanceBindings[orderIndex])
+            if (!ReferenceEquals(program, candidate) || stride != _visualInstanceStrides.RefAt(orderIndex) || binding != _visualInstanceBindings.RefAt(orderIndex))
             {
                 return false;
             }
@@ -730,47 +732,47 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     }
 
     private bool CanJoinVisualSegment(int firstOrderIndex, int nextOrderIndex)
-        => ReferenceEquals(_visualPrograms[firstOrderIndex], _visualPrograms[nextOrderIndex]) &&
-           _visualPushConstantSizes[firstOrderIndex] == _visualPushConstantSizes[nextOrderIndex] &&
-           _visualInstanceStrides[firstOrderIndex] == _visualInstanceStrides[nextOrderIndex] &&
-           _visualInstanceBindings[firstOrderIndex] == _visualInstanceBindings[nextOrderIndex];
+        => ReferenceEquals(_visualPrograms.RefAt(firstOrderIndex), _visualPrograms.RefAt(nextOrderIndex)) &&
+           _visualPushConstantSizes.RefAt(firstOrderIndex) == _visualPushConstantSizes.RefAt(nextOrderIndex) &&
+           _visualInstanceStrides.RefAt(firstOrderIndex) == _visualInstanceStrides.RefAt(nextOrderIndex) &&
+           _visualInstanceBindings.RefAt(firstOrderIndex) == _visualInstanceBindings.RefAt(nextOrderIndex);
 
     private void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
     {
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
         commands.PushConstants(_visualFramePushConstants.AsSpan(
             0,
-            checked((int)_visualPushConstantSizes[firstOrderIndex])),
-            _visualFramePushConstantOffsets[firstOrderIndex]);
-        var stride = _visualInstanceStrides[firstOrderIndex];
+            checked((int)_visualPushConstantSizes.RefAt(firstOrderIndex))),
+            _visualFramePushConstantOffsets.RefAt(firstOrderIndex));
+        var stride = _visualInstanceStrides.RefAt(firstOrderIndex);
         var segmentEnd = checked(firstOrderIndex + visualCount);
         if (_flatVisualInstanceBuffer)
         {
-            commands.BindBuffer(_visualInstanceBindings[firstOrderIndex], _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
+            commands.BindBuffer(_visualInstanceBindings.RefAt(firstOrderIndex), _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
         }
         else
         {
             commands.BindBuffer(
-                _visualInstanceBindings[firstOrderIndex],
+                _visualInstanceBindings.RefAt(firstOrderIndex),
                 _visualInstanceGraphHandle,
-                checked((ulong)_visualInstanceOffsets[firstOrderIndex]),
+                checked((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)),
                 checked((ulong)stride * (ulong)visualCount));
         }
 
         var drawStart = firstOrderIndex;
         while (drawStart < segmentEnd)
         {
-            var clip = _commandClips[drawStart];
+            var clip = _commandClips.RefAt(drawStart);
             var drawEnd = drawStart + 1;
-            while (drawEnd < segmentEnd && _commandClips[drawEnd] == clip)
+            while (drawEnd < segmentEnd && _commandClips.RefAt(drawEnd) == clip)
             {
                 drawEnd++;
             }
 
             commands.SetScissor(clip);
             var firstInstance = _flatVisualInstanceBuffer
-                ? checked((uint)((ulong)_visualInstanceOffsets[drawStart] / stride))
-                : checked((uint)(((ulong)_visualInstanceOffsets[drawStart] - (ulong)_visualInstanceOffsets[firstOrderIndex]) / stride));
+                ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(drawStart) / stride))
+                : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(drawStart) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
             commands.Draw(6, checked((uint)(drawEnd - drawStart)), 0, firstInstance);
             drawStart = drawEnd;
         }
@@ -932,7 +934,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        clip = _resolvedClips[id.Value];
+        clip = _resolvedClips.RefAt(id.Value);
         return true;
     }
 
@@ -949,14 +951,14 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 return false;
             }
 
-            if (_clipMarks[current.Value] == stamp)
+            if (_clipMarks.RefAt(current.Value) == stamp)
             {
                 AddDiagnostic($"Clip {id.Value} contains a parent cycle.");
                 return false;
             }
 
-            _clipMarks[current.Value] = stamp;
-            var region = _clips[current.Value];
+            _clipMarks.RefAt(current.Value) = stamp;
+            var region = _clips.RefAt(current.Value);
             if (region.Kind != UiClipKind.Rectangle)
             {
                 AddDiagnostic($"Clip {current.Value} uses unsupported kind {region.Kind}; only rectangular clips are currently accepted.");
