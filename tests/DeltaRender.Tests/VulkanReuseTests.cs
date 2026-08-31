@@ -42,6 +42,18 @@ public sealed class VulkanReuseTests
     }
 
     [Fact]
+    public void FrameSlotsWrapInStableRingOrder()
+    {
+        var slots = new VulkanFrameSlots(3);
+
+        Assert.Equal(0, slots.Advance());
+        Assert.Equal(1, slots.Advance());
+        Assert.Equal(2, slots.Advance());
+        Assert.Equal(0, slots.Advance());
+        Assert.Equal(1, slots.Advance());
+    }
+
+    [Fact]
     public void DependencyPlannerKeepsTransferPriorityWithoutReorderingEachQueue()
     {
         var planner = new VulkanGraphDependencyPlanner();

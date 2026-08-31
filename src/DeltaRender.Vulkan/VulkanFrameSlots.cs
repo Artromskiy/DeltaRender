@@ -19,7 +19,13 @@ internal sealed class VulkanFrameSlots
     public int Advance()
     {
         CurrentIndex = _nextSlot;
-        _nextSlot = (_nextSlot + 1) % _slotFrameNumbers.Length;
+        var nextSlot = _nextSlot + 1;
+        if (nextSlot == _slotFrameNumbers.Length)
+        {
+            nextSlot = 0;
+        }
+
+        _nextSlot = nextSlot;
         _slotFrameNumbers[CurrentIndex]++;
         return CurrentIndex;
     }
