@@ -6,14 +6,9 @@ using Xunit.Abstractions;
 
 namespace Delta.Render.Tests;
 
-public sealed class VulkanReuseTests
+public sealed class VulkanReuseTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public VulkanReuseTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public void DependencyPlannerReusesCapacityWhenGraphShrinksAndGrows()
@@ -27,8 +22,8 @@ public sealed class VulkanReuseTests
         Span<int> order = stackalloc int[16];
 
         Assert.Equal(2, planner.Compile(passes, 1, order));
-        var initialPassCapacity = planner.PassCapacity;
-        var initialResourceCapacity = planner.ResourceCapacity;
+        int initialPassCapacity = planner.PassCapacity;
+        int initialResourceCapacity = planner.ResourceCapacity;
 
         passes.RemoveAt(1);
         Assert.Equal(1, planner.Compile(passes, 1, order));
@@ -77,7 +72,7 @@ public sealed class VulkanReuseTests
         const int passCount = 4096;
         var planner = new VulkanGraphDependencyPlanner();
         var passes = new List<VulkanRenderGraph.GraphPass>(passCount);
-        for (var index = 0; index < passCount; index++)
+        for (int index = 0; index < passCount; index++)
         {
             var kind = index % 8 == 0
                 ? VulkanRenderGraph.PassKind.Transfer
@@ -85,19 +80,19 @@ public sealed class VulkanReuseTests
             passes.Add(new VulkanRenderGraph.GraphPass($"pass-{index}", kind, null));
         }
 
-        var order = new int[passCount];
+        int[] order = new int[passCount];
         Assert.Equal(passCount, planner.Compile(passes, 0, order));
 
-        var samples = new long[5];
-        for (var index = 0; index < samples.Length; index++)
+        long[] samples = new long[5];
+        for (int index = 0; index < samples.Length; index++)
         {
-            var started = Stopwatch.GetTimestamp();
+            long started = Stopwatch.GetTimestamp();
             Assert.Equal(passCount, planner.Compile(passes, 0, order));
             samples[index] = Stopwatch.GetTimestamp() - started;
         }
 
         Array.Sort(samples);
-        var medianNanoseconds = samples[samples.Length / 2] * 1_000_000_000d / Stopwatch.Frequency;
+        double medianNanoseconds = samples[samples.Length / 2] * 1_000_000_000d / Stopwatch.Frequency;
         _output.WriteLine($"4096 independent passes median planner time: {medianNanoseconds:F2} ns");
     }
 
@@ -105,11 +100,11 @@ public sealed class VulkanReuseTests
     public void PipelineCacheCreatesOnceAndReportsWarmHit()
     {
         var cache = new VulkanPipelineCache<object, int>(ReferenceEqualityComparer.Instance);
-        var key = new object();
-        var createCalls = 0;
+        object key = new();
+        int createCalls = 0;
 
-        var first = cache.GetOrCreate(key, () => ++createCalls);
-        var second = cache.GetOrCreate(key, () => ++createCalls);
+        int first = cache.GetOrCreate(key, () => ++createCalls);
+        int second = cache.GetOrCreate(key, () => ++createCalls);
 
         Assert.Equal(first, second);
         Assert.Equal(1, createCalls);
@@ -134,11 +129,11 @@ public sealed class VulkanReuseTests
     public void TransientPoolReusesReturnedResourceAndRejectsDoubleReturn()
     {
         var pool = new VulkanTransientResourcePool<string, int>();
-        var createCalls = 0;
+        int createCalls = 0;
 
-        var first = pool.Acquire("color", () => ++createCalls);
+        int first = pool.Acquire("color", () => ++createCalls);
         pool.Return("color", first);
-        var second = pool.Acquire("color", () => ++createCalls);
+        int second = pool.Acquire("color", () => ++createCalls);
 
         Assert.Equal(first, second);
         Assert.Equal(1, createCalls);
@@ -191,10 +186,35 @@ public sealed class VulkanReuseTests
         pool.RecordCreated();
         pool.Return("color", 42);
 
-        Assert.True(pool.TryTake("color", out var reused));
+        Assert.True(pool.TryTake("color", out int reused));
         Assert.Equal(42, reused);
         Assert.Equal(1, pool.CreateCount);
         Assert.Equal(1, pool.ReuseCount);
         Assert.Equal(0, pool.FreeCount);
+    }
+
+    [Fact]
+    public void TransientPoolDirectTakePathHasNoWarmAllocations()
+    {
+        var pool = new VulkanTransientResourcePool<string, int>();
+
+        for (int index = 0; index < 32; index++)
+        {
+            int value = index;
+            pool.RecordCreated();
+            pool.Return("color", value);
+            Assert.True(pool.TryTake("color", out int reused));
+            Assert.Equal(value, reused);
+            pool.Return("color", reused);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 256; index++)
+        {
+            Assert.True(pool.TryTake("color", out int reused));
+            pool.Return("color", reused);
+        }
+
+        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
     }
 }
