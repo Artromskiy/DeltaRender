@@ -40,8 +40,10 @@ internal static class Program
                 Path.ChangeExtension(vertexPath, ".shader.json"),
                 Path.ChangeExtension(fragmentPath, ".shader.json"));
 
-            await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
-            await using var session = renderer.CreateHeadlessSession(width, height, new RenderSessionOptions(profilingEnabled));
+            var renderer = new VulkanRenderer(new VulkanRendererOptions());
+            await using var rendererScope = renderer.ConfigureAwait(false);
+            var session = renderer.CreateHeadlessSession(width, height, new RenderSessionOptions(profilingEnabled));
+            await using var sessionScope = session.ConfigureAwait(false);
             var graph = session.CreateRenderGraph();
             var feature = new RasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
             IRenderFeature[] features = [feature];

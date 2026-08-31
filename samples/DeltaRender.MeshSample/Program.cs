@@ -36,8 +36,10 @@ internal static class Program
             var fragmentSpirv = await File.ReadAllBytesAsync(fragmentPath).ConfigureAwait(false);
             var program = MeshShadersGraphicsShaderProgram.CreateProgram(vertexSpirv, fragmentSpirv);
 
-            await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
-            await using var session = renderer.CreateHeadlessSession(width, height);
+            var renderer = new VulkanRenderer(new VulkanRendererOptions());
+            await using var rendererScope = renderer.ConfigureAwait(false);
+            var session = renderer.CreateHeadlessSession(width, height);
+            await using var sessionScope = session.ConfigureAwait(false);
             var graph = session.CreateRenderGraph();
             var feature = new MeshFeature(session, program, width, height);
             IRenderFeature[] features = [feature];

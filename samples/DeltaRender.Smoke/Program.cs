@@ -36,51 +36,51 @@ internal static class Program
         }
 
         await using var windowLease = window.ConfigureAwait(false);
-        await using (var renderer = new VulkanRenderer(new VulkanRendererOptions()))
+        var renderer = new VulkanRenderer(new VulkanRendererOptions());
+        await using var rendererScope = renderer.ConfigureAwait(false);
+        try
         {
-            try
+            var session = renderer.CreateWindowSession(window);
+            await using var sessionScope = session.ConfigureAwait(false);
+            var program = LoadProgram(panel);
+            var graph = session.CreateRenderGraph();
+            var metrics = window.Metrics;
+            var feature = new SmokeFeature(program, session.Target, panel, clearOnly, metrics.Width, metrics.Height);
+            IRenderFeature[] features = [feature];
+            var extent = default(PixelExtent);
+            var stopwatch = Stopwatch.StartNew();
+            var renderedFrames = 0;
+            while (!window.IsClosed && renderedFrames < frameCount)
             {
-                await using var session = renderer.CreateWindowSession(window);
-                var program = LoadProgram(panel);
-                var graph = session.CreateRenderGraph();
-                var metrics = window.Metrics;
-                var feature = new SmokeFeature(program, session.Target, panel, clearOnly, metrics.Width, metrics.Height);
-                IRenderFeature[] features = [feature];
-                var extent = default(PixelExtent);
-                var stopwatch = Stopwatch.StartNew();
-                var renderedFrames = 0;
-                while (!window.IsClosed && renderedFrames < frameCount)
+                Sdl3WindowFactory.PumpEvents();
+                metrics = window.Metrics;
+                var nextExtent = new PixelExtent(metrics.Width, metrics.Height);
+                if (nextExtent != extent)
                 {
-                    Sdl3WindowFactory.PumpEvents();
-                    metrics = window.Metrics;
-                    var nextExtent = new PixelExtent(metrics.Width, metrics.Height);
-                    if (nextExtent != extent)
-                    {
-                        session.ResizeTarget(in nextExtent);
-                        extent = nextExtent;
-                    }
-
-                    feature.Update(metrics.Width, metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
-                    graph.Build((ulong)renderedFrames, features);
-                    var result = graph.Execute();
-                    if (result.Status != RenderGraphExecutionStatus.Submitted)
-                    {
-                        await Console.Error.WriteLineAsync($"Graph execution failed: {result.Status}").ConfigureAwait(false);
-                        return 1;
-                    }
-
-                    renderedFrames++;
+                    session.ResizeTarget(in nextExtent);
+                    extent = nextExtent;
                 }
 
-                await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present").ConfigureAwait(false);
-                return 0;
+                feature.Update(metrics.Width, metrics.Height, (float)stopwatch.Elapsed.TotalSeconds);
+                graph.Build((ulong)renderedFrames, features);
+                var result = graph.Execute();
+                if (result.Status != RenderGraphExecutionStatus.Submitted)
+                {
+                    await Console.Error.WriteLineAsync($"Graph execution failed: {result.Status}").ConfigureAwait(false);
+                    return 1;
+                }
+
+                renderedFrames++;
             }
-            catch (Exception exception)
-            {
-                await Console.Error.WriteLineAsync("Renderer initialization or execution failed:").ConfigureAwait(false);
-                await Console.Error.WriteLineAsync(exception.ToString()).ConfigureAwait(false);
-                return 1;
-            }
+
+            await Console.Out.WriteLineAsync($"graphics={(clearOnly ? "clear" : panel ? "ui-panel" : "fullscreen-rounded-rectangle")} frames={renderedFrames} pass=present").ConfigureAwait(false);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            await Console.Error.WriteLineAsync("Renderer initialization or execution failed:").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(exception.ToString()).ConfigureAwait(false);
+            return 1;
         }
     }
 

@@ -95,8 +95,10 @@ internal static class ConformanceOrchestrator
         IReadOnlyList<CaseAssignment> assignments,
         ConformanceReport report)
     {
-        await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
-        await using var session = renderer.CreateComputeSession();
+        var renderer = new VulkanRenderer(new VulkanRendererOptions());
+        await using var rendererScope = renderer.ConfigureAwait(false);
+        var session = renderer.CreateComputeSession();
+        await using var sessionScope = session.ConfigureAwait(false);
         report.Device = new DeviceReport(session.Capabilities);
         var runner = new VulkanCaseRunner(session, report);
         foreach (var assignment in assignments)
