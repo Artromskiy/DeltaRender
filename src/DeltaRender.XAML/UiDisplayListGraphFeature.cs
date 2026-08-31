@@ -29,6 +29,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiDrawRef[] _order = [];
     private UiVisualSegmentPass?[] _visualSegmentPasses = [];
     private int _visualSegmentPassCount;
+    private UiTextPass?[] _textPasses = [];
+    private int _textPassCount;
     private PixelRect[] _resolvedClips = [];
     private PixelRect[] _commandClips = [];
     private byte[] _visualInstanceBytes = [];
@@ -237,6 +239,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         _visualSegmentPassCount = 0;
+        _textPassCount = 0;
         for (var index = 0; index < _orderCount; index++)
         {
             var draw = _order.RefAt(index);
@@ -417,11 +420,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                 var firstRun = _textRunIndices.RefAt(index);
                 var lastRun = _textRunIndices.RefAt(end - 1);
-                var textPass = graph.AddRasterPass(
-                    new RasterPassDescription(
-                        "DeltaRender.XAML.Text",
-                        _textFeature.CompositePipeline),
-                    new UiTextPass(_textFeature, firstRun, checked(lastRun - firstRun + 1)));
+                var textFeaturePass = GetTextPass(firstRun, checked(lastRun - firstRun + 1));
+                var textPass = graph.AddRasterPass(textFeaturePass.Description, textFeaturePass);
                 graph.UseColorAttachment(
                     textPass,
                     0,
@@ -495,6 +495,26 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         pass.SetRange(firstOrderIndex, visualCount, instanceCount, program);
         _visualSegmentPassCount++;
+        return pass;
+    }
+
+    private UiTextPass GetTextPass(int firstRun, int runCount)
+    {
+        if (_textPassCount == _textPasses.Length)
+        {
+            var newLength = _textPassCount == 0 ? 4 : _textPassCount * 2;
+            Array.Resize(ref _textPasses, newLength);
+        }
+
+        var pass = _textPasses[_textPassCount];
+        if (pass is null)
+        {
+            pass = new UiTextPass(_textFeature ?? throw new InvalidOperationException("The text feature is not configured."));
+            _textPasses[_textPassCount] = pass;
+        }
+
+        pass.SetRange(firstRun, runCount);
+        _textPassCount++;
         return pass;
     }
 
