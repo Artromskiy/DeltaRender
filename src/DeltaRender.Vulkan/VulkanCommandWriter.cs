@@ -14,11 +14,19 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
     private int _lastDescriptorSetCount;
     private PipelineLayout _lastDescriptorLayout;
     private PipelineBindPoint _lastDescriptorBindPoint;
+    private Silk.NET.Vulkan.Buffer _lastVertexBuffer;
+    private Silk.NET.Vulkan.Buffer _lastIndexBuffer;
+    private uint _lastVertexBinding;
+    private ulong _lastVertexOffset;
+    private ulong _lastIndexOffset;
+    private IndexType _lastIndexType;
     private bool _hasViewport;
     private bool _hasScissor;
     private bool _hasGraphicsPipeline;
     private bool _hasComputePipeline;
     private bool _hasDescriptorSets;
+    private bool _hasVertexBuffer;
+    private bool _hasIndexBuffer;
 
     internal void ResetState()
     {
@@ -27,6 +35,8 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         _hasGraphicsPipeline = false;
         _hasComputePipeline = false;
         _hasDescriptorSets = false;
+        _hasVertexBuffer = false;
+        _hasIndexBuffer = false;
     }
 
     internal void SetViewport(in RenderViewport viewport)
@@ -200,10 +210,39 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         => session.Api.CmdCopyImageToBuffer(session.CommandBuffer, source, layout, destination, 1, &copy);
 
     internal unsafe void BindVertexBuffer(uint binding, Silk.NET.Vulkan.Buffer buffer, ulong offset)
-        => session.Api.CmdBindVertexBuffers(session.CommandBuffer, binding, 1, &buffer, &offset);
+    {
+        if (_hasVertexBuffer &&
+            _lastVertexBinding == binding &&
+            _lastVertexBuffer.Handle == buffer.Handle &&
+            _lastVertexOffset == offset)
+        {
+            return;
+        }
+
+        session.Api.CmdBindVertexBuffers(session.CommandBuffer, binding, 1, &buffer, &offset);
+        _lastVertexBinding = binding;
+        _lastVertexBuffer = buffer;
+        _lastVertexOffset = offset;
+        _hasVertexBuffer = true;
+    }
 
     internal void BindIndexBuffer(Silk.NET.Vulkan.Buffer buffer, IndexElementFormat format, ulong offset)
-        => session.Api.CmdBindIndexBuffer(session.CommandBuffer, buffer, offset, format == IndexElementFormat.UnsignedShort ? IndexType.Uint16 : IndexType.Uint32);
+    {
+        var indexType = format == IndexElementFormat.UnsignedShort ? IndexType.Uint16 : IndexType.Uint32;
+        if (_hasIndexBuffer &&
+            _lastIndexBuffer.Handle == buffer.Handle &&
+            _lastIndexOffset == offset &&
+            _lastIndexType == indexType)
+        {
+            return;
+        }
+
+        session.Api.CmdBindIndexBuffer(session.CommandBuffer, buffer, offset, indexType);
+        _lastIndexBuffer = buffer;
+        _lastIndexOffset = offset;
+        _lastIndexType = indexType;
+        _hasIndexBuffer = true;
+    }
 
     internal void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
     {
