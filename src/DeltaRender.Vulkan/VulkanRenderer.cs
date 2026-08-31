@@ -95,9 +95,14 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         try
         {
             var surface = new SurfaceKHR { Handle = surfaceLease.Handle };
-            if (_physicalDevice.Handle == default && !SelectPhysicalDevice(surface, sessionDiagnostics))
+            if (_physicalDevice.Handle == default)
             {
-                throw new InvalidOperationException("Failed to find a Vulkan device/queue pair for this surface.");
+                if (!VulkanDeviceQueries.TrySelectPhysicalDevice(Api, Instance, SurfaceExtension, surface, sessionDiagnostics, out var physicalDevice))
+                {
+                    throw new InvalidOperationException("Failed to find a Vulkan device/queue pair for this surface.");
+                }
+
+                _physicalDevice = physicalDevice;
             }
 
             if (Device.Handle == default && !CreateLogicalDevice(surface, sessionDiagnostics))
@@ -255,7 +260,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         }
 
         if (!InitializeInstance(null, diagnostics) ||
-            !SelectPhysicalDeviceForHeadless(diagnostics) ||
+            !VulkanDeviceQueries.TrySelectHeadlessPhysicalDevice(Api, Instance, diagnostics, out _physicalDevice, out _graphicsFamily) ||
             !CreateLogicalDeviceForHeadless(diagnostics))
         {
             return;
@@ -263,6 +268,34 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         _initializedHeadless = true;
         IsInitialized = true;
+    }
+
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes extension counts through unsafe out pointers that the analyzer cannot model.")]
+    private bool IsInstanceExtensionPresent(string extensionName)
+    {
+        unsafe
+        {
+            uint extensionCount = 0;
+            _ = Api.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null);
+            if (extensionCount == 0)
+            {
+                return false;
+            }
+
+            var properties = new ExtensionProperties[(int)extensionCount];
+            _ = Api.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, properties);
+
+            foreach (var property in properties)
+            {
+                var candidate = Marshal.PtrToStringAnsi((nint)property.ExtensionName);
+                if (candidate == extensionName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     private unsafe bool InitializeInstance(IVulkanWindowSurfaceSource? surfaceSource, RenderDiagnosticBag diagnostics)
@@ -397,232 +430,6 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         return true;
     }
 
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes extension counts through unsafe out pointers that the analyzer cannot model.")]
-    private bool IsInstanceExtensionPresent(string extensionName)
-    {
-        unsafe
-        {
-            uint extensionCount = 0;
-            _ = Api.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null);
-            if (extensionCount == 0)
-            {
-                return false;
-            }
-
-            var properties = new ExtensionProperties[(int)extensionCount];
-            _ = Api.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, properties);
-
-            foreach (var property in properties)
-            {
-                var candidate = Marshal.PtrToStringAnsi((nint)property.ExtensionName);
-                if (candidate == extensionName)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes device counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe bool SelectPhysicalDevice(SurfaceKHR surface, RenderDiagnosticBag diagnostics)
-    {
-        uint deviceCount = 0;
-        var enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, null);
-        if (enumResult != Result.Success || deviceCount == 0)
-        {
-            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", "No Vulkan physical devices are available.");
-            return false;
-        }
-
-        var devices = new PhysicalDevice[(int)deviceCount];
-        enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, devices);
-        if (enumResult != Result.Success)
-        {
-            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"EnumeratePhysicalDevices failed: {enumResult}");
-            return false;
-        }
-
-        for (var i = 0; i < devices.Length; i++)
-        {
-            var candidate = devices[i];
-            if (!IsDeviceSuitable(candidate, surface))
-            {
-                continue;
-            }
-
-            _physicalDevice = candidate;
-            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Suitable physical device selected.");
-            return true;
-        }
-
-        diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-DEVICE", "No physical device supports graphics+present with swapchain.");
-        return false;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe bool SelectPhysicalDeviceForHeadless(RenderDiagnosticBag diagnostics)
-    {
-        uint deviceCount = 0;
-        var enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, null);
-        if (enumResult != Result.Success || deviceCount == 0)
-        {
-            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", "No Vulkan physical devices are available.");
-            return false;
-        }
-
-        var devices = new PhysicalDevice[(int)deviceCount];
-        enumResult = Api.EnumeratePhysicalDevices(Instance, &deviceCount, devices);
-        if (enumResult != Result.Success)
-        {
-            diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", $"EnumeratePhysicalDevices failed: {enumResult}");
-            return false;
-        }
-
-        for (var i = 0; i < devices.Length; i++)
-        {
-            var candidate = devices[i];
-            if (!TryGetGraphicsQueueFamily(candidate, out var graphicsFamily))
-            {
-                continue;
-            }
-
-            _physicalDevice = candidate;
-            _graphicsFamily = graphicsFamily;
-            _presentFamily = graphicsFamily;
-            diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-DEVICE", "Suitable headless graphics device selected.");
-            return true;
-        }
-
-        diagnostics.Add(RenderDiagnosticSeverity.Error, "VK-DEVICE", "No physical device exposes a graphics queue for headless rendering.");
-        return false;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe bool TryGetGraphicsQueueFamily(PhysicalDevice physicalDevice, out uint graphicsFamily)
-    {
-        graphicsFamily = uint.MaxValue;
-        var families = GetQueueFamilyProperties(physicalDevice);
-        if (families.Length == 0)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < families.Length; i++)
-        {
-            if (families[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
-            {
-                graphicsFamily = (uint)i;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe QueueFamilyProperties[] GetQueueFamilyProperties(PhysicalDevice physicalDevice)
-    {
-        uint queueFamilyCount = 0;
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, null);
-        if (queueFamilyCount == 0)
-        {
-            return Array.Empty<QueueFamilyProperties>();
-        }
-
-        var families = new QueueFamilyProperties[(int)queueFamilyCount];
-        Api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families);
-        return families;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
-    private bool IsDeviceSuitable(PhysicalDevice physicalDevice, SurfaceKHR surface)
-    {
-        if (!DeviceSupportsSwapchainExtensions(physicalDevice, KhrSwapchain.ExtensionName))
-        {
-            return false;
-        }
-
-        if (!HasSwapChainDetails(surface, physicalDevice))
-        {
-            return false;
-        }
-
-        var queueFamilies = GetQueueFamilyProperties(physicalDevice);
-        if (queueFamilies.Length == 0)
-        {
-            return false;
-        }
-
-        bool hasGraphics = false;
-        bool hasPresent = false;
-        for (var i = 0; i < queueFamilies.Length; i++)
-        {
-            if (!hasGraphics && queueFamilies[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
-            {
-                hasGraphics = true;
-            }
-
-            _ = SurfaceExtension.GetPhysicalDeviceSurfaceSupport(physicalDevice, (uint)i, surface, out var canPresent);
-            if (!hasPresent && canPresent)
-            {
-                hasPresent = true;
-            }
-        }
-
-        return hasGraphics && hasPresent;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes extension counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe bool DeviceSupportsSwapchainExtensions(PhysicalDevice device, params string[] requiredExtensions)
-    {
-        uint extensionCount = 0;
-        _ = Api.EnumerateDeviceExtensionProperties(device, (byte*)null, &extensionCount, null);
-        if (extensionCount == 0)
-        {
-            return false;
-        }
-
-        var available = new ExtensionProperties[(int)extensionCount];
-        _ = Api.EnumerateDeviceExtensionProperties(device, (byte*)null, &extensionCount, available);
-
-        foreach (var required in requiredExtensions)
-        {
-            var found = false;
-            for (var i = 0; i < available.Length; i++)
-            {
-                string? extensionName;
-                fixed (byte* name = available[i].ExtensionName)
-                {
-                    extensionName = Marshal.PtrToStringAnsi((nint)name);
-                }
-                if (string.Equals(extensionName, required, StringComparison.Ordinal))
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes surface capability counts through unsafe out pointers that the analyzer cannot model.")]
-    private unsafe bool HasSwapChainDetails(SurfaceKHR surface, PhysicalDevice physicalDevice)
-    {
-        _ = SurfaceExtension.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out _);
-        uint formatCount = 0;
-        _ = SurfaceExtension.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, &formatCount, null);
-        uint modeCount = 0;
-        _ = SurfaceExtension.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, &modeCount, null);
-        return formatCount != 0 && modeCount != 0;
-    }
 
     [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code", Justification = "Vulkan FFI writes queue-family counts through unsafe out pointers that the analyzer cannot model.")]
     private unsafe bool CreateLogicalDevice(SurfaceKHR surface, RenderDiagnosticBag diagnostics)
@@ -633,7 +440,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             return false;
         }
 
-        var families = GetQueueFamilyProperties(_physicalDevice);
+        var families = VulkanDeviceQueries.GetQueueFamilyProperties(Api, _physicalDevice);
         if (families.Length == 0)
         {
             diagnostics.Add(RenderDiagnosticSeverity.Fatal, "VK-DEVICE", "No queue families were reported.");
@@ -723,7 +530,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     private void AddPortabilitySubsetExtensionIfSupported(List<string> deviceExtensions, RenderDiagnosticBag diagnostics)
     {
         const string portabilitySubsetExtension = "VK_KHR_portability_subset";
-        if (!DeviceSupportsSwapchainExtensions(_physicalDevice, portabilitySubsetExtension))
+        if (!VulkanDeviceQueries.DeviceSupportsSwapchainExtensions(Api, _physicalDevice, portabilitySubsetExtension))
         {
             return;
         }
