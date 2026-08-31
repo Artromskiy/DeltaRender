@@ -1123,8 +1123,15 @@ internal sealed class GraphConformanceFeature : IRenderFeature
     private static RenderResourceAccess ToRenderAccess(ShaderResourceAccess access)
     {
         var result = RenderResourceAccess.None;
-        if (access.HasFlag(ShaderResourceAccess.Read)) result |= RenderResourceAccess.Read;
-        if (access.HasFlag(ShaderResourceAccess.Write)) result |= RenderResourceAccess.Write;
+        if (access.HasFlag(ShaderResourceAccess.Read))
+        {
+            result |= RenderResourceAccess.Read;
+        }
+
+        if (access.HasFlag(ShaderResourceAccess.Write))
+        {
+            result |= RenderResourceAccess.Write;
+        }
         return result;
     }
 }
