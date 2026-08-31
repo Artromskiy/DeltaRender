@@ -9,31 +9,30 @@ namespace Delta.Render;
 /// </summary>
 public readonly record struct RenderSessionOptions
 {
-    private const int MaxHeadlessFrameSlots = 8;
-    private readonly int _headlessFrameSlots;
+    private const int MaxFrameSlots = 8;
+    private readonly int _frameSlots;
 
-    public RenderSessionOptions(bool EnableProfiling = false, int HeadlessFrameSlots = 1)
+    public RenderSessionOptions(bool EnableProfiling = false, int FramesInFlight = 1)
     {
-        if (HeadlessFrameSlots is < 1 or > MaxHeadlessFrameSlots)
+        if (FramesInFlight is < 1 or > MaxFrameSlots)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(HeadlessFrameSlots),
-                HeadlessFrameSlots,
-                $"Headless frame slots must be between 1 and {MaxHeadlessFrameSlots}.");
+                nameof(FramesInFlight),
+                FramesInFlight,
+                $"Frames in flight must be between 1 and {MaxFrameSlots}.");
         }
 
         this.EnableProfiling = EnableProfiling;
-        _headlessFrameSlots = HeadlessFrameSlots;
+        _frameSlots = FramesInFlight;
     }
 
     public bool EnableProfiling { get; }
 
     /// <summary>
-    /// Number of reusable CPU frame states used by a headless session to model
-    /// multi-buffered frame production. Native submission remains serialized by
-    /// the current session fence; this setting does not claim concurrent GPU work.
+    /// Number of reusable frame states used by the session for in-flight frame
+    /// production. Each slot owns its command resources, fence and staging state.
     /// </summary>
-    public int HeadlessFrameSlots => _headlessFrameSlots == 0 ? 1 : _headlessFrameSlots;
+    public int FramesInFlight => _frameSlots == 0 ? 1 : _frameSlots;
 }
 
 public readonly record struct RenderProfilingCapabilities(

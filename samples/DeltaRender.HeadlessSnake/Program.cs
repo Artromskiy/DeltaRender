@@ -6,7 +6,7 @@ var frames = ParsePositiveInt(args, "--frames", 600);
 var slots = ParsePositiveInt(args, "--slots", 3);
 var width = ParsePositiveInt(args, "--width", 960);
 var height = ParsePositiveInt(args, "--height", 720);
-var options = new RenderSessionOptions(HeadlessFrameSlots: slots);
+var options = new RenderSessionOptions(FramesInFlight: slots);
 
 var renderer = new VulkanRenderer(new VulkanRendererOptions());
 await using var rendererScope = renderer.ConfigureAwait(false);
@@ -29,7 +29,7 @@ for (var frame = 0UL; frame < (ulong)frames; frame++)
     }
 }
 
-await Console.Out.WriteLineAsync($"headless-snake frames={frames} slots={options.HeadlessFrameSlots} score={snake.Score} length={snake.Length}").ConfigureAwait(false);
+await Console.Out.WriteLineAsync($"headless-snake frames={frames} slots={options.FramesInFlight} score={snake.Score} length={snake.Length}").ConfigureAwait(false);
 return 0;
 
 static int ParsePositiveInt(string[] args, string name, int fallback)

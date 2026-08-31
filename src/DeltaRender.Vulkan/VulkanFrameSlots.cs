@@ -1,11 +1,11 @@
 namespace Delta.Render.Vulkan;
 
-internal sealed class VulkanHeadlessFrameSlots
+internal sealed class VulkanFrameSlots
 {
     private readonly ulong[] _slotFrameNumbers;
     private int _nextSlot;
 
-    public VulkanHeadlessFrameSlots(int count)
+    public VulkanFrameSlots(int count)
     {
         _slotFrameNumbers = new ulong[count];
     }
@@ -26,8 +26,8 @@ internal sealed class VulkanHeadlessFrameSlots
 
     public void Reset()
     {
+        Array.Clear(_slotFrameNumbers);
         _nextSlot = 0;
         CurrentIndex = -1;
-        Array.Clear(_slotFrameNumbers);
     }
 }

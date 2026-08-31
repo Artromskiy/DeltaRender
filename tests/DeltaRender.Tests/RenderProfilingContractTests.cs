@@ -31,15 +31,15 @@ public sealed class RenderProfilingContractTests
     }
 
     [Fact]
-    public void SessionOptionsExposeBoundedHeadlessFrameSlots()
+    public void SessionOptionsExposeBoundedFrameSlots()
     {
         var defaultOptions = new RenderSessionOptions();
-        var multiBuffered = new RenderSessionOptions(HeadlessFrameSlots: 3);
+        var multiBuffered = new RenderSessionOptions(FramesInFlight: 3);
 
-        Assert.Equal(1, defaultOptions.HeadlessFrameSlots);
-        Assert.Equal(3, multiBuffered.HeadlessFrameSlots);
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(HeadlessFrameSlots: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(HeadlessFrameSlots: 9));
+        Assert.Equal(1, defaultOptions.FramesInFlight);
+        Assert.Equal(3, multiBuffered.FramesInFlight);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(FramesInFlight: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(FramesInFlight: 9));
     }
 
     [Fact]

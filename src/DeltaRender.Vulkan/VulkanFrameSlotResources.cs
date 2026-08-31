@@ -1,10 +1,11 @@
 using Silk.NET.Vulkan;
+using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Delta.Render.Vulkan;
 
-internal sealed class VulkanHeadlessFrameSlot
+internal sealed class VulkanFrameSlotResources
 {
-    internal VulkanHeadlessFrameSlot(VulkanRenderSession session)
+    internal VulkanFrameSlotResources(VulkanRenderSession session)
     {
         StagingBuffer = new VulkanStagingBuffer(session);
     }
@@ -14,6 +15,10 @@ internal sealed class VulkanHeadlessFrameSlot
     internal CommandPool CommandPool;
 
     internal CommandBuffer CommandBuffer;
+
+    internal VulkanSemaphore ImageAvailable;
+
+    internal VulkanSemaphore RenderComplete;
 
     internal Image TargetImage;
 

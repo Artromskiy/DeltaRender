@@ -3,12 +3,12 @@ using Xunit;
 
 namespace Delta.Render.Tests;
 
-public sealed class VulkanHeadlessFrameSlotsTests
+public sealed class VulkanFrameSlotsTests
 {
     [Fact]
     public void SlotsRotateAndReuseDeterministically()
     {
-        var slots = new VulkanHeadlessFrameSlots(3);
+        var slots = new VulkanFrameSlots(3);
 
         slots.Advance();
         Assert.Equal(0, slots.CurrentIndex);
@@ -24,7 +24,7 @@ public sealed class VulkanHeadlessFrameSlotsTests
     [Fact]
     public void ResetReturnsSlotsToAnUnborrowedState()
     {
-        var slots = new VulkanHeadlessFrameSlots(2);
+        var slots = new VulkanFrameSlots(2);
         slots.Advance();
         slots.Advance();
 

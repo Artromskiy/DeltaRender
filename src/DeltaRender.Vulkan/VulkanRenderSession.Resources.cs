@@ -107,7 +107,7 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         if (VulkanBufferAllocation.IsLive(in allocation))
         {
-            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage), CurrentHeadlessFrameSlot));
+            _deferredBuffers.Add(new DeferredBuffer(allocation, new TransientBufferKey(description.SizeInBytes, description.Usage), CurrentFrameSlot));
         }
     }
 
@@ -115,7 +115,7 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         if (texture.Image.Handle != default)
         {
-            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage), CurrentHeadlessFrameSlot));
+            _deferredTextures.Add(new DeferredTexture(texture, new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage), CurrentFrameSlot));
         }
     }
 
@@ -137,19 +137,11 @@ internal sealed unsafe partial class VulkanRenderSession
 
     internal void ReclaimDeferredTransientsForBuild()
     {
-        if (_headlessFrameSlots is not null)
-        {
-            PrepareHeadlessFrameSlot();
-            return;
-        }
-
+        PrepareFrameSlot();
         if (_deferredTextures.Count == 0 && _deferredBuffers.Count == 0)
         {
             return;
         }
-
-        WaitForFrame();
-        ReclaimDeferredTransients();
     }
 
     private void ReclaimDeferredTransientsForSlot(int slotIndex)
