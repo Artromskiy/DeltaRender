@@ -7,7 +7,34 @@ namespace Delta.Render;
 /// <summary>
 /// Options selected when a frame session is created.
 /// </summary>
-public readonly record struct RenderSessionOptions(bool EnableProfiling = false);
+public readonly record struct RenderSessionOptions
+{
+    private const int MaxHeadlessFrameSlots = 8;
+    private readonly int _headlessFrameSlots;
+
+    public RenderSessionOptions(bool EnableProfiling = false, int HeadlessFrameSlots = 1)
+    {
+        if (HeadlessFrameSlots is < 1 or > MaxHeadlessFrameSlots)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(HeadlessFrameSlots),
+                HeadlessFrameSlots,
+                $"Headless frame slots must be between 1 and {MaxHeadlessFrameSlots}.");
+        }
+
+        this.EnableProfiling = EnableProfiling;
+        _headlessFrameSlots = HeadlessFrameSlots;
+    }
+
+    public bool EnableProfiling { get; }
+
+    /// <summary>
+    /// Number of reusable CPU frame states used by a headless session to model
+    /// multi-buffered frame production. Native submission remains serialized by
+    /// the current session fence; this setting does not claim concurrent GPU work.
+    /// </summary>
+    public int HeadlessFrameSlots => _headlessFrameSlots == 0 ? 1 : _headlessFrameSlots;
+}
 
 public readonly record struct RenderProfilingCapabilities(
     bool CpuTimings,

@@ -31,6 +31,18 @@ public sealed class RenderProfilingContractTests
     }
 
     [Fact]
+    public void SessionOptionsExposeBoundedHeadlessFrameSlots()
+    {
+        var defaultOptions = new RenderSessionOptions();
+        var multiBuffered = new RenderSessionOptions(HeadlessFrameSlots: 3);
+
+        Assert.Equal(1, defaultOptions.HeadlessFrameSlots);
+        Assert.Equal(3, multiBuffered.HeadlessFrameSlots);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(HeadlessFrameSlots: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(HeadlessFrameSlots: 9));
+    }
+
+    [Fact]
     public void ProfilingCapabilitiesDistinguishCpuAndGpuTiming()
     {
         var capabilities = new RenderProfilingCapabilities(true, false, 0, 0);

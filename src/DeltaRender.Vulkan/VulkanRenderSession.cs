@@ -19,6 +19,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly VulkanSurfaceLease? _surfaceLease;
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
+    private readonly VulkanHeadlessFrameSlots? _headlessFrameSlots;
     private readonly bool _hasTarget;
     private PhysicalDevice _physicalDevice;
     private Queue _graphicsQueue;
@@ -71,6 +72,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _profiler = null;
         _surfaceLease = surfaceLease;
         _windowed = windowed;
+        _headlessFrameSlots = windowed ? null : new VulkanHeadlessFrameSlots(options.HeadlessFrameSlots);
         _hasTarget = true;
         _surface = surfaceLease is null ? default : new SurfaceKHR { Handle = surfaceLease.Handle };
         var deviceContext = renderer.GetDeviceContext(windowed);
@@ -156,6 +158,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _profiler = null;
         _hasTarget = false;
         _windowed = false;
+        _headlessFrameSlots = new VulkanHeadlessFrameSlots(options.HeadlessFrameSlots);
         _surfaceLease = null;
         _surface = default;
         var deviceContext = renderer.GetDeviceContext(windowed: false);
@@ -558,6 +561,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         WaitForFrame();
+        _headlessFrameSlots?.Advance();
         _stagingBuffer.ReclaimCompleted();
         ReclaimDeferredTransients();
         if (_windowed)
