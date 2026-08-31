@@ -62,7 +62,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private uint _nextGeneration = 1;
     private RenderTargetHandle _target;
     private bool _recording;
-    private bool _framePrepared;
     private bool _disposed;
     private VulkanStagingBuffer _stagingBuffer = null!;
 
@@ -752,11 +751,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             return false;
         }
 
-        if (!_framePrepared)
-        {
-            PrepareFrameSlot();
-            _framePrepared = false;
-        }
+        PrepareFrameSlot();
         if (_windowed)
         {
             var swapchainExtension = _renderer.GetKhrSwapchain();
@@ -833,7 +828,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         finally
         {
             _recording = false;
-            _framePrepared = false;
         }
     }
 
@@ -846,21 +840,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         Api.ResetCommandBuffer(_commandBuffer, 0);
         _recording = false;
-        _framePrepared = false;
     }
 
     private void PrepareFrameSlot()
     {
-        if (_framePrepared)
-        {
-            return;
-        }
-
         ActivateFrameSlot(_frameSlots.Advance());
         WaitForFrame();
         _stagingBuffer.ReclaimCompleted();
         ReclaimDeferredTransientsForSlot(_frameSlots.CurrentIndex);
-        _framePrepared = true;
     }
 
     private void WaitForFence(Fence fence, string operation)
