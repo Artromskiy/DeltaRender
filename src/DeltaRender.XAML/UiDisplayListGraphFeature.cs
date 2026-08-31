@@ -45,8 +45,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
     private int[] _clipMarks = [];
-    private bool[] _seenVisuals = [];
-    private bool[] _seenTexts = [];
+    private int[] _visualSeenEpochs = [];
+    private int[] _textSeenEpochs = [];
     private int[] _textRunIndices = [];
     private int _visualCount;
     private int _clipCount;
@@ -74,6 +74,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint _preparedVisualPushConstantOffset;
     private bool _hasPreparedVisualDescription;
     private int _clipMarkEpoch;
+    private int _validationEpoch;
     private bool _hasFrame;
     private bool _disposed;
 
@@ -199,8 +200,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _resolvedClips, displayList.Clips.Length);
         EnsureCapacity(ref _commandClips, displayList.Order.Length);
         EnsureCapacity(ref _clipMarks, displayList.Clips.Length);
-        EnsureCapacity(ref _seenVisuals, displayList.Visuals.Length);
-        EnsureCapacity(ref _seenTexts, displayList.Text.Length);
+        var validationEpoch = NextValidationEpoch();
+        EnsureCapacity(ref _visualSeenEpochs, displayList.Visuals.Length);
+        EnsureCapacity(ref _textSeenEpochs, displayList.Text.Length);
         EnsureCapacity(ref _textRunIndices, displayList.Order.Length);
         EnsureCapacity(ref _visualPrograms, displayList.Order.Length);
         EnsureCapacity(ref _visualPushConstantSizes, displayList.Order.Length);
@@ -252,13 +254,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     continue;
                 }
 
-                if (_seenVisuals.RefAt(draw.Index))
+                if (_visualSeenEpochs.RefAt(draw.Index) == validationEpoch)
                 {
                     AddDiagnostic($"Order[{index}] references visual {draw.Index} more than once.");
                     continue;
                 }
 
-                _seenVisuals.RefAt(draw.Index) = true;
+                _visualSeenEpochs.RefAt(draw.Index) = validationEpoch;
                 if (!ValidateVisual(_visuals.RefAt(draw.Index), index, out var clip))
                 {
                     continue;
@@ -274,13 +276,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     continue;
                 }
 
-                if (_seenTexts.RefAt(draw.Index))
+                if (_textSeenEpochs.RefAt(draw.Index) == validationEpoch)
                 {
                     AddDiagnostic($"Order[{index}] references text {draw.Index} more than once.");
                     continue;
                 }
 
-                _seenTexts.RefAt(draw.Index) = true;
+                _textSeenEpochs.RefAt(draw.Index) = validationEpoch;
                 if (!ValidateText(_texts.RefAt(draw.Index), index, out var clip))
                 {
                     continue;
@@ -292,7 +294,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _visualCount; index++)
         {
-            if (!_seenVisuals.RefAt(index))
+            if (_visualSeenEpochs.RefAt(index) != validationEpoch)
             {
                 AddDiagnostic($"Visual {index} is not present in the canonical Order span.");
             }
@@ -300,7 +302,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _textCount; index++)
         {
-            if (!_seenTexts.RefAt(index))
+            if (_textSeenEpochs.RefAt(index) != validationEpoch)
             {
                 AddDiagnostic($"Text {index} is not present in the canonical Order span.");
             }
@@ -1013,6 +1015,22 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         return _clipMarkEpoch;
     }
 
+    private int NextValidationEpoch()
+    {
+        if (_validationEpoch == int.MaxValue)
+        {
+            Array.Clear(_visualSeenEpochs, 0, _visualSeenEpochs.Length);
+            Array.Clear(_textSeenEpochs, 0, _textSeenEpochs.Length);
+            _validationEpoch = 1;
+        }
+        else
+        {
+            _validationEpoch++;
+        }
+
+        return _validationEpoch;
+    }
+
     private void ClearFrameStorage()
     {
         Array.Clear(_visuals, 0, _visualCount);
@@ -1021,8 +1039,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         Array.Clear(_order, 0, _orderCount);
         Array.Clear(_resolvedClips, 0, _clipCount);
         Array.Clear(_commandClips, 0, _orderCount);
-        Array.Clear(_seenVisuals, 0, _visualCount);
-        Array.Clear(_seenTexts, 0, _textCount);
         Array.Clear(_textRunIndices, 0, _orderCount);
         Array.Clear(_visualPrograms, 0, _visualCount);
         Array.Clear(_visualPushConstantSizes, 0, _visualCount);
