@@ -13,6 +13,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 {
     private readonly VulkanRenderSession _session;
     private readonly List<GraphResource> _resources = new();
+    private readonly List<GraphResource> _resourcePool = new();
     private readonly List<GraphPass> _passes = new();
     private readonly List<GraphPass> _passPool = new();
     private readonly VulkanGraphReadback _readback;
@@ -301,7 +302,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         if (_targetResource is null)
         {
-            _targetResource = GraphResource.Target();
+            _targetResource = RentResource();
+            _targetResource.SetTarget();
             AddResource(_targetResource);
         }
 
@@ -316,7 +318,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new InvalidOperationException("The texture handle is unknown or stale.");
         }
 
-        return new RenderGraphTextureHandle(AddResource(GraphResource.FromTexture(value)));
+        var resource = RentResource();
+        resource.SetTexture(value);
+        return new RenderGraphTextureHandle(AddResource(resource));
     }
 
     public RenderGraphBufferHandle ImportBuffer(RenderBufferHandle buffer)
@@ -327,7 +331,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new InvalidOperationException("The buffer handle is unknown or stale.");
         }
 
-        return new RenderGraphBufferHandle(AddResource(GraphResource.FromBuffer(value)));
+        var resource = RentResource();
+        resource.SetBuffer(value);
+        return new RenderGraphBufferHandle(AddResource(resource));
     }
 
     public RenderGraphTextureHandle CreateTexture(in RenderTextureDescription description)
@@ -338,7 +344,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new ArgumentException("The transient texture description is invalid.", nameof(description));
         }
 
-        return new RenderGraphTextureHandle(AddResource(GraphResource.OwnedTexture(_session.CreateTransientTexture(description), description)));
+        var resource = RentResource();
+        resource.SetOwnedTexture(_session.CreateTransientTexture(description), description);
+        return new RenderGraphTextureHandle(AddResource(resource));
     }
 
     public RenderGraphBufferHandle CreateBuffer(in RenderBufferDescription description)
@@ -350,7 +358,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         var allocation = _session.CreateTransientBuffer(description);
-        return new RenderGraphBufferHandle(AddResource(GraphResource.OwnedBuffer(allocation, description)));
+        var resource = RentResource();
+        resource.SetOwnedBuffer(allocation, description);
+        return new RenderGraphBufferHandle(AddResource(resource));
     }
 
     public RenderGraphPassHandle AddRasterPass(in RasterPassDescription description, IRasterPass pass)
@@ -665,6 +675,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         foreach (var resource in _resources)
         {
             resource.Dispose(_session);
+            resource.ReleaseForPool();
+            _resourcePool.Add(resource);
         }
 
         for (var index = 0; index < _passes.Count; index++)
@@ -728,6 +740,20 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         resource.Index = _resources.Count;
         _resources.Add(resource);
         return (uint)_resources.Count;
+    }
+
+    private GraphResource RentResource()
+    {
+        if (_resourcePool.Count == 0)
+        {
+            return new GraphResource();
+        }
+
+        var poolIndex = _resourcePool.Count - 1;
+        var resource = _resourcePool[poolIndex];
+        _resourcePool.RemoveAt(poolIndex);
+        resource.ReleaseForPool();
+        return resource;
     }
     private GraphResource GetTexture(RenderGraphTextureHandle handle)
         => GetResource(handle.IsValid, handle.Value, expectedTexture: true, "texture", nameof(handle));

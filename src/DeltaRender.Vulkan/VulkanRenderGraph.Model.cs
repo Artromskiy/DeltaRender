@@ -62,11 +62,43 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal PersistentTexture? Texture;
         internal RenderTextureDescription TextureDescription;
         internal ImageAspectFlags AspectMask => IsTarget || Texture is null ? ImageAspectFlags.ColorBit : Texture.Format == Format.D24UnormS8Uint ? ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit : Texture.Format == Format.D32Sfloat ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
-        internal static GraphResource Target() => new() { IsTexture = true, IsTarget = true };
-        internal static GraphResource FromTexture(PersistentTexture texture) => new() { IsTexture = true, Texture = texture, Image = texture.Image };
-        internal static GraphResource OwnedTexture(PersistentTexture texture, RenderTextureDescription description) => new() { IsTexture = true, Texture = texture, TextureDescription = description, Image = texture.Image, Owns = true };
-        internal static GraphResource FromBuffer(PersistentBuffer buffer) => new() { IsBuffer = true, Buffer = buffer };
-        internal static GraphResource OwnedBuffer(BufferAllocation allocation, RenderBufferDescription description) => new() { IsBuffer = true, Buffer = new PersistentBuffer(allocation, description, 0), Owns = true };
+        internal void SetTarget()
+        {
+            Reset();
+            IsTexture = true;
+            IsTarget = true;
+        }
+
+        internal void SetTexture(PersistentTexture texture)
+        {
+            Reset();
+            IsTexture = true;
+            Texture = texture;
+            Image = texture.Image;
+        }
+
+        internal void SetOwnedTexture(PersistentTexture texture, RenderTextureDescription description)
+        {
+            SetTexture(texture);
+            TextureDescription = description;
+            Owns = true;
+        }
+
+        internal void SetBuffer(PersistentBuffer buffer)
+        {
+            Reset();
+            IsBuffer = true;
+            Buffer = buffer;
+        }
+
+        internal void SetOwnedBuffer(BufferAllocation allocation, RenderBufferDescription description)
+        {
+            Reset();
+            IsBuffer = true;
+            Buffer = new PersistentBuffer(allocation, description, 0);
+            Owns = true;
+        }
+
         internal void Dispose(VulkanRenderSession session)
         {
             if (!Owns)
@@ -84,6 +116,21 @@ internal sealed unsafe partial class VulkanRenderGraph
             Buffer = null;
             Texture = null;
             Image = default;
+        }
+
+        internal void ReleaseForPool() => Reset();
+
+        private void Reset()
+        {
+            Index = 0;
+            IsTexture = false;
+            IsBuffer = false;
+            IsTarget = false;
+            Owns = false;
+            Image = default;
+            Buffer = null;
+            Texture = null;
+            TextureDescription = default;
         }
     }
 
