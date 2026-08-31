@@ -29,31 +29,31 @@ internal sealed class VulkanGraphDependencyPlanner
             foreach (var use in passes[passIndex].Uses)
             {
                 var resource = use.Resource.Index;
-                if (_lastWriter[resource] >= 0)
+                if (_lastWriter.RefAt(resource) >= 0)
                 {
-                    AddEdge(_lastWriter[resource], passIndex);
+                    AddEdge(_lastWriter.RefAt(resource), passIndex);
                 }
 
                 if (use.Access.HasFlag(RenderResourceAccess.Write))
                 {
-                    foreach (var reader in _readers[resource])
+                    foreach (var reader in _readers.RefAt(resource))
                     {
                         AddEdge(reader, passIndex);
                     }
 
-                    _readers[resource].Clear();
-                    _lastWriter[resource] = passIndex;
+                    _readers.RefAt(resource).Clear();
+                    _lastWriter.RefAt(resource) = passIndex;
                 }
                 else if (use.Access.HasFlag(RenderResourceAccess.Read))
                 {
-                    _readers[resource].Add(passIndex);
+                    _readers.RefAt(resource).Add(passIndex);
                 }
             }
         }
 
         for (var index = 0; index < passes.Count; index++)
         {
-            if (_indegree[index] == 0)
+            if (_indegree.RefAt(index) == 0)
             {
                 _ready.Add(index);
             }
@@ -65,19 +65,19 @@ internal sealed class VulkanGraphDependencyPlanner
             var readyIndex = 0;
             for (var index = 1; index < _ready.Count; index++)
             {
-                if (passes[_ready[index]].Kind == VulkanRenderGraph.PassKind.Transfer)
+                if (passes[_ready.RefAt(index)].Kind == VulkanRenderGraph.PassKind.Transfer)
                 {
                     readyIndex = index;
                     break;
                 }
             }
 
-            var current = _ready[readyIndex];
+            var current = _ready.RefAt(readyIndex);
             _ready.RemoveAt(readyIndex);
             order[count++] = current;
-            foreach (var next in _edges[current])
+            foreach (var next in _edges.RefAt(current))
             {
-                if (--_indegree[next] == 0)
+                if (--_indegree.RefAt(next) == 0)
                 {
                     _ready.Add(next);
                 }
@@ -103,13 +103,13 @@ internal sealed class VulkanGraphDependencyPlanner
             _edges = new List<int>[capacity];
             for (var index = 0; index < capacity; index++)
             {
-                _edges[index] = new List<int>();
+                _edges.RefAt(index) = new List<int>();
             }
         }
 
         for (var index = 0; index < passCount; index++)
         {
-            _edges[index].Clear();
+            _edges.RefAt(index).Clear();
         }
 
         if (_indegree.Length < passCount)
@@ -128,13 +128,13 @@ internal sealed class VulkanGraphDependencyPlanner
             _readers = new List<int>[capacity];
             for (var index = 0; index < capacity; index++)
             {
-                _readers[index] = new List<int>();
+                _readers.RefAt(index) = new List<int>();
             }
         }
 
         for (var index = 0; index < resourceCount; index++)
         {
-            _readers[index].Clear();
+            _readers.RefAt(index).Clear();
         }
 
         _ready.Clear();
@@ -148,10 +148,10 @@ internal sealed class VulkanGraphDependencyPlanner
 
     private void AddEdge(int from, int to)
     {
-        if (from != to && !_edges[from].Contains(to))
+        if (from != to && !_edges.RefAt(from).Contains(to))
         {
-            _edges[from].Add(to);
-            _indegree[to]++;
+            _edges.RefAt(from).Add(to);
+            _indegree.RefAt(to)++;
         }
     }
 

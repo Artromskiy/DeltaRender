@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -20,6 +21,10 @@ internal static class TrustedArrayAccess
         ref MemoryMarshal.GetReference(span);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ref T DataReference<T>(this List<T> list) =>
+        ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(list));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ref T RefAt<T>(this T[] array, int index) =>
         ref Unsafe.Add(ref array.DataReference(), index);
 
@@ -37,4 +42,8 @@ internal static class TrustedArrayAccess
         ref readonly var first = ref span.DataReference();
         return ref Unsafe.Add(ref Unsafe.AsRef(in first), index);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ref T RefAt<T>(this List<T> list, int index) =>
+        ref Unsafe.Add(ref list.DataReference(), index);
 }
