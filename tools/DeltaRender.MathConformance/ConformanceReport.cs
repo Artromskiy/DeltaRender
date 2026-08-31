@@ -7,7 +7,7 @@ namespace Delta.Render.MathConformance;
 
 internal sealed class ConformanceReport
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
     private readonly List<CaseReport> _cases = [];
 
     public ConformanceReport(string casesPath, string artifactsPath)
@@ -80,7 +80,7 @@ internal sealed class ConformanceReport
             Counts,
             UnmatchedArtifacts,
             Cases);
-        await File.WriteAllTextAsync(fullReportPath, JsonSerializer.Serialize(machine, JsonOptions)).ConfigureAwait(false);
+        await File.WriteAllTextAsync(fullReportPath, JsonSerializer.Serialize(machine, _jsonOptions)).ConfigureAwait(false);
         var text = $"maths-cpu-gpu-conformance cpuCases={CpuCaseCount} artifacts={ArtifactCount} gpuCases={ExecutedGpuCaseCount} passed={Counts.Passed} mismatched={Counts.Mismatched} compiler-blocked={Counts.CompilerBlocked} capability-excluded={Counts.CapabilityExcluded}{Environment.NewLine}" +
             string.Join(Environment.NewLine, _cases.Select(caseReport => $"{caseReport.Disposition} {caseReport.Id} {caseReport.Operation}: {caseReport.Diagnostic}"));
         await File.WriteAllTextAsync(fullTextPath, text + Environment.NewLine).ConfigureAwait(false);
