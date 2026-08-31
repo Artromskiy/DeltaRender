@@ -739,22 +739,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         var capacity = GrowCapacity(_pages.Length, required);
-
-        Array.Resize(ref _pages, capacity);
-        Array.Resize(ref _pageGraphHandles, capacity);
+        ResizeArray(ref _pages, capacity);
+        ResizeArray(ref _pageGraphHandles, capacity);
     }
 
     private void EnsureUploadPageCapacity(int required)
-    {
-        if (required <= _uploadPageIndices.Length)
-        {
-            return;
-        }
-
-        var capacity = GrowCapacity(_uploadPageIndices.Length, required);
-
-        Array.Resize(ref _uploadPageIndices, capacity);
-    }
+        => EnsureArrayCapacity(ref _uploadPageIndices, required);
 
     private void CopyImage(GlyphImage image, byte[] destinationPixels, uint destinationX, uint destinationY)
     {
@@ -970,38 +960,13 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     }
 
     private void EnsurePendingCapacity(int required)
-    {
-        if (required <= _pendingRuns.Length)
-        {
-            return;
-        }
-
-        var capacity = GrowCapacity(_pendingRuns.Length, required);
-        Array.Resize(ref _pendingRuns, capacity);
-    }
+        => EnsureArrayCapacity(ref _pendingRuns, required);
 
     private void EnsureBatchCapacity(int required)
-    {
-        if (required <= _batches.Length)
-        {
-            return;
-        }
-
-        var capacity = GrowCapacity(_batches.Length, required);
-        Array.Resize(ref _batches, capacity);
-    }
+        => EnsureArrayCapacity(ref _batches, required);
 
     private void EnsureLocalBatchCapacity(int required)
-    {
-        if (required <= _localRunBatches.Length)
-        {
-            return;
-        }
-
-        var capacity = GrowCapacity(_localRunBatches.Length, required);
-
-        Array.Resize(ref _localRunBatches, capacity);
-    }
+        => EnsureArrayCapacity(ref _localRunBatches, required);
 
     private void EnsureRunBatchCapacity(int required)
     {
@@ -1011,9 +976,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         var capacity = GrowCapacity(_runBatchStarts.Length, required);
-
-        Array.Resize(ref _runBatchStarts, capacity);
-        Array.Resize(ref _runBatchCounts, capacity);
+        ResizeArray(ref _runBatchStarts, capacity);
+        ResizeArray(ref _runBatchCounts, capacity);
     }
 
     private void ClearState()
@@ -1038,6 +1002,17 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         return capacity;
     }
+
+    private static void EnsureArrayCapacity<T>(ref T[] storage, int required)
+    {
+        if (required > storage.Length)
+        {
+            ResizeArray(ref storage, GrowCapacity(storage.Length, required));
+        }
+    }
+
+    private static void ResizeArray<T>(ref T[] storage, int capacity)
+        => Array.Resize(ref storage, capacity);
 
     private static bool TryClip(PixelRect requested, PixelExtent viewport, out PixelRect clip)
     {
