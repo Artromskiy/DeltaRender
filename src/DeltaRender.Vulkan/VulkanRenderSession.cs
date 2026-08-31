@@ -872,18 +872,3 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly record struct DeferredBuffer(BufferAllocation Allocation, TransientBufferKey Key);
     private readonly record struct DeferredTexture(PersistentTexture Texture, TransientTextureKey Key);
 }
-
-internal sealed class PersistentBuffer : IVulkanResourceGeneration
-{
-    internal PersistentBuffer(BufferAllocation allocation, RenderBufferDescription description, uint generation) { Allocation = allocation; Description = description; Generation = generation; }
-    internal BufferAllocation Allocation { get; }
-    internal RenderBufferDescription Description { get; }
-    internal uint Generation { get; }
-    uint IVulkanResourceGeneration.Generation => Generation;
-}
-
-internal sealed record PersistentTexture(Image Image, DeviceMemory Memory, ImageView View, Format Format, Extent2D Extent, uint Generation) : IVulkanResourceGeneration
-{
-    internal RenderTextureUsage Usage { get; init; }
-}
-internal sealed record PersistentSampler(Sampler Sampler, uint Generation) : IVulkanResourceGeneration;
