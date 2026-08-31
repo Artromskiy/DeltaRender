@@ -59,6 +59,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderGraphBufferHandle _visualInstanceGraphHandle;
     private bool _visualInstancePayloadDirty = true;
     private bool _flatVisualInstanceBuffer;
+    private bool _hasPackedVisualFrame;
+    private UiRectangleShaderKind _packedVisualFrameKind;
+    private uint _packedVisualFrameSize;
+    private uint _packedVisualFrameOffset;
     private int _clipMarkEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -477,14 +481,25 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        var packedFrameSize = UiVisualShaderContract.PackFrame(
-            shaderKind,
-            _viewport,
-            _visualFramePushConstants.AsSpan(0, checked((int)pushConstantSize)));
-        if (packedFrameSize != pushConstantSize)
+        if (!_hasPackedVisualFrame ||
+            _packedVisualFrameKind != shaderKind ||
+            _packedVisualFrameSize != pushConstantSize ||
+            _packedVisualFrameOffset != pushConstantOffset)
         {
-            AddDiagnostic($"Visual at Order[{orderIndex}] generated UI frame packer wrote {packedFrameSize} bytes; expected {pushConstantSize}.");
-            return false;
+            var packedFrameSize = UiVisualShaderContract.PackFrame(
+                shaderKind,
+                _viewport,
+                _visualFramePushConstants.AsSpan(0, checked((int)pushConstantSize)));
+            if (packedFrameSize != pushConstantSize)
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] generated UI frame packer wrote {packedFrameSize} bytes; expected {pushConstantSize}.");
+                return false;
+            }
+
+            _hasPackedVisualFrame = true;
+            _packedVisualFrameKind = shaderKind;
+            _packedVisualFrameSize = pushConstantSize;
+            _packedVisualFrameOffset = pushConstantOffset;
         }
 
         _visualPrograms.RefAt(orderIndex) = program;
@@ -587,13 +602,20 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
-            if (!ReferenceEquals(program, candidate) || stride != _visualInstanceStrides.RefAt(orderIndex) || binding != _visualInstanceBindings.RefAt(orderIndex))
+            if (!IsSameShaderProgram(program, candidate) || stride != _visualInstanceStrides.RefAt(orderIndex) || binding != _visualInstanceBindings.RefAt(orderIndex))
             {
                 return false;
             }
         }
 
         return found;
+    }
+
+    private static bool IsSameShaderProgram(IGraphicsShaderProgram? first, IGraphicsShaderProgram second)
+    {
+        return first is not null &&
+            ReferenceEquals(first.Vertex, second.Vertex) &&
+            ReferenceEquals(first.Fragment, second.Fragment);
     }
 
     private void EnsureVisualInstanceBuffer(ulong requiredBytes)
@@ -1016,6 +1038,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualInstanceByteCount = 0;
         _visualInstanceGraphHandle = default;
         _flatVisualInstanceBuffer = false;
+        _hasPackedVisualFrame = false;
+        _packedVisualFrameKind = default;
+        _packedVisualFrameSize = 0;
+        _packedVisualFrameOffset = 0;
         _hasFrame = false;
     }
 

@@ -25,11 +25,11 @@ public sealed class RoundedRectangleSliceTests
         var program = new GraphicsShaderProgram(
             new ShaderArtifact(
                 MinimalSpirv,
-                "rounded-rectangle-slice",
+                "main",
                 RoundedRectangleSliceGraphicsShaderProgram.VertexAbi),
             new ShaderArtifact(
                 MinimalSpirv,
-                "rounded-rectangle-slice",
+                "main",
                 RoundedRectangleSliceGraphicsShaderProgram.FragmentAbi));
         var visual = UiVisualDraw.WithPaint(
             UiVisualKind.RoundedRectangle,

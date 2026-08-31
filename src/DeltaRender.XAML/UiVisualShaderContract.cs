@@ -43,8 +43,8 @@ internal static class UiVisualShaderContract
         if ((visualKind == UiVisualKind.RoundedRectangle || visualKind == UiVisualKind.Border) &&
             program.Vertex is { } sliceVertex &&
             program.Fragment is { } sliceFragment &&
-            string.Equals(sliceVertex.EntryPoint, "rounded-rectangle-slice", StringComparison.Ordinal) &&
-            string.Equals(sliceFragment.EntryPoint, "rounded-rectangle-slice", StringComparison.Ordinal) &&
+            string.Equals(sliceVertex.EntryPoint, "main", StringComparison.Ordinal) &&
+            string.Equals(sliceFragment.EntryPoint, "main", StringComparison.Ordinal) &&
             SameAbi(sliceVertex.Abi, RoundedSliceVertexAbi) &&
             SameAbi(sliceFragment.Abi, RoundedSliceFragmentAbi))
         {
@@ -84,7 +84,6 @@ internal static class UiVisualShaderContract
             {
                 UiRectangleShaderKind.Solid => "solid",
                 UiRectangleShaderKind.Rounded => "rounded",
-                UiRectangleShaderKind.RoundedSlice => "rounded-slice",
                 _ => "unknown",
             };
             diagnostic = $"Visual kind {visualKind} requires the matching generated DeltaShader.UI {shaderName}-rectangle ABI.";
