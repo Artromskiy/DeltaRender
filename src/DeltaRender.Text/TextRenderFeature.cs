@@ -116,11 +116,14 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             throw new ArgumentOutOfRangeException(nameof(distanceRange), "The text distance range must be finite and non-negative.");
         }
 
-        (_encoding, _atlasFormat, _atlasBytesPerPixel) = DescribeImageFormat(mode);
-        _instanceBinding = FindBinding(shaderProgram, ShaderResourceKind.StorageBuffer, ShaderStageMask.Vertex, "vertex instance buffer");
-        _instanceStride = FindInstanceStride(shaderProgram, _instanceBinding);
-        _atlasBinding = FindTextureBinding(shaderProgram, "fragment atlas texture");
-        _pushConstantSize = FindPushConstantSize(shaderProgram);
+        var shaderLayout = TextShaderPacking.Resolve(shaderProgram, mode);
+        _encoding = shaderLayout.Encoding;
+        _atlasFormat = shaderLayout.AtlasFormat;
+        _atlasBytesPerPixel = shaderLayout.AtlasBytesPerPixel;
+        _instanceBinding = shaderLayout.InstanceBinding;
+        _instanceStride = shaderLayout.InstanceStride;
+        _atlasBinding = shaderLayout.AtlasBinding;
+        _pushConstantSize = shaderLayout.PushConstantSize;
         _pushConstantBytes = new byte[checked((int)_pushConstantSize)];
 
         _session = session;
@@ -336,7 +339,11 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
         var pushConstantBytes = _pushConstantBytes.AsSpan(0, checked((int)_pushConstantSize));
-        var packedPushConstantSize = PackTextParameters(pushConstantBytes);
+        var packedPushConstantSize = TextShaderPacking.PackTextParameters(
+            _mode,
+            _viewport,
+            _distanceRange,
+            pushConstantBytes);
         if (packedPushConstantSize != pushConstantBytes.Length)
         {
             throw new InvalidOperationException("The generated text packer wrote a byte count different from ShaderAbi push-constant size.");
@@ -487,7 +494,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 var destinationOffset = checked((int)((ulong)runInstanceStart * _instanceStride));
                 var runByteCount = checked((int)((ulong)runInstanceCount * _instanceStride));
-                var written = PackInstances(
+                var written = TextShaderPacking.PackInstances(
+                    _mode,
                     _instances.AsSpan(runInstanceStart, runInstanceCount),
                     _instanceBytes.AsSpan(destinationOffset, runByteCount));
                 if (written != runByteCount)
@@ -1029,168 +1037,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         return capacity;
-    }
-
-    private static (GlyphImageEncoding Encoding, RenderTextureFormat Format, int BytesPerPixel) DescribeImageFormat(GlyphImageMode mode)
-        => mode switch
-        {
-            GlyphImageMode.Coverage => (GlyphImageEncoding.CoverageR8, RenderTextureFormat.R8Unorm, 1),
-            GlyphImageMode.Sdf => (GlyphImageEncoding.SdfR8, RenderTextureFormat.R8Unorm, 1),
-            GlyphImageMode.Msdf => (GlyphImageEncoding.MsdfRgb8, RenderTextureFormat.Rgba8Unorm, 4),
-            GlyphImageMode.Color => (GlyphImageEncoding.ColorRgba8PremultipliedSrgb, RenderTextureFormat.Rgba8Srgb, 4),
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "The text feature requires a concrete glyph image mode."),
-        };
-
-    private static uint FindInstanceStride(IGraphicsShaderProgram program, ShaderBinding binding)
-    {
-        ShaderResourceBinding? found = null;
-        foreach (var resource in program.Vertex.Abi.Resources)
-        {
-            if (resource.Binding != binding || resource.Kind != ShaderResourceKind.StorageBuffer ||
-                !resource.Stages.HasFlag(ShaderStageMask.Vertex) || (resource.Access & ShaderResourceAccess.Write) != 0)
-            {
-                continue;
-            }
-
-            if (found is not null)
-            {
-                throw new ArgumentException("The shader manifest contains more than one compatible instance buffer.", nameof(program));
-            }
-
-            found = resource;
-        }
-
-        if (found is null || found.Layout.ArrayStride == 0)
-        {
-            throw new ArgumentException("The shader manifest has no resolved instance-buffer array stride.", nameof(program));
-        }
-
-        return found.Layout.ArrayStride;
-    }
-
-    private int PackInstances(ReadOnlySpan<GlyphInstance> values, Span<byte> destination)
-    {
-        return _mode == GlyphImageMode.Msdf
-            ? MsdfTextGraphicsShaderProgram.PackMsdfTextVertexGlyphsElements(values, destination)
-            : SdfTextGraphicsShaderProgram.PackSdfTextVertexGlyphsElements(values, destination);
-    }
-
-    private int PackTextParameters(Span<byte> destination)
-    {
-        var parameters = new TextParameters
-        {
-            Resolution = new float2(_viewport.Width, _viewport.Height),
-            TextColor = new float4(1, 1, 1, 1),
-            OutlineColor = default,
-            OutlineWidth = 0,
-            DistanceRange = _distanceRange,
-        };
-
-        return _mode == GlyphImageMode.Msdf
-            ? MsdfTextGraphicsShaderProgram.PackMsdfTextVertexParameters(in parameters, destination)
-            : SdfTextGraphicsShaderProgram.PackSdfTextVertexParameters(in parameters, destination);
-    }
-
-    private static uint FindPushConstantSize(IGraphicsShaderProgram program)
-    {
-        var vertexPushConstants = program.Vertex.Abi.PushConstants;
-        var fragmentPushConstants = program.Fragment.Abi.PushConstants;
-        if (vertexPushConstants.Count != 1 || fragmentPushConstants.Count != 1)
-        {
-            throw new ArgumentException("The text shader manifest must expose one push-constant range per graphics stage.", nameof(program));
-        }
-
-        var vertex = vertexPushConstants[0];
-        var fragment = fragmentPushConstants[0];
-        if (vertex.Offset != fragment.Offset || vertex.Size != fragment.Size || vertex.Size == 0)
-        {
-            throw new ArgumentException("The text shader stages must expose matching non-empty push-constant ranges.", nameof(program));
-        }
-
-        return vertex.Size;
-    }
-
-    private static ShaderBinding FindBinding(
-        IGraphicsShaderProgram program,
-        ShaderResourceKind kind,
-        ShaderStageMask stage,
-        string description)
-    {
-        var found = FindBinding(program.Vertex.Abi.Resources, kind, stage);
-        var fragmentFound = FindBinding(program.Fragment.Abi.Resources, kind, stage);
-        if (found.HasValue && fragmentFound.HasValue && found.Value != fragmentFound.Value)
-        {
-            throw new ArgumentException($"The shader manifest contains multiple {description} resources.", nameof(program));
-        }
-
-        found ??= fragmentFound;
-        if (!found.HasValue)
-        {
-            throw new ArgumentException($"The shader manifest has no {description} resource.", nameof(program));
-        }
-
-        return found.Value;
-    }
-
-    private static ShaderBinding FindTextureBinding(IGraphicsShaderProgram program, string description)
-    {
-        var found = FindTextureBinding(program.Vertex.Abi.Resources);
-        var fragmentFound = FindTextureBinding(program.Fragment.Abi.Resources);
-        if (found.HasValue && fragmentFound.HasValue && found.Value != fragmentFound.Value)
-        {
-            throw new ArgumentException($"The shader manifest contains multiple {description} resources.", nameof(program));
-        }
-
-        found ??= fragmentFound;
-        if (!found.HasValue)
-        {
-            throw new ArgumentException($"The shader manifest has no {description} resource.", nameof(program));
-        }
-
-        return found.Value;
-    }
-
-    private static ShaderBinding? FindBinding(IReadOnlyList<ShaderResourceBinding> resources, ShaderResourceKind kind, ShaderStageMask stage)
-    {
-        ShaderBinding? found = null;
-        foreach (var resource in resources)
-        {
-            if (resource.Kind != kind || !resource.Stages.HasFlag(stage) || (resource.Access & ShaderResourceAccess.Write) != 0)
-            {
-                continue;
-            }
-
-            if (found.HasValue && found.Value != resource.Binding)
-            {
-                throw new ArgumentException("The shader manifest contains more than one compatible text resource.");
-            }
-
-            found = resource.Binding;
-        }
-
-        return found;
-    }
-
-    private static ShaderBinding? FindTextureBinding(IReadOnlyList<ShaderResourceBinding> resources)
-    {
-        ShaderBinding? found = null;
-        foreach (var resource in resources)
-        {
-            if ((resource.Kind != ShaderResourceKind.SampledTexture && resource.Kind != ShaderResourceKind.CombinedTextureSampler) ||
-                !resource.Stages.HasFlag(ShaderStageMask.Fragment) || (resource.Access & ShaderResourceAccess.Write) != 0)
-            {
-                continue;
-            }
-
-            if (found.HasValue && found.Value != resource.Binding)
-            {
-                throw new ArgumentException("The shader manifest contains more than one compatible atlas resource.");
-            }
-
-            found = resource.Binding;
-        }
-
-        return found;
     }
 
     private static bool TryClip(PixelRect requested, PixelExtent viewport, out PixelRect clip)
