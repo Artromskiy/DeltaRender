@@ -97,7 +97,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         if (_states.Length < _resources.Count)
         {
             EnsureStateCapacity(_resources.Count);
-            Array.Clear(_states, 0, _resources.Count);
         }
 
         Array.Clear(_states, 0, _resources.Count);
