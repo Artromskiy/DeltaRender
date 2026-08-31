@@ -733,23 +733,20 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         => ReferenceEquals(_visualPrograms[firstOrderIndex], _visualPrograms[nextOrderIndex]) &&
            _visualPushConstantSizes[firstOrderIndex] == _visualPushConstantSizes[nextOrderIndex] &&
            _visualInstanceStrides[firstOrderIndex] == _visualInstanceStrides[nextOrderIndex] &&
-           _visualInstanceBindings[firstOrderIndex] == _visualInstanceBindings[nextOrderIndex] &&
-           _commandClips[firstOrderIndex] == _commandClips[nextOrderIndex];
+           _visualInstanceBindings[firstOrderIndex] == _visualInstanceBindings[nextOrderIndex];
 
     private void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
     {
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
-        commands.SetScissor(_commandClips[firstOrderIndex]);
         commands.PushConstants(_visualFramePushConstants.AsSpan(
             0,
             checked((int)_visualPushConstantSizes[firstOrderIndex])),
             _visualFramePushConstantOffsets[firstOrderIndex]);
         var stride = _visualInstanceStrides[firstOrderIndex];
+        var segmentEnd = checked(firstOrderIndex + visualCount);
         if (_flatVisualInstanceBuffer)
         {
             commands.BindBuffer(_visualInstanceBindings[firstOrderIndex], _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
-            var firstInstance = checked((uint)((ulong)_visualInstanceOffsets[firstOrderIndex] / stride));
-            commands.Draw(6, checked((uint)visualCount), 0, firstInstance);
         }
         else
         {
@@ -758,7 +755,24 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualInstanceGraphHandle,
                 checked((ulong)_visualInstanceOffsets[firstOrderIndex]),
                 checked((ulong)stride * (ulong)visualCount));
-            commands.Draw(6, checked((uint)visualCount), 0, 0);
+        }
+
+        var drawStart = firstOrderIndex;
+        while (drawStart < segmentEnd)
+        {
+            var clip = _commandClips[drawStart];
+            var drawEnd = drawStart + 1;
+            while (drawEnd < segmentEnd && _commandClips[drawEnd] == clip)
+            {
+                drawEnd++;
+            }
+
+            commands.SetScissor(clip);
+            var firstInstance = _flatVisualInstanceBuffer
+                ? checked((uint)((ulong)_visualInstanceOffsets[drawStart] / stride))
+                : checked((uint)(((ulong)_visualInstanceOffsets[drawStart] - (ulong)_visualInstanceOffsets[firstOrderIndex]) / stride));
+            commands.Draw(6, checked((uint)(drawEnd - drawStart)), 0, firstInstance);
+            drawStart = drawEnd;
         }
     }
 
