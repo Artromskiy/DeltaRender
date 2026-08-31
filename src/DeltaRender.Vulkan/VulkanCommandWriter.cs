@@ -11,6 +11,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
     private Pipeline _lastGraphicsPipeline;
     private Pipeline _lastComputePipeline;
     private DescriptorSet[] _lastDescriptorSets = [];
+    private DescriptorSet _lastDescriptorSet;
     private int _lastDescriptorSetCount;
     private PipelineLayout _lastDescriptorLayout;
     private PipelineBindPoint _lastDescriptorBindPoint;
@@ -117,12 +118,19 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
             return;
         }
 
-        if (_lastDescriptorSets.Length < descriptorSets.Length)
+        if (descriptorSets.Length > 1 && _lastDescriptorSets.Length < descriptorSets.Length)
         {
             Array.Resize(ref _lastDescriptorSets, descriptorSets.Length);
         }
 
-        descriptorSets.CopyTo(_lastDescriptorSets);
+        if (descriptorSets.Length == 1)
+        {
+            _lastDescriptorSet = descriptorSets[0];
+        }
+        else
+        {
+            descriptorSets.CopyTo(_lastDescriptorSets);
+        }
         _lastDescriptorSetCount = descriptorSets.Length;
         _lastDescriptorBindPoint = bindPoint;
         _lastDescriptorLayout = layout;
@@ -147,6 +155,11 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         if (descriptorSets.Length != _lastDescriptorSetCount)
         {
             return false;
+        }
+
+        if (descriptorSets.Length == 1)
+        {
+            return _lastDescriptorSet.Handle == descriptorSets[0].Handle;
         }
 
         for (int index = 0; index < descriptorSets.Length; index++)

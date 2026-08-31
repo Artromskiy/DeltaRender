@@ -34,6 +34,7 @@ profile_pattern = re.compile(
     rf"layout-shaping=(?P<layout>[0-9.]+)(?P<layout_unit>{unit_pattern}), "
     r"passes=(?P<passes>\d+), resources=(?P<resources>\d+), "
     r"draws=(?P<draws>\d+), descriptor-binds=(?P<descriptor_binds>\d+), "
+    r"vertex-binds=(?P<vertex_binds>\d+), index-binds=(?P<index_binds>\d+), "
     r"upload-bytes=(?P<upload_bytes>\d+), gpu-timestamps=(?P<gpu_timestamps>\w+)"
 )
 pass_pattern = re.compile(
@@ -76,6 +77,8 @@ with input_path.open(encoding="utf-8") as source:
                 "resources": int(values["resources"]),
                 "draws": int(values["draws"]),
                 "descriptor_binds": int(values["descriptor_binds"]),
+                "vertex_binds": int(values["vertex_binds"]),
+                "index_binds": int(values["index_binds"]),
                 "upload_bytes": int(values["upload_bytes"]),
                 "gpu_timestamps": values["gpu_timestamps"] == "True",
                 "passes": [],
@@ -111,7 +114,8 @@ with tsv_path.open("w", encoding="utf-8") as output:
         output.write(
             "F\t{frame}\t{build:.3f}\t{acquire:.3f}\t{record:.3f}\t"
             "{submit:.3f}\t{fence:.3f}\t{layout:.3f}\t{passes_count}\t"
-            "{resources}\t{draws}\t{descriptor_binds}\t{upload_bytes}\n".format(**frame)
+            "{resources}\t{draws}\t{descriptor_binds}\t{vertex_binds}\t"
+            "{index_binds}\t{upload_bytes}\n".format(**frame)
         )
         for render_pass in frame["passes"]:
             gpu = "" if render_pass["gpu"] is None else f"{render_pass['gpu']:.3f}"
@@ -148,7 +152,7 @@ with summary_path.open("w", encoding="utf-8") as output:
     output.write(f"frame-range={selected[0]['frame']}..{selected[-1]['frame']}, samples={len(selected)}\n")
     for key in ("build", "acquire", "record", "submit", "fence", "layout"):
         output.write(f"{key} {format_stats([frame[key] for frame in selected])}\n")
-    for key, label in (("passes_count", "passes"), ("resources", "resources"), ("draws", "draws"), ("descriptor_binds", "descriptor-binds"), ("upload_bytes", "upload-bytes")):
+    for key, label in (("passes_count", "passes"), ("resources", "resources"), ("draws", "draws"), ("descriptor_binds", "descriptor-binds"), ("vertex_binds", "vertex-binds"), ("index_binds", "index-binds"), ("upload_bytes", "upload-bytes")):
         values = [frame[key] for frame in selected]
         output.write(f"{label} median={statistics.median(values):.3f} min={min(values)} max={max(values)}\n")
     output.write("passes:\n")
