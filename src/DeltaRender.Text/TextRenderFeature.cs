@@ -355,14 +355,28 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
+        var boundPage = -1;
+        var previousClip = default(PixelRect);
+        var hasScissor = false;
         for (var batchIndex = firstBatch; batchIndex < lastBatch; batchIndex++)
         {
             var batch = _batches.RefAt(batchIndex);
-            commands.BindTexture(
-                _atlasBinding,
-                _pageGraphHandles.RefAt(batch.PageIndex),
-                _sampler);
-            commands.SetScissor(batch.Clip);
+            if (batch.PageIndex != boundPage)
+            {
+                commands.BindTexture(
+                    _atlasBinding,
+                    _pageGraphHandles.RefAt(batch.PageIndex),
+                    _sampler);
+                boundPage = batch.PageIndex;
+            }
+
+            if (!hasScissor || batch.Clip != previousClip)
+            {
+                commands.SetScissor(batch.Clip);
+                previousClip = batch.Clip;
+                hasScissor = true;
+            }
+
             commands.Draw(6, checked((uint)batch.Count), 0, checked((uint)batch.Start));
         }
     }

@@ -304,6 +304,7 @@ public sealed class TextRenderFeatureTests
         Assert.Equal(2u, raster.Draws[1].FirstInstance);
         Assert.Equal(1u, raster.Draws[2].InstanceCount);
         Assert.Equal(3u, raster.Draws[2].FirstInstance);
+        Assert.Single(raster.TextureBindings);
         Assert.Equal(clipA, raster.Scissors[0]);
         Assert.Equal(clipB, raster.Scissors[1]);
         Assert.Equal(clipA, raster.Scissors[2]);
