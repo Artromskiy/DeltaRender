@@ -27,8 +27,28 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private HeadlessTarget CreateHeadlessTarget(Extent2D extent, RenderPass renderPass)
     {
-        var info = new ImageCreateInfo { SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = _format, Extent = new Extent3D(extent.Width, extent.Height, 1), MipLevels = 1, ArrayLayers = 1, Samples = SampleCountFlags.Count1Bit, Tiling = ImageTiling.Optimal, Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit, SharingMode = SharingMode.Exclusive, InitialLayout = ImageLayout.Undefined };
-        VulkanCall.Ensure(Api.CreateImage(Device, info, null, out var image), "CreateImage(target)");
+        Image image;
+        fixed (uint* queueFamilyPointer = _queueFamilies)
+        {
+            var shared = _queueFamilies.Length > 1;
+            var info = new ImageCreateInfo
+            {
+                SType = StructureType.ImageCreateInfo,
+                ImageType = ImageType.Type2D,
+                Format = _format,
+                Extent = new Extent3D(extent.Width, extent.Height, 1),
+                MipLevels = 1,
+                ArrayLayers = 1,
+                Samples = SampleCountFlags.Count1Bit,
+                Tiling = ImageTiling.Optimal,
+                Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit,
+                SharingMode = shared ? SharingMode.Concurrent : SharingMode.Exclusive,
+                QueueFamilyIndexCount = shared ? (uint)_queueFamilies.Length : 0u,
+                PQueueFamilyIndices = shared ? queueFamilyPointer : null,
+                InitialLayout = ImageLayout.Undefined,
+            };
+            VulkanCall.Ensure(Api.CreateImage(Device, info, null, out image), "CreateImage(target)");
+        }
         DeviceMemory memory = default;
         ImageView view = default;
         Framebuffer framebuffer = default;

@@ -15,6 +15,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     private PassMeasurement[] _passMeasurements = [];
     private int _passCount;
     private RenderProfilingCapabilities _capabilities;
+    private bool _gpuTimestampsSupported;
     private bool _gpuTimestampsEnabled;
     private QueryPool _queryPool;
     private ulong[] _queryValues = [];
@@ -42,9 +43,10 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         var limits = api.GetPhysicalDeviceProperties(physicalDevice).Limits;
         _timestampPeriodNanoseconds = limits.TimestampPeriod;
         _timestampValidBits = GetTimestampValidBits(api, physicalDevice, graphicsFamily);
-        _gpuTimestampsEnabled = limits.TimestampComputeAndGraphics &&
+        _gpuTimestampsSupported = limits.TimestampComputeAndGraphics &&
             _timestampPeriodNanoseconds > 0 &&
             _timestampValidBits > 0;
+        _gpuTimestampsEnabled = _gpuTimestampsSupported;
         _capabilities = new RenderProfilingCapabilities(
             CpuTimings: true,
             GpuTimestamps: _gpuTimestampsEnabled,
@@ -69,6 +71,12 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     internal void BeginBuild(ulong frameNumber)
     {
         _frameNumber = frameNumber;
+        _gpuTimestampsEnabled = _gpuTimestampsSupported;
+        _capabilities = new RenderProfilingCapabilities(
+            CpuTimings: true,
+            GpuTimestamps: _gpuTimestampsEnabled,
+            TimestampPeriodNanoseconds: _gpuTimestampsEnabled ? _timestampPeriodNanoseconds : 0,
+            TimestampValidBits: _gpuTimestampsEnabled ? _timestampValidBits : 0);
         _build = ProfileDuration.Zero;
         _acquire = ProfileDuration.Zero;
         _record = ProfileDuration.Zero;
@@ -140,6 +148,13 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     internal void EndSubmitAndPresent(long started) => _submitAndPresent = Measure(started);
 
     internal void EndFenceWait(long started) => _fenceWait += Measure(started);
+
+    internal void DisableGpuTimestampsForCurrentFrame()
+    {
+        _gpuTimestampsEnabled = false;
+        _queryCount = 0;
+        _capabilities = new RenderProfilingCapabilities(CpuTimings: true, GpuTimestamps: false, TimestampPeriodNanoseconds: 0, TimestampValidBits: 0);
+    }
 
     internal void RecordDrawCall() => _drawCallCount = checked(_drawCallCount + 1);
 
@@ -232,6 +247,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         };
         if (_api.CreateQueryPool(_device, createInfo, null, out var queryPool) != Result.Success)
         {
+            _gpuTimestampsSupported = false;
             _gpuTimestampsEnabled = false;
             _capabilities = new RenderProfilingCapabilities(true, false, 0, 0);
             return false;
@@ -290,7 +306,12 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 
     private ProfileDuration ConvertTimestampDelta(ulong start, ulong end)
     {
-        ulong delta = unchecked(end - start);
+        if (end < start)
+        {
+            return ProfileDuration.Zero;
+        }
+
+        ulong delta = end - start;
         if (_timestampValidBits < 64)
         {
             ulong mask = (1UL << (int)_timestampValidBits) - 1UL;

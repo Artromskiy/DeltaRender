@@ -8,6 +8,11 @@ internal readonly record struct VulkanDeviceContext(
     Device Device,
     PhysicalDeviceMemoryProperties MemoryProperties,
     Queue GraphicsQueue,
+    Queue ComputeQueue,
+    Queue TransferQueue,
     Queue PresentQueue,
     uint GraphicsFamily,
+    uint ComputeFamily,
+    uint TransferFamily,
+    uint[] QueueFamilies,
     uint PresentFamily);

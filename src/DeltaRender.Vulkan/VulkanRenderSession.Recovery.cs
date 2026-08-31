@@ -52,9 +52,14 @@ internal sealed unsafe partial class VulkanRenderSession
             _physicalDevice = deviceContext.PhysicalDevice;
             _device = deviceContext.Device;
             _graphicsQueue = deviceContext.GraphicsQueue;
+            _computeQueue = deviceContext.ComputeQueue;
+            _transferQueue = deviceContext.TransferQueue;
             _presentQueue = deviceContext.PresentQueue;
             _graphicsFamily = deviceContext.GraphicsFamily;
+            _computeFamily = deviceContext.ComputeFamily;
+            _transferFamily = deviceContext.TransferFamily;
             _presentFamily = deviceContext.PresentFamily;
+            _queueFamilies = deviceContext.QueueFamilies;
             _memoryProperties = deviceContext.MemoryProperties;
 
             if (_windowed)
@@ -124,6 +129,13 @@ internal sealed unsafe partial class VulkanRenderSession
                     slot.CommandPool = resources.CommandPool;
                     slot.CommandBuffer = resources.CommandBuffer;
                 }
+
+                var computeResources = CreateCommandResources(Api, _device, _computeFamily);
+                slot.ComputeCommandPool = computeResources.CommandPool;
+                slot.ComputeCommandBuffer = computeResources.CommandBuffer;
+                var transferResources = CreateCommandResources(Api, _device, _transferFamily);
+                slot.TransferCommandPool = transferResources.CommandPool;
+                slot.TransferCommandBuffer = transferResources.CommandBuffer;
             }
 
             _renderPass = renderPass;
@@ -199,9 +211,14 @@ internal sealed unsafe partial class VulkanRenderSession
         _device = default;
         _physicalDevice = default;
         _graphicsQueue = default;
+        _computeQueue = default;
+        _transferQueue = default;
         _presentQueue = default;
         _graphicsFamily = uint.MaxValue;
+        _computeFamily = uint.MaxValue;
+        _transferFamily = uint.MaxValue;
         _presentFamily = uint.MaxValue;
+        _queueFamilies = [];
         _memoryProperties = default;
         _recording = false;
         _frameSlots.Reset();

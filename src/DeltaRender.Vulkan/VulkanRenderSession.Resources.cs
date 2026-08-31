@@ -8,8 +8,21 @@ internal sealed unsafe partial class VulkanRenderSession
 {
     internal BufferAllocation CreateNativeBuffer(ulong size, BufferUsageFlags usage, MemoryPropertyFlags required, MemoryPropertyFlags preferred)
     {
-        var info = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = Math.Max(4, size), Usage = usage, SharingMode = SharingMode.Exclusive };
-        VulkanCall.Ensure(Api.CreateBuffer(Device, info, null, out var buffer), "CreateBuffer");
+        Silk.NET.Vulkan.Buffer buffer;
+        fixed (uint* queueFamilyPointer = _queueFamilies)
+        {
+            var shared = _queueFamilies.Length > 1;
+            var info = new BufferCreateInfo
+            {
+                SType = StructureType.BufferCreateInfo,
+                Size = Math.Max(4, size),
+                Usage = usage,
+                SharingMode = shared ? SharingMode.Concurrent : SharingMode.Exclusive,
+                QueueFamilyIndexCount = shared ? (uint)_queueFamilies.Length : 0u,
+                PQueueFamilyIndices = shared ? queueFamilyPointer : null,
+            };
+            VulkanCall.Ensure(Api.CreateBuffer(Device, info, null, out buffer), "CreateBuffer");
+        }
         try
         {
             var requirements = Api.GetBufferMemoryRequirements(Device, buffer);
@@ -304,8 +317,28 @@ internal sealed unsafe partial class VulkanRenderSession
     {
         var format = ToVulkanFormat(description.Format);
         var usage = ToVulkanImageUsage(description.Usage);
-        var info = new ImageCreateInfo { SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = format, Extent = new Extent3D(description.Width, description.Height, 1), MipLevels = description.MipLevels, ArrayLayers = description.Layers, Samples = ToSampleCount(description.Samples), Tiling = ImageTiling.Optimal, Usage = usage, SharingMode = SharingMode.Exclusive, InitialLayout = ImageLayout.Undefined };
-        VulkanCall.Ensure(Api.CreateImage(Device, info, null, out var image), "CreateImage");
+        Image image;
+        fixed (uint* queueFamilyPointer = _queueFamilies)
+        {
+            var shared = _queueFamilies.Length > 1;
+            var info = new ImageCreateInfo
+            {
+                SType = StructureType.ImageCreateInfo,
+                ImageType = ImageType.Type2D,
+                Format = format,
+                Extent = new Extent3D(description.Width, description.Height, 1),
+                MipLevels = description.MipLevels,
+                ArrayLayers = description.Layers,
+                Samples = ToSampleCount(description.Samples),
+                Tiling = ImageTiling.Optimal,
+                Usage = usage,
+                SharingMode = shared ? SharingMode.Concurrent : SharingMode.Exclusive,
+                QueueFamilyIndexCount = shared ? (uint)_queueFamilies.Length : 0u,
+                PQueueFamilyIndices = shared ? queueFamilyPointer : null,
+                InitialLayout = ImageLayout.Undefined,
+            };
+            VulkanCall.Ensure(Api.CreateImage(Device, info, null, out image), "CreateImage");
+        }
         DeviceMemory memory = default;
         ImageView view = default;
         try

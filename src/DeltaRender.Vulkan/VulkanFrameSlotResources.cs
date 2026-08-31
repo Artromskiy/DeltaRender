@@ -16,6 +16,14 @@ internal sealed class VulkanFrameSlotResources
 
     internal CommandBuffer CommandBuffer;
 
+    internal CommandPool ComputeCommandPool;
+
+    internal CommandBuffer ComputeCommandBuffer;
+
+    internal CommandPool TransferCommandPool;
+
+    internal CommandBuffer TransferCommandBuffer;
+
     internal VulkanSemaphore ImageAvailable;
 
     internal VulkanSemaphore RenderComplete;
@@ -29,6 +37,8 @@ internal sealed class VulkanFrameSlotResources
     internal Framebuffer TargetFramebuffer;
 
     internal bool InFlight;
+
+    internal List<VulkanSemaphore> QueueTransitionSignals { get; } = [];
 
     internal VulkanStagingBuffer StagingBuffer { get; }
 }

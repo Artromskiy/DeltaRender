@@ -24,10 +24,15 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly bool _hasTarget;
     private PhysicalDevice _physicalDevice;
     private Queue _graphicsQueue;
+    private Queue _computeQueue;
+    private Queue _transferQueue;
     private Queue _presentQueue;
     private Device _device;
     private uint _graphicsFamily;
+    private uint _computeFamily;
+    private uint _transferFamily;
     private uint _presentFamily;
+    private uint[] _queueFamilies = [];
     private PhysicalDeviceMemoryProperties _memoryProperties;
     private RenderPass _renderPass;
     private CommandPool _commandPool;
@@ -35,6 +40,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private Fence _frameFence;
     private VulkanSemaphore _imageAvailable;
     private VulkanSemaphore _renderComplete;
+    private CommandPool _computeCommandPool;
+    private CommandBuffer _computeCommandBuffer;
+    private CommandPool _transferCommandPool;
+    private CommandBuffer _transferCommandBuffer;
+    private VulkanQueueRole _activeQueueRole;
+    private VulkanSemaphore _pendingQueueWait;
+    private int _queueSignalCount;
+    private bool _hasSubmittedQueueSegment;
     private readonly VulkanResourceRegistry _resources = new();
     private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanPipelineCache<IShaderArtifact, VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
@@ -80,9 +93,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _physicalDevice = deviceContext.PhysicalDevice;
         _device = deviceContext.Device;
         _graphicsQueue = deviceContext.GraphicsQueue;
+        _computeQueue = deviceContext.ComputeQueue;
+        _transferQueue = deviceContext.TransferQueue;
         _presentQueue = deviceContext.PresentQueue;
         _graphicsFamily = deviceContext.GraphicsFamily;
+        _computeFamily = deviceContext.ComputeFamily;
+        _transferFamily = deviceContext.TransferFamily;
         _presentFamily = deviceContext.PresentFamily;
+        _queueFamilies = deviceContext.QueueFamilies;
         _memoryProperties = deviceContext.MemoryProperties;
         _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         var drawableExtent = metrics.DrawableExtent;
@@ -170,6 +188,13 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                     slot.CommandPool = resources.CommandPool;
                     slot.CommandBuffer = resources.CommandBuffer;
                 }
+
+                var computeResources = CreateCommandResources(renderer.Api, _device, _computeFamily);
+                slot.ComputeCommandPool = computeResources.CommandPool;
+                slot.ComputeCommandBuffer = computeResources.CommandBuffer;
+                var transferResources = CreateCommandResources(renderer.Api, _device, _transferFamily);
+                slot.TransferCommandPool = transferResources.CommandPool;
+                slot.TransferCommandBuffer = transferResources.CommandBuffer;
             }
 
             _renderPass = renderPass;
@@ -213,9 +238,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _physicalDevice = deviceContext.PhysicalDevice;
         _device = deviceContext.Device;
         _graphicsQueue = deviceContext.GraphicsQueue;
+        _computeQueue = deviceContext.ComputeQueue;
+        _transferQueue = deviceContext.TransferQueue;
         _presentQueue = deviceContext.PresentQueue;
         _graphicsFamily = deviceContext.GraphicsFamily;
+        _computeFamily = deviceContext.ComputeFamily;
+        _transferFamily = deviceContext.TransferFamily;
         _presentFamily = deviceContext.PresentFamily;
+        _queueFamilies = deviceContext.QueueFamilies;
         _memoryProperties = deviceContext.MemoryProperties;
         _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         _format = Format.R8G8B8A8Unorm;
@@ -232,6 +262,12 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 slot.Fence = commandResources.Fence;
                 slot.CommandPool = commandResources.CommandPool;
                 slot.CommandBuffer = commandResources.CommandBuffer;
+                var computeResources = CreateCommandResources(renderer.Api, _device, _computeFamily);
+                slot.ComputeCommandPool = computeResources.CommandPool;
+                slot.ComputeCommandBuffer = computeResources.CommandBuffer;
+                var transferResources = CreateCommandResources(renderer.Api, _device, _transferFamily);
+                slot.TransferCommandPool = transferResources.CommandPool;
+                slot.TransferCommandBuffer = transferResources.CommandBuffer;
             }
 
             ActivateFrameSlot(0);
@@ -485,8 +521,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal PhysicalDevice PhysicalDevice => _physicalDevice;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
     internal Queue GraphicsQueue => _graphicsQueue;
+    internal Queue ComputeQueue => _computeQueue;
+    internal Queue TransferQueue => _transferQueue;
     internal Queue PresentQueue => _presentQueue;
     internal uint GraphicsFamily => _graphicsFamily;
+    internal ReadOnlySpan<uint> QueueFamilies => _queueFamilies;
+
+    internal bool UsesSameQueue(VulkanQueueRole first, VulkanQueueRole second)
+        => QueueFamilyFor(first) == QueueFamilyFor(second) && QueueFor(first).Handle == QueueFor(second).Handle;
     internal CommandBuffer CommandBuffer => _commandBuffer;
     internal RenderPass GraphRenderPass => _renderPass;
     internal Extent2D GraphExtent => _extent;
@@ -504,6 +546,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         var slot = _frameResources[index];
         _commandPool = slot.CommandPool;
         _commandBuffer = slot.CommandBuffer;
+        _computeCommandPool = slot.ComputeCommandPool;
+        _computeCommandBuffer = slot.ComputeCommandBuffer;
+        _transferCommandPool = slot.TransferCommandPool;
+        _transferCommandBuffer = slot.TransferCommandBuffer;
+        _activeQueueRole = VulkanQueueRole.Graphics;
         _frameFence = slot.Fence;
         _imageAvailable = slot.ImageAvailable;
         _renderComplete = slot.RenderComplete;
@@ -525,6 +572,16 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             if (skipFirst && index == 0)
             {
                 slot.StagingBuffer.Dispose();
+                DestroyCommandResources(api, device, default, slot.ComputeCommandPool, slot.ComputeCommandBuffer);
+                DestroyCommandResources(api, device, default, slot.TransferCommandPool, slot.TransferCommandBuffer);
+                foreach (var signal in slot.QueueTransitionSignals)
+                {
+                    if (signal.Handle != default)
+                    {
+                        api.DestroySemaphore(device, signal, null);
+                    }
+                }
+                slot.QueueTransitionSignals.Clear();
                 continue;
             }
 
@@ -538,6 +595,17 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             {
                 DestroyCommandResources(api, device, slot.Fence, slot.CommandPool, slot.CommandBuffer);
             }
+
+            DestroyCommandResources(api, device, default, slot.ComputeCommandPool, slot.ComputeCommandBuffer);
+            DestroyCommandResources(api, device, default, slot.TransferCommandPool, slot.TransferCommandBuffer);
+            foreach (var signal in slot.QueueTransitionSignals)
+            {
+                if (signal.Handle != default)
+                {
+                    api.DestroySemaphore(device, signal, null);
+                }
+            }
+            slot.QueueTransitionSignals.Clear();
 
             if (slot.ImageAvailable.Handle != default)
             {
@@ -744,6 +812,9 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         => _resources.TryGetSampler(handle, out sampler);
 
     internal bool BeginGraphFrame()
+        => BeginGraphFrame(VulkanQueueRole.Graphics);
+
+    internal bool BeginGraphFrame(VulkanQueueRole firstRole)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_recording)
@@ -771,15 +842,40 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             }
         }
 
-        VulkanCall.Ensure(Api.ResetCommandBuffer(_commandBuffer, 0), "ResetCommandBuffer");
-        var begin = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
-        if (Api.BeginCommandBuffer(_commandBuffer, begin) != Result.Success)
+        _pendingQueueWait = _windowed ? _imageAvailable : default;
+        _queueSignalCount = 0;
+        _hasSubmittedQueueSegment = false;
+        if (!BeginGraphCommand(firstRole))
         {
             return false;
         }
 
         _recording = true;
         return true;
+    }
+
+    internal void SwitchGraphQueue(VulkanQueueRole nextRole)
+    {
+        if (!_recording || nextRole == _activeQueueRole)
+        {
+            return;
+        }
+
+        if (UsesSameQueue(_activeQueueRole, nextRole))
+        {
+            _activeQueueRole = nextRole;
+            return;
+        }
+
+        VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer(queue segment)");
+        var signal = GetQueueTransitionSemaphore(_queueSignalCount++);
+        SubmitActiveCommand(_pendingQueueWait, signal, default, "QueueSubmit(queue segment)");
+        _pendingQueueWait = signal;
+        _hasSubmittedQueueSegment = true;
+        if (!BeginGraphCommand(nextRole))
+        {
+            throw new InvalidOperationException($"Failed to begin Vulkan {nextRole} queue command buffer.");
+        }
     }
 
     internal bool EndGraphFrame()
@@ -791,17 +887,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         try
         {
-            VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
-            var commandBuffer = _commandBuffer;
             VulkanCall.Ensure(Api.ResetFences(Device, 1, _frameFence), "ResetFence");
+            VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
+            var finalSignal = _windowed ? _renderComplete : default;
+            SubmitActiveCommand(_pendingQueueWait, finalSignal, _frameFence, "QueueSubmit");
+            _frameResources[CurrentFrameSlot].InFlight = true;
             if (_windowed)
             {
-                var waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
-                var imageAvailable = _imageAvailable;
                 var renderComplete = _renderComplete;
-                var submit = new SubmitInfo { SType = StructureType.SubmitInfo, WaitSemaphoreCount = 1, PWaitSemaphores = &imageAvailable, PWaitDstStageMask = &waitStage, CommandBufferCount = 1, PCommandBuffers = &commandBuffer, SignalSemaphoreCount = 1, PSignalSemaphores = &renderComplete };
-                VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit(window)");
-                _frameResources[CurrentFrameSlot].InFlight = true;
                 var swapchain = _swapchain;
                 uint imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
@@ -815,12 +908,6 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 {
                     throw new InvalidOperationException($"QueuePresent failed: {result}.");
                 }
-            }
-            else
-            {
-                var submit = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &commandBuffer };
-                VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit");
-                _frameResources[CurrentFrameSlot].InFlight = true;
             }
 
             return true;
@@ -838,9 +925,80 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             return;
         }
 
+        if (_hasSubmittedQueueSegment)
+        {
+            _ = Api.DeviceWaitIdle(Device);
+        }
+
         Api.ResetCommandBuffer(_commandBuffer, 0);
+        _pendingQueueWait = default;
+        _hasSubmittedQueueSegment = false;
         _recording = false;
     }
+
+    private bool BeginGraphCommand(VulkanQueueRole role)
+    {
+        _activeQueueRole = role;
+        var commandBuffer = role switch
+        {
+            VulkanQueueRole.Graphics => _frameResources[CurrentFrameSlot].CommandBuffer,
+            VulkanQueueRole.Compute => _computeCommandBuffer,
+            VulkanQueueRole.Transfer => _transferCommandBuffer,
+            _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown Vulkan queue role."),
+        };
+        _commandBuffer = commandBuffer;
+        VulkanCall.Ensure(Api.ResetCommandBuffer(commandBuffer, 0), "ResetCommandBuffer(queue role)");
+        var begin = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
+        return Api.BeginCommandBuffer(commandBuffer, begin) == Result.Success;
+    }
+
+    private VulkanSemaphore GetQueueTransitionSemaphore(int index)
+    {
+        var signals = _frameResources[CurrentFrameSlot].QueueTransitionSignals;
+        while (signals.Count <= index)
+        {
+            VulkanCall.Ensure(Api.CreateSemaphore(Device, new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo }, null, out var semaphore), "CreateSemaphore(queue transition)");
+            signals.Add(semaphore);
+        }
+
+        return signals[index];
+    }
+
+    private unsafe void SubmitActiveCommand(VulkanSemaphore wait, VulkanSemaphore signal, Fence fence, string operation)
+    {
+        var waitStage = PipelineStageFlags.AllCommandsBit;
+        var commandBuffer = _commandBuffer;
+        var waitSemaphore = wait;
+        var signalSemaphore = signal;
+        var submit = new SubmitInfo
+        {
+            SType = StructureType.SubmitInfo,
+            CommandBufferCount = 1,
+            PCommandBuffers = &commandBuffer,
+            WaitSemaphoreCount = wait.Handle == default ? 0u : 1u,
+            PWaitSemaphores = wait.Handle == default ? null : &waitSemaphore,
+            PWaitDstStageMask = wait.Handle == default ? null : &waitStage,
+            SignalSemaphoreCount = signal.Handle == default ? 0u : 1u,
+            PSignalSemaphores = signal.Handle == default ? null : &signalSemaphore,
+        };
+        VulkanCall.Ensure(Api.QueueSubmit(QueueFor(_activeQueueRole), 1, &submit, fence), operation);
+    }
+
+    private Queue QueueFor(VulkanQueueRole role) => role switch
+    {
+        VulkanQueueRole.Graphics => _graphicsQueue,
+        VulkanQueueRole.Compute => _computeQueue,
+        VulkanQueueRole.Transfer => _transferQueue,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown Vulkan queue role."),
+    };
+
+    private uint QueueFamilyFor(VulkanQueueRole role) => role switch
+    {
+        VulkanQueueRole.Graphics => _graphicsFamily,
+        VulkanQueueRole.Compute => _computeFamily,
+        VulkanQueueRole.Transfer => _transferFamily,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown Vulkan queue role."),
+    };
 
     private void PrepareFrameSlot()
     {
@@ -1017,6 +1175,13 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             foreach (var slot in _frameResources)
             {
                 DestroyCommandResources(Api, Device, slot.Fence, slot.CommandPool, slot.CommandBuffer);
+                DestroyCommandResources(Api, Device, default, slot.ComputeCommandPool, slot.ComputeCommandBuffer);
+                DestroyCommandResources(Api, Device, default, slot.TransferCommandPool, slot.TransferCommandBuffer);
+                foreach (var signal in slot.QueueTransitionSignals)
+                {
+                    DestroySemaphore(signal);
+                }
+                slot.QueueTransitionSignals.Clear();
             }
         }
 

@@ -93,9 +93,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         var profiler = _session.ProfilerState;
         long acquireStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
+        var firstRole = QueueRoleFor(_passes[_order.RefAt(0)].Kind);
         try
         {
-            if (!_session.BeginGraphFrame())
+            if (!_session.BeginGraphFrame(firstRole))
             {
                 profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
                 return Failed();
@@ -124,6 +125,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         var states = _states;
         bool rasterActive = false;
+        var activeRole = firstRole;
         long recordStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         try
         {
@@ -132,6 +134,24 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             {
                 int passIndex = _order.RefAt(orderPosition);
                 var pass = _passes[passIndex];
+                var passRole = QueueRoleFor(pass.Kind);
+                if (passRole != activeRole)
+                {
+                    if (!_session.UsesSameQueue(activeRole, passRole))
+                    {
+                        if (rasterActive)
+                        {
+                            CommandWriter.EndRenderPass();
+                            rasterActive = false;
+                        }
+
+                        profiler?.DisableGpuTimestampsForCurrentFrame();
+                        _session.SwitchGraphQueue(passRole);
+                        CommandWriter.ResetState();
+                    }
+
+                    activeRole = passRole;
+                }
                 int passProfile = -1;
                 long passStart = 0L;
                 if (profiler is not null)
@@ -226,6 +246,24 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 CommandWriter.EndRenderPass();
             }
 
+            if (_readback.HasRequests && activeRole != VulkanQueueRole.Transfer)
+            {
+                if (!_session.UsesSameQueue(activeRole, VulkanQueueRole.Transfer))
+                {
+                    if (rasterActive)
+                    {
+                        CommandWriter.EndRenderPass();
+                        rasterActive = false;
+                    }
+
+                    profiler?.DisableGpuTimestampsForCurrentFrame();
+                    _session.SwitchGraphQueue(VulkanQueueRole.Transfer);
+                    CommandWriter.ResetState();
+                }
+
+                activeRole = VulkanQueueRole.Transfer;
+            }
+
             _readback.Record(states);
             profiler?.EndRecord(recordStart);
             long submitStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
@@ -267,6 +305,14 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         int capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
         _states = new ResourceState[Math.Max(capacity, required)];
     }
+
+    private static VulkanQueueRole QueueRoleFor(PassKind kind) => kind switch
+    {
+        PassKind.Raster => VulkanQueueRole.Graphics,
+        PassKind.Compute => VulkanQueueRole.Compute,
+        PassKind.Transfer => VulkanQueueRole.Transfer,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown graph pass kind."),
+    };
 
     private void EnsureOrderCapacity(int required)
     {

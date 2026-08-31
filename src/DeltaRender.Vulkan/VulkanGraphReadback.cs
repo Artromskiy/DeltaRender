@@ -146,6 +146,8 @@ internal sealed unsafe class VulkanGraphReadback(VulkanRenderGraph graph)
         }
     }
 
+    internal bool HasRequests => _requests.Count != 0;
+
     internal void Reset() => _requests.Clear();
 
     private sealed class ReadbackRequest(VulkanRenderGraph.GraphResource resource, int size, ulong sourceOffset, PixelRect region = default, bool isTexture = false)
