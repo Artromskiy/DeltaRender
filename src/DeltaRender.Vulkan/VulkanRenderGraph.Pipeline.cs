@@ -18,6 +18,9 @@ internal sealed unsafe partial class VulkanRenderGraph
         private readonly DescriptorSet[] _descriptorSets;
         private readonly GraphBinding[] _bindings;
         private readonly bool[] _bound;
+        private readonly bool[] _descriptorCacheValid;
+        private readonly DescriptorBufferInfo[] _cachedBuffers;
+        private readonly DescriptorImageInfo[] _cachedImages;
         private bool _disposed;
         internal Pipeline Pipeline { get; }
         internal PipelineLayout Layout { get; }
@@ -35,6 +38,9 @@ internal sealed unsafe partial class VulkanRenderGraph
             _descriptorSets = descriptorSets;
             _bindings = bindings;
             _bound = new bool[bindings.Length];
+            _descriptorCacheValid = new bool[bindings.Length];
+            _cachedBuffers = new DescriptorBufferInfo[bindings.Length];
+            _cachedImages = new DescriptorImageInfo[bindings.Length];
             StageFlags = stageFlags;
             PushConstantSize = pushConstantSize;
         }
@@ -86,6 +92,28 @@ internal sealed unsafe partial class VulkanRenderGraph
 
         private void WriteDescriptor(VulkanRenderGraph graph, int index, ShaderBinding binding, DescriptorType descriptorType, DescriptorBufferInfo* bufferInfo, DescriptorImageInfo* imageInfo)
         {
+            if (_descriptorCacheValid[index])
+            {
+                if (bufferInfo != null)
+                {
+                    var cached = _cachedBuffers[index];
+                    if (cached.Buffer.Handle == bufferInfo->Buffer.Handle && cached.Offset == bufferInfo->Offset && cached.Range == bufferInfo->Range)
+                    {
+                        _bound[index] = true;
+                        return;
+                    }
+                }
+                else if (imageInfo != null)
+                {
+                    var cached = _cachedImages[index];
+                    if (cached.Sampler.Handle == imageInfo->Sampler.Handle && cached.ImageView.Handle == imageInfo->ImageView.Handle && cached.ImageLayout == imageInfo->ImageLayout)
+                    {
+                        _bound[index] = true;
+                        return;
+                    }
+                }
+            }
+
             var write = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
@@ -97,6 +125,16 @@ internal sealed unsafe partial class VulkanRenderGraph
                 PImageInfo = imageInfo
             };
             graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
+            if (bufferInfo != null)
+            {
+                _cachedBuffers[index] = *bufferInfo;
+            }
+            else if (imageInfo != null)
+            {
+                _cachedImages[index] = *imageInfo;
+            }
+
+            _descriptorCacheValid[index] = true;
             _bound[index] = true;
         }
 
