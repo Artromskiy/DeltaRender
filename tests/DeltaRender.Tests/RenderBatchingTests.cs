@@ -2,6 +2,7 @@ using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
+using Delta.Text;
 using Delta.Text.Contract;
 using Delta.XAML.Contract;
 using Xunit;
@@ -344,7 +345,7 @@ public sealed class RenderBatchingTests
             UiTextDraw.WithPaint(
                 new UiTextRunId(1, 1),
                 1,
-                default(ShapedText),
+                CreateTestShapedText(),
                 new float2(10, 20),
                 UiTextPaint.Solid(new float4(1, 1, 1, 1)),
                 new UiClipId(0)),
@@ -513,7 +514,7 @@ public sealed class RenderBatchingTests
             text[textIndex] = UiTextDraw.WithPaint(
                 new UiTextRunId((uint)index + 1, 1),
                 1,
-                default(ShapedText),
+                CreateTestShapedText(),
                 new float2(index % 100 * 8, index / 100 * 6),
                 UiTextPaint.Solid(new float4(1, 1, 1, 1)),
                 clip);
@@ -719,6 +720,16 @@ public sealed class RenderBatchingTests
 
         public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
             => throw new NotSupportedException();
+    }
+
+    private static ShapedText CreateTestShapedText()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        return textService.Shape(new TextShapeRequest("A".AsMemory(), 16, new[] { font }));
     }
 
     private sealed class FakeShaderProgram : IGraphicsShaderProgram
