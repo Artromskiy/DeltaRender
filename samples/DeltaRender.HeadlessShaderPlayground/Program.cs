@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using Delta.Diagnostics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
@@ -112,13 +113,17 @@ internal static class Program
 
         var timing = report.Timing;
         var counters = report.Counters;
-        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build={timing.Build} acquire={timing.Acquire} record={timing.Record} submit-present={timing.SubmitAndPresent} readback={timing.Readback} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount}");
+        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build-ns={FormatNanoseconds(timing.Build)} acquire-ns={FormatNanoseconds(timing.Acquire)} record-ns={FormatNanoseconds(timing.Record)} submit-present-ns={FormatNanoseconds(timing.SubmitAndPresent)} readback-ns={FormatNanoseconds(timing.Readback)} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount}");
         for (var index = 0; index < report.Passes.Count; index++)
         {
             var pass = report.Passes[index];
-            Console.WriteLine($"profile-pass index={index} kind={pass.Kind} name={pass.Name} cpu={pass.CpuRecordDuration} gpu={pass.GpuDuration?.ToString() ?? "unavailable"}");
+            var gpu = pass.GpuDuration is ProfileDuration gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
+            Console.WriteLine($"profile-pass index={index} kind={pass.Kind} name={pass.Name} cpu-ns={FormatNanoseconds(pass.CpuRecordDuration)} gpu-ns={gpu}");
         }
     }
+
+    private static string FormatNanoseconds(ProfileDuration duration)
+        => $"{duration.Nanoseconds.ToString("F2", CultureInfo.InvariantCulture)}ns";
 
     private static string? GetOption(string[] args, string option)
     {
