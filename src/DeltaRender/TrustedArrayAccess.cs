@@ -6,14 +6,10 @@ namespace Delta.Render;
 
 internal static class TrustedArrayAccess
 {
-    // Callers must prove that the array is non-null and every accessed element is in range.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static ref byte DataReference(Array array) =>
-        ref MemoryMarshal.GetArrayDataReference(Unsafe.As<byte[]>(array));
-
+    // Callers must prove non-null storage and valid indices before using these accessors.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ref T DataReference<T>(T[] array) =>
-        ref Unsafe.As<byte, T>(ref DataReference((Array)array));
+        ref MemoryMarshal.GetArrayDataReference(array);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ref T DataReference<T>(Span<T> span) =>
