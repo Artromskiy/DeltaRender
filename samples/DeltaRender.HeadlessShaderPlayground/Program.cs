@@ -12,7 +12,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var shaderDirectory = GetOption(args, "--shader-dir") ?? Path.Combine("artifacts", "headless-shader-playground", "shaders");
+        var shaderDirectory = GetOption(args, "--shader-dir") ?? ResolveDefaultShaderDirectory();
         var vertexPath = GetOption(args, "--vertex") ?? Path.Combine(shaderDirectory, "SquareVertex.vert.spv");
         var fragmentPath = GetOption(args, "--fragment") ?? Path.Combine(shaderDirectory, "SquareFragment.frag.spv");
         var outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "headless-shader-playground", "square.ppm");
@@ -83,6 +83,27 @@ internal static class Program
     {
         var value = GetOption(args, option);
         return value is not null && uint.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static string ResolveDefaultShaderDirectory()
+    {
+        var local = Path.Combine("artifacts", "headless-shader-playground", "shaders");
+        if (File.Exists(Path.Combine(local, "SquareVertex.vert.spv")))
+        {
+            return local;
+        }
+
+        return Path.Combine(
+            "..",
+            "DeltaShader",
+            "src",
+            "DeltaShader",
+            "CompiledShaders",
+            "Consumers",
+            "DeltaRender",
+            "samples",
+            "DeltaRender.HeadlessShaderPlayground",
+            "shaders");
     }
 
     private static float ParseFloat(string[] args, string option, float fallback)
