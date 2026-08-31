@@ -202,7 +202,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             throw new ArgumentException("Text color must contain finite components.", nameof(color));
         }
 
-        EnsurePendingCapacity(_pendingRunCount + 1);
+        EnsureArrayCapacity(ref _pendingRuns, _pendingRunCount + 1);
         _pendingRuns.RefAt(_pendingRunCount) = new PendingRun(
             text,
             originX,
@@ -269,7 +269,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         var instances = graph.ImportBuffer(_instanceBuffer);
         _instanceGraphHandle = instances;
-        EnsureUploadPageCapacity(_atlas.PageCount);
+        EnsureArrayCapacity(ref _uploadPageIndices, _atlas.PageCount);
         _uploadPageCount = 0;
         for (var pageIndex = 0; pageIndex < _atlas.PageCount; pageIndex++)
         {
@@ -506,9 +506,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             !bytes.SequenceEqual(_uploadedInstanceBytes.AsSpan(0, byteCount));
     }
 
-    private void EnsureUploadPageCapacity(int required)
-        => EnsureArrayCapacity(ref _uploadPageIndices, required);
-
     private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge, int count = 1)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
@@ -523,7 +520,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             }
         }
 
-        EnsureBatchCapacity(_batchCount + 1);
+        EnsureArrayCapacity(ref _batches, _batchCount + 1);
         _batches.RefAt(_batchCount) = new TextBatch(pageIndex, clip, instance, count);
         return _batchCount++;
     }
@@ -540,7 +537,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             }
         }
 
-        EnsureLocalBatchCapacity(_localRunBatchCount + 1);
+        EnsureArrayCapacity(ref _localRunBatches, _localRunBatchCount + 1);
         _localRunBatches.RefAt(_localRunBatchCount++) = new TextBatch(pageIndex, clip, instance, 1);
     }
 
@@ -667,15 +664,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             _session.Release(oldHandle);
         }
     }
-
-    private void EnsurePendingCapacity(int required)
-        => EnsureArrayCapacity(ref _pendingRuns, required);
-
-    private void EnsureBatchCapacity(int required)
-        => EnsureArrayCapacity(ref _batches, required);
-
-    private void EnsureLocalBatchCapacity(int required)
-        => EnsureArrayCapacity(ref _localRunBatches, required);
 
     private void EnsureRunBatchCapacity(int required)
     {
