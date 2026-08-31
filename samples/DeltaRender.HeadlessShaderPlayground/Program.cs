@@ -19,6 +19,7 @@ internal static class Program
         var height = ParseUInt(args, "--height", 540);
         var frames = ParseUInt(args, "--frames", 1);
         var vertexCount = ParseUInt(args, "--vertices", 18);
+        var profilingEnabled = HasFlag(args, "--profile");
         if (width == 0 || height == 0 || frames == 0 || vertexCount == 0)
         {
             await Console.Error.WriteLineAsync("--width, --height, --frames and --vertices must be greater than zero.").ConfigureAwait(false);
@@ -40,7 +41,7 @@ internal static class Program
                 Path.ChangeExtension(fragmentPath, ".shader.json"));
 
             await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
-            await using var session = renderer.CreateHeadlessSession(width, height);
+            await using var session = renderer.CreateHeadlessSession(width, height, new RenderSessionOptions(profilingEnabled));
             var graph = session.CreateRenderGraph();
             var feature = new RasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
             IRenderFeature[] features = [feature];
@@ -64,6 +65,7 @@ internal static class Program
 
             SavePpm(outputPath, width, height, rgba);
             await Console.Out.WriteLineAsync($"headless-shader-playground frames={frames} target={width}x{height} vertices={vertexCount} time={feature.Time.ToString(CultureInfo.InvariantCulture)} vertex={Path.GetFileName(vertexPath)} fragment={Path.GetFileName(fragmentPath)} output={Path.GetFullPath(outputPath)}").ConfigureAwait(false);
+            WriteProfile(session.Profiler);
             return 0;
         }
         catch (Exception exception)
@@ -84,6 +86,36 @@ internal static class Program
     {
         var value = GetOption(args, option);
         return value is not null && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && float.IsFinite(parsed) ? parsed : fallback;
+    }
+
+    private static bool HasFlag(string[] args, string option)
+    {
+        for (var index = 0; index < args.Length; index++)
+        {
+            if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void WriteProfile(IRenderProfiler? profiler)
+    {
+        if (profiler is null || !profiler.TryGetLatest(out var report))
+        {
+            return;
+        }
+
+        var timing = report.Timing;
+        var counters = report.Counters;
+        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build={timing.Build} acquire={timing.Acquire} record={timing.Record} submit-present={timing.SubmitAndPresent} readback={timing.Readback} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount}");
+        for (var index = 0; index < report.Passes.Count; index++)
+        {
+            var pass = report.Passes[index];
+            Console.WriteLine($"profile-pass index={index} kind={pass.Kind} name={pass.Name} cpu={pass.CpuRecordDuration} gpu={pass.GpuDuration?.ToString() ?? "unavailable"}");
+        }
     }
 
     private static string? GetOption(string[] args, string option)
