@@ -861,10 +861,22 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _framePrepared = true;
     }
 
-    internal void WaitForFrame()
+    private void WaitForFence(Fence fence, string operation)
     {
-        VulkanCall.Ensure(Api.WaitForFences(Device, 1, _frameFence, true, ulong.MaxValue), "WaitForFence");
+        var profiler = _profiler;
+        var started = profiler?.StartPhase() ?? 0;
+        try
+        {
+            VulkanCall.Ensure(Api.WaitForFences(Device, 1, fence, true, ulong.MaxValue), operation);
+        }
+        finally
+        {
+            profiler?.EndFenceWait(started);
+        }
     }
+
+    internal void WaitForFrame()
+        => WaitForFence(_frameFence, "WaitForFence");
 
     private void WaitForAllFrameSlots()
     {
@@ -878,7 +890,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             if (slot.Fence.Handle != default)
             {
-                VulkanCall.Ensure(Api.WaitForFences(Device, 1, slot.Fence, true, ulong.MaxValue), "WaitForFrameSlotFence");
+                WaitForFence(slot.Fence, "WaitForFrameSlotFence");
             }
         }
     }

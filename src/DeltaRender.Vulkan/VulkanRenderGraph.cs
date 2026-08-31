@@ -494,7 +494,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         => GetBuffer(handle).Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable.");
 
     internal ulong AllocateStaging(ReadOnlySpan<byte> data)
-        => _session.AllocateStaging(data);
+    {
+        var offset = _session.AllocateStaging(data);
+        _session.ProfilerState?.RecordUploadBytes((ulong)data.Length);
+        return offset;
+    }
 
     internal void Bind(VulkanGraphPipeline pipeline) => pipeline.Bind(this);
 
@@ -543,8 +547,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         var closed = false;
         var seen = false;
-        foreach (var index in _order)
+        for (var orderPosition = 0; orderPosition < _orderCount; orderPosition++)
         {
+            var index = _order.RefAt(orderPosition);
             if (_passes[index].Kind == PassKind.Raster)
             {
                 if (closed)

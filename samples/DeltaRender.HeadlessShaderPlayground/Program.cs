@@ -134,7 +134,7 @@ internal static class Program
 
         var timing = report.Timing;
         var counters = report.Counters;
-        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build-ns={FormatNanoseconds(timing.Build)} acquire-ns={FormatNanoseconds(timing.Acquire)} record-ns={FormatNanoseconds(timing.Record)} submit-present-ns={FormatNanoseconds(timing.SubmitAndPresent)} readback-ns={FormatNanoseconds(timing.Readback)} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount}");
+        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build-ns={FormatNanoseconds(timing.Build)} acquire-ns={FormatNanoseconds(timing.Acquire)} record-ns={FormatNanoseconds(timing.Record)} submit-present-ns={FormatNanoseconds(timing.SubmitAndPresent)} readback-ns={FormatNanoseconds(timing.Readback)} fence-wait-ns={FormatNanoseconds(timing.FenceWait)} layout-shaping-ns={FormatNanoseconds(timing.LayoutAndShapingCpu)} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount} draws={counters.DrawCallCount} descriptor-binds={counters.DescriptorBindCount} upload-bytes={counters.UploadBytes}");
         for (var index = 0; index < report.Passes.Count; index++)
         {
             var pass = report.Passes[index];

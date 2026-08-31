@@ -27,6 +27,11 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     private ProfileDuration _record;
     private ProfileDuration _submitAndPresent;
     private ProfileDuration _readback;
+    private ProfileDuration _fenceWait;
+    private ProfileDuration _layoutAndShapingCpu;
+    private int _drawCallCount;
+    private int _descriptorBindCount;
+    private ulong _uploadBytes;
 
     internal VulkanRenderProfiler(Vk api, Device device, PhysicalDevice physicalDevice, uint graphicsFamily)
     {
@@ -67,6 +72,11 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         _record = ProfileDuration.Zero;
         _submitAndPresent = ProfileDuration.Zero;
         _readback = ProfileDuration.Zero;
+        _fenceWait = ProfileDuration.Zero;
+        _layoutAndShapingCpu = ProfileDuration.Zero;
+        _drawCallCount = 0;
+        _descriptorBindCount = 0;
+        _uploadBytes = 0;
         _passCount = 0;
     }
 
@@ -125,6 +135,16 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 
     internal void EndSubmitAndPresent(long started) => _submitAndPresent = Measure(started);
 
+    internal void EndFenceWait(long started) => _fenceWait += Measure(started);
+
+    internal void RecordDrawCall() => _drawCallCount = checked(_drawCallCount + 1);
+
+    internal void RecordDescriptorBind() => _descriptorBindCount = checked(_descriptorBindCount + 1);
+
+    internal void RecordUploadBytes(ulong bytes) => _uploadBytes = checked(_uploadBytes + bytes);
+
+    public void RecordLayoutAndShaping(ProfileDuration duration) => _layoutAndShapingCpu += duration;
+
     internal void Complete(RenderGraphExecutionStatus status, int resourceCount)
     {
         if (status == RenderGraphExecutionStatus.Submitted)
@@ -158,9 +178,18 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             _frameNumber,
             status,
             _capabilities,
-            new RenderProfileTiming(_build, _acquire, _record, _submitAndPresent, _readback),
+            new RenderProfileTiming(_build, _acquire, _record, _submitAndPresent, _readback)
+            {
+                FenceWait = _fenceWait,
+                LayoutAndShapingCpu = _layoutAndShapingCpu
+            },
             Array.AsReadOnly(passes),
-            new RenderProfileCounters(passes.Length, rasterCount, computeCount, transferCount, resourceCount));
+            new RenderProfileCounters(passes.Length, rasterCount, computeCount, transferCount, resourceCount)
+            {
+                DrawCallCount = _drawCallCount,
+                DescriptorBindCount = _descriptorBindCount,
+                UploadBytes = _uploadBytes
+            });
     }
 
     public void Dispose()

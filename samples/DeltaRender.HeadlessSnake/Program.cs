@@ -3,7 +3,7 @@ using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 
 var frames = ParsePositiveInt(args, "--frames", 600);
-var slots = ParsePositiveInt(args, "--slots", 3);
+var slots = ParsePositiveInt(args, "--slots", 16);
 var width = ParsePositiveInt(args, "--width", 960);
 var height = ParsePositiveInt(args, "--height", 720);
 var options = new RenderSessionOptions(FramesInFlight: slots);

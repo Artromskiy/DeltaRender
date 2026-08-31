@@ -119,6 +119,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
                 descriptorSetPointer,
                 0,
             null);
+            session.ProfilerState?.RecordDescriptorBind();
         }
     }
 
@@ -196,10 +197,16 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         => session.Api.CmdBindIndexBuffer(session.CommandBuffer, buffer, offset, format == IndexElementFormat.UnsignedShort ? IndexType.Uint16 : IndexType.Uint32);
 
     internal void Draw(uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance)
-        => session.Api.CmdDraw(session.CommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+    {
+        session.Api.CmdDraw(session.CommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+        session.ProfilerState?.RecordDrawCall();
+    }
 
     internal void DrawIndexed(uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance)
-        => session.Api.CmdDrawIndexed(session.CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    {
+        session.Api.CmdDrawIndexed(session.CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+        session.ProfilerState?.RecordDrawCall();
+    }
 
     internal void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
         => session.Api.CmdDispatch(session.CommandBuffer, groupCountX, groupCountY, groupCountZ);

@@ -207,6 +207,42 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void ZeroRadiusRoundedVisualUsesSolidProgramWhenSupplied()
+    {
+        var roundedProgram = RoundedRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var solidProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            roundedProgram,
+            new PixelExtent(800, 500),
+            solidVisualProgram: solidProgram);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(100, 100, 600, 300),
+            new UiVisualPaint(new float4(0.2f, 0.5f, 0.9f, 1), default, 0, default),
+            UiClipId.None,
+            default);
+        var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
+
+        Assert.True(
+            feature.Consume(new UiDisplayList(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                order)),
+            string.Join(" | ", feature.Diagnostics));
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 0);
+
+        Assert.Single(graph.RasterPasses);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+        Assert.Equal(1u, commands.InstanceCounts[0]);
+    }
+
+    [Fact]
     public void CompatibleVisualsWithDifferentClipsUseOnePassAndPreserveScissorCommands()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);

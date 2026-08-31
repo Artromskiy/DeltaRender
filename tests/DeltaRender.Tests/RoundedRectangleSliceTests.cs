@@ -53,11 +53,34 @@ public sealed class RoundedRectangleSliceTests
             out _,
             out var diagnostic), diagnostic);
         Assert.Equal(UiRectangleShaderKind.RoundedSlice, shaderKind);
-        Assert.Equal(112u, instanceStride);
+        Assert.Equal(96u, instanceStride);
         Assert.Equal(8u, pushConstantSize);
         Assert.Equal(new ShaderBinding(0, 0), instanceBinding);
 
-        Span<byte> packed = stackalloc byte[112 * 9];
-        Assert.Equal(112 * 9, UiVisualShaderContract.PackInstances(shaderKind, in visual, instanceStride, packed));
+        Span<byte> packed = stackalloc byte[96 * 9];
+        Assert.Equal(96 * 9, UiVisualShaderContract.PackInstances(shaderKind, in visual, instanceStride, packed));
+    }
+
+    [Fact]
+    public void PairwiseSymmetricRadiiPackSevenInstances()
+    {
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(20, 30, 180, 120),
+            new UiVisualPaint(
+                new float4(0.2f, 0.4f, 0.8f, 1),
+                new float4(0, 0, 0, 1),
+                2,
+                new float4(8, 20, 20, 8)),
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Span<byte> packed = stackalloc byte[96 * 9];
+        Assert.Equal(96 * 7, UiVisualShaderContract.PackInstances(
+            UiRectangleShaderKind.RoundedSlice,
+            in visual,
+            96,
+            packed));
     }
 }

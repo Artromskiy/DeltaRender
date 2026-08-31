@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Numerics;
+using Delta.Diagnostics;
 using Delta.Maths;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
@@ -17,6 +19,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 {
     private readonly IRenderFrameSession? _session;
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
+    private readonly IGraphicsShaderProgram? _solidVisualProgram;
+    private readonly IGraphicsShaderProgram? _roundedSliceVisualProgram;
     private readonly UiDisplayListResourceRegistry _registry;
     private readonly TextRenderFeature? _textFeature;
     private readonly UiVisualUploadPass _visualUploadPass;
@@ -80,7 +84,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     /// <summary>Creates a headless planning adapter without a graph submission owner.</summary>
     public UiDisplayListGraphFeature(PixelExtent viewport)
-        : this(null, null, viewport, null, null, false)
+        : this(null, null, viewport, null, null, null, null, false)
     {
     }
 
@@ -93,8 +97,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         IGraphicsShaderProgram visualProgram,
         PixelExtent viewport,
         UiDisplayListResourceRegistry? registry = null,
-        TextRenderFeature? textFeature = null)
-        : this(session, visualProgram, viewport, registry, textFeature, true)
+        TextRenderFeature? textFeature = null,
+        IGraphicsShaderProgram? solidVisualProgram = null,
+        IGraphicsShaderProgram? roundedSliceVisualProgram = null)
+        : this(session, visualProgram, viewport, registry, textFeature, solidVisualProgram, roundedSliceVisualProgram, true)
     {
     }
 
@@ -104,6 +110,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         PixelExtent viewport,
         UiDisplayListResourceRegistry? registry,
         TextRenderFeature? textFeature,
+        IGraphicsShaderProgram? solidVisualProgram,
+        IGraphicsShaderProgram? roundedSliceVisualProgram,
         bool validate)
     {
         if (validate && viewport.IsEmpty)
@@ -119,6 +127,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         _session = session;
         _defaultVisualProgram = visualProgram;
+        _solidVisualProgram = solidVisualProgram;
+        _roundedSliceVisualProgram = roundedSliceVisualProgram;
         _viewport = viewport;
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
@@ -190,6 +200,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     public bool Consume(UiDisplayList displayList)
     {
         ThrowIfDisposed();
+        var profiler = _session?.Profiler;
+        var started = profiler is null ? 0 : Stopwatch.GetTimestamp();
         _diagnostics.Clear();
         _textFeature?.Clear();
         ClearFrameStorage();
@@ -230,6 +242,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             if (!_clipResolver.TryResolve(new UiClipId(index), out _))
             {
                 ClearFrameStorage();
+                profiler?.RecordLayoutAndShaping(ProfileDuration.FromStopwatchTicks(Stopwatch.GetTimestamp() - started, Stopwatch.Frequency));
                 return false;
             }
         }
@@ -313,6 +326,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             ClearFrameStorage();
         }
 
+        profiler?.RecordLayoutAndShaping(ProfileDuration.FromStopwatchTicks(Stopwatch.GetTimestamp() - started, Stopwatch.Frequency));
         return _hasFrame;
     }
 
@@ -518,7 +532,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         var draw = _order.RefAt(orderIndex);
         var visual = _visuals.RefAt(draw.Index);
-        var program = ResolveVisualProgram(visual);
+        var program = ResolveVisualProgram(visual, out var shaderVisualKind);
         UiRectangleShaderKind shaderKind;
         ShaderBinding instanceBinding;
         uint instanceStride;
@@ -526,7 +540,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         uint pushConstantOffset;
         if (_hasPreparedVisualDescription &&
             ReferenceEquals(_preparedVisualProgram, program) &&
-            _preparedVisualKind == visual.Kind)
+            _preparedVisualKind == shaderVisualKind)
         {
             shaderKind = _preparedVisualShaderKind;
             instanceBinding = _preparedVisualInstanceBinding;
@@ -536,7 +550,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
         else if (!UiVisualShaderContract.TryDescribeInstance(
                      program,
-                     visual.Kind,
+                     shaderVisualKind,
                      out shaderKind,
                      out instanceBinding,
                      out instanceStride,
@@ -550,7 +564,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         else
         {
             _preparedVisualProgram = program;
-            _preparedVisualKind = visual.Kind;
+            _preparedVisualKind = shaderVisualKind;
             _preparedVisualShaderKind = shaderKind;
             _preparedVisualInstanceBinding = instanceBinding;
             _preparedVisualInstanceStride = instanceStride;
@@ -834,11 +848,33 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _disposed = true;
     }
 
-    private IGraphicsShaderProgram ResolveVisualProgram(UiVisualDraw visual)
+    private IGraphicsShaderProgram ResolveVisualProgram(UiVisualDraw visual, out UiVisualKind shaderVisualKind)
     {
+        shaderVisualKind = visual.Kind;
         if (visual.Kind == UiVisualKind.Custom && _registry.TryResolveVisualType(visual.VisualType, out var registered))
         {
             return registered ?? throw new InvalidOperationException("The visual registry returned a null program.");
+        }
+
+        if (visual.Kind == UiVisualKind.SolidRectangle && _solidVisualProgram is not null)
+        {
+            return _solidVisualProgram;
+        }
+
+        if ((visual.Kind == UiVisualKind.RoundedRectangle || visual.Kind == UiVisualKind.Border) &&
+            visual.Paint.StrokeWidth == 0f &&
+            UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii) &&
+            _solidVisualProgram is not null)
+        {
+            shaderVisualKind = UiVisualKind.SolidRectangle;
+            return _solidVisualProgram;
+        }
+
+        if ((visual.Kind == UiVisualKind.RoundedRectangle || visual.Kind == UiVisualKind.Border) &&
+            !UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii) &&
+            _roundedSliceVisualProgram is not null)
+        {
+            return _roundedSliceVisualProgram;
         }
 
         return _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");

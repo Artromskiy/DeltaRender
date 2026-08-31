@@ -39,7 +39,7 @@ public sealed class RenderProfilingContractTests
         Assert.Equal(1, defaultOptions.FramesInFlight);
         Assert.Equal(3, multiBuffered.FramesInFlight);
         Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(FramesInFlight: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(FramesInFlight: 9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RenderSessionOptions(FramesInFlight: 17));
     }
 
     [Fact]
@@ -50,5 +50,29 @@ public sealed class RenderProfilingContractTests
         Assert.True(capabilities.CpuTimings);
         Assert.False(capabilities.GpuTimestamps);
         Assert.Equal(0, capabilities.TimestampPeriodNanoseconds);
+    }
+
+    [Fact]
+    public void ProfileReportExposesCommandAndPreparationMeasurements()
+    {
+        var fenceWait = new ProfileDuration(1_000);
+        var layoutAndShaping = new ProfileDuration(2_000);
+        var timing = new RenderProfileTiming(ProfileDuration.Zero, ProfileDuration.Zero, ProfileDuration.Zero, ProfileDuration.Zero, ProfileDuration.Zero)
+        {
+            FenceWait = fenceWait,
+            LayoutAndShapingCpu = layoutAndShaping
+        };
+        var counters = new RenderProfileCounters(3, 1, 1, 1, 2)
+        {
+            DrawCallCount = 4,
+            DescriptorBindCount = 5,
+            UploadBytes = 128
+        };
+
+        Assert.Equal(fenceWait, timing.FenceWait);
+        Assert.Equal(layoutAndShaping, timing.LayoutAndShapingCpu);
+        Assert.Equal(4, counters.DrawCallCount);
+        Assert.Equal(5, counters.DescriptorBindCount);
+        Assert.Equal((ulong)128, counters.UploadBytes);
     }
 }

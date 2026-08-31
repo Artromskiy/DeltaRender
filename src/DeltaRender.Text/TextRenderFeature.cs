@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using Delta.Diagnostics;
 using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -261,7 +263,20 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(graph);
-        BuildInstances();
+        var profiler = _session.Profiler;
+        var started = profiler is null ? 0 : Stopwatch.GetTimestamp();
+        try
+        {
+            BuildInstances();
+        }
+        finally
+        {
+            if (profiler is not null)
+            {
+                profiler.RecordLayoutAndShaping(ProfileDuration.FromStopwatchTicks(Stopwatch.GetTimestamp() - started, Stopwatch.Frequency));
+            }
+        }
+
         if (_instanceCount == 0)
         {
             return false;

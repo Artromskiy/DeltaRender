@@ -9,7 +9,7 @@ namespace Delta.Render;
 /// </summary>
 public readonly record struct RenderSessionOptions
 {
-    private const int MaxFrameSlots = 8;
+    private const int MaxFrameSlots = 16;
     private readonly int _frameSlots;
 
     public RenderSessionOptions(bool EnableProfiling = false, int FramesInFlight = 1)
@@ -53,14 +53,34 @@ public readonly record struct RenderProfileTiming(
     ProfileDuration Acquire,
     ProfileDuration Record,
     ProfileDuration SubmitAndPresent,
-    ProfileDuration Readback);
+    ProfileDuration Readback)
+{
+    /// <summary>Time spent waiting for the frame slot fence to become reusable.</summary>
+    public ProfileDuration FenceWait { get; init; }
+
+    /// <summary>
+    /// CPU time reported by render adapters while preparing layout or shaping data.
+    /// This excludes upstream work that does not pass through a reporting adapter.
+    /// </summary>
+    public ProfileDuration LayoutAndShapingCpu { get; init; }
+}
 
 public readonly record struct RenderProfileCounters(
     int PassCount,
     int RasterPassCount,
     int ComputePassCount,
     int TransferPassCount,
-    int ResourceCount);
+    int ResourceCount)
+{
+    /// <summary>Number of draw and indexed-draw commands emitted by the command writer.</summary>
+    public int DrawCallCount { get; init; }
+
+    /// <summary>Number of descriptor-set bind commands emitted by the command writer.</summary>
+    public int DescriptorBindCount { get; init; }
+
+    /// <summary>Total bytes copied into upload staging during graph execution.</summary>
+    public ulong UploadBytes { get; init; }
+}
 
 public sealed class RenderPassProfile
 {
@@ -119,6 +139,9 @@ public sealed class RenderProfileReport
 public interface IRenderProfiler
 {
     RenderProfilingCapabilities Capabilities { get; }
+
+    /// <summary>Records synchronous adapter CPU work for layout and shaping preparation.</summary>
+    void RecordLayoutAndShaping(ProfileDuration duration);
 
     bool TryGetLatest([NotNullWhen(true)] out RenderProfileReport? report);
 
