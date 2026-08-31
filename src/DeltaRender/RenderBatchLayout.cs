@@ -380,12 +380,10 @@ internal sealed class RenderBatchLayout
     private void RefreshPositions(RenderBatchSegment segment)
     {
         var itemIndices = segment.ItemIndices;
-        ref var itemIndexReference = ref TrustedArrayAccess.DataReference(itemIndices);
-        ref var itemStateReference = ref TrustedArrayAccess.DataReference(_items);
         for (var position = 0; position < segment.Count; position++)
         {
-            var itemIndex = System.Runtime.CompilerServices.Unsafe.Add(ref itemIndexReference, position);
-            ref var item = ref System.Runtime.CompilerServices.Unsafe.Add(ref itemStateReference, itemIndex);
+            var itemIndex = TrustedArrayAccess.RefAt(itemIndices, position);
+            ref var item = ref TrustedArrayAccess.RefAt(_items, itemIndex);
             item.Segment = segment;
             item.Position = position;
         }
