@@ -596,18 +596,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private void ConfigureRenderPass()
     {
         _session.ConfigureDepthStencilAttachment(_hasDepthAttachment ? _depthAttachmentResource?.Texture : null, _depthAttachment);
-        foreach (var pass in _passes)
-        {
-            if (pass.Kind == PassKind.Raster)
-            {
-                if (pass.PipelineDescription is not { } pipelineDescription)
-                {
-                    throw new InvalidOperationException($"Raster pass '{pass.Name}' has no pipeline description.");
-                }
-
-                pass.Pipeline = _session.GetOrCreateRasterPipeline(pipelineDescription);
-            }
-        }
     }
 
     private void ValidateRasterPipelines()
