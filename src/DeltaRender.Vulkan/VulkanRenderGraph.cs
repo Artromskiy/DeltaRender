@@ -112,12 +112,16 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         CommandWriter.ResetState();
-        if (_states.Length < _resources.Count)
+        if (_resources.Count != 0)
         {
-            EnsureStateCapacity(_resources.Count);
+            if (_states.Length < _resources.Count)
+            {
+                EnsureStateCapacity(_resources.Count);
+            }
+
+            Array.Clear(_states, 0, _resources.Count);
         }
 
-        Array.Clear(_states, 0, _resources.Count);
         var states = _states;
         bool rasterActive = false;
         long recordStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
