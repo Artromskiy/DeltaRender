@@ -9,7 +9,10 @@ internal sealed class VulkanGraphDependencyPlanner
     private int[] _indegree = [];
     private int[] _lastWriter = [];
     private List<int>[] _readers = [];
-    private readonly List<int> _ready = [];
+    private readonly List<int> _readyTransfers = [];
+    private readonly List<int> _readyOther = [];
+    private int _readyTransferIndex;
+    private int _readyOtherIndex;
 
     internal int Compile(IReadOnlyList<VulkanRenderGraph.GraphPass> passes, int resourceCount, Span<int> order)
     {
@@ -55,31 +58,29 @@ internal sealed class VulkanGraphDependencyPlanner
         {
             if (_indegree.RefAt(index) == 0)
             {
-                _ready.Add(index);
+                AddReady(passes[index].Kind, index);
             }
         }
 
         var count = 0;
-        while (_ready.Count != 0)
+        while (_readyTransferIndex < _readyTransfers.Count || _readyOtherIndex < _readyOther.Count)
         {
-            var readyIndex = 0;
-            for (var index = 1; index < _ready.Count; index++)
+            int current;
+            if (_readyTransferIndex < _readyTransfers.Count)
             {
-                if (passes[_ready.RefAt(index)].Kind == VulkanRenderGraph.PassKind.Transfer)
-                {
-                    readyIndex = index;
-                    break;
-                }
+                current = _readyTransfers.RefAt(_readyTransferIndex++);
+            }
+            else
+            {
+                current = _readyOther.RefAt(_readyOtherIndex++);
             }
 
-            var current = _ready.RefAt(readyIndex);
-            _ready.RemoveAt(readyIndex);
             order[count++] = current;
             foreach (var next in _edges.RefAt(current))
             {
                 if (--_indegree.RefAt(next) == 0)
                 {
-                    _ready.Add(next);
+                    AddReady(passes[next].Kind, next);
                 }
             }
         }
@@ -137,7 +138,22 @@ internal sealed class VulkanGraphDependencyPlanner
             _readers.RefAt(index).Clear();
         }
 
-        _ready.Clear();
+        _readyTransfers.Clear();
+        _readyOther.Clear();
+        _readyTransferIndex = 0;
+        _readyOtherIndex = 0;
+    }
+
+    private void AddReady(VulkanRenderGraph.PassKind kind, int passIndex)
+    {
+        if (kind == VulkanRenderGraph.PassKind.Transfer)
+        {
+            _readyTransfers.Add(passIndex);
+        }
+        else
+        {
+            _readyOther.Add(passIndex);
+        }
     }
 
     private static int GrowCapacity(int current, int required)

@@ -33,6 +33,24 @@ public sealed class VulkanReuseTests
     }
 
     [Fact]
+    public void DependencyPlannerKeepsTransferPriorityWithoutReorderingEachQueue()
+    {
+        var planner = new VulkanGraphDependencyPlanner();
+        var passes = new List<VulkanRenderGraph.GraphPass>
+        {
+            new("raster", VulkanRenderGraph.PassKind.Raster, null),
+            new("compute", VulkanRenderGraph.PassKind.Compute, null),
+            new("transfer", VulkanRenderGraph.PassKind.Transfer, null),
+        };
+        Span<int> order = stackalloc int[3];
+
+        Assert.Equal(3, planner.Compile(passes, 0, order));
+        Assert.Equal(2, order[0]);
+        Assert.Equal(0, order[1]);
+        Assert.Equal(1, order[2]);
+    }
+
+    [Fact]
     public void PipelineCacheCreatesOnceAndReportsWarmHit()
     {
         var cache = new VulkanPipelineCache<object, int>(ReferenceEqualityComparer.Instance);
