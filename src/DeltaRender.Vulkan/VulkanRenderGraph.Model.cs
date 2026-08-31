@@ -19,6 +19,35 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal DepthStencilAttachmentDescription DepthStencil;
         internal bool HasDepthStencil;
         internal readonly List<GraphUse> Uses = new();
+
+        internal void Reset(string name, PassKind kind, VulkanGraphPipeline? pipeline)
+        {
+            Name = name;
+            Kind = kind;
+            Pipeline = pipeline;
+            PipelineDescription = null;
+            Raster = null;
+            Compute = null;
+            Transfer = null;
+            Color = default;
+            DepthStencil = default;
+            HasDepthStencil = false;
+            Uses.Clear();
+        }
+
+        internal void ReleaseForPool()
+        {
+            Name = string.Empty;
+            Pipeline = null;
+            PipelineDescription = null;
+            Raster = null;
+            Compute = null;
+            Transfer = null;
+            Color = default;
+            DepthStencil = default;
+            HasDepthStencil = false;
+            Uses.Clear();
+        }
     }
 
     internal sealed class GraphResource

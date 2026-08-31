@@ -13,6 +13,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private readonly VulkanRenderSession _session;
     private readonly List<GraphResource> _resources = new();
     private readonly List<GraphPass> _passes = new();
+    private readonly List<GraphPass> _passPool = new();
     private readonly List<ReadbackRequest> _readbacks = new();
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
@@ -347,11 +348,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         var pipeline = _session.GetOrCreateRasterPipeline(description.Pipeline);
 
-        _passes.Add(new GraphPass(description.Name, PassKind.Raster, pipeline)
-        {
-            Raster = pass,
-            PipelineDescription = description.Pipeline
-        });
+        var graphPass = RentPass(description.Name, PassKind.Raster, pipeline);
+        graphPass.Raster = pass;
+        graphPass.PipelineDescription = description.Pipeline;
+        _passes.Add(graphPass);
         return new RenderGraphPassHandle((uint)_passes.Count);
     }
 
@@ -361,7 +361,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         ArgumentNullException.ThrowIfNull(pass);
         var pipeline = _session.GetOrCreateComputePipeline(description.Shader);
 
-        _passes.Add(new GraphPass(description.Name, PassKind.Compute, pipeline) { Compute = pass });
+        var graphPass = RentPass(description.Name, PassKind.Compute, pipeline);
+        graphPass.Compute = pass;
+        _passes.Add(graphPass);
         return new RenderGraphPassHandle((uint)_passes.Count);
     }
 
@@ -370,8 +372,24 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         ThrowIfMutable();
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(pass);
-        _passes.Add(new GraphPass(name, PassKind.Transfer, null) { Transfer = pass });
+        var graphPass = RentPass(name, PassKind.Transfer, null);
+        graphPass.Transfer = pass;
+        _passes.Add(graphPass);
         return new RenderGraphPassHandle((uint)_passes.Count);
+    }
+
+    private GraphPass RentPass(string name, PassKind kind, VulkanGraphPipeline? pipeline)
+    {
+        if (_passPool.Count == 0)
+        {
+            return new GraphPass(name, kind, pipeline);
+        }
+
+        var poolIndex = _passPool.Count - 1;
+        var pass = _passPool[poolIndex];
+        _passPool.RemoveAt(poolIndex);
+        pass.Reset(name, kind, pipeline);
+        return pass;
     }
 
     public void UseColorAttachment(RenderGraphPassHandle pass, uint index, in ColorAttachmentDescription attachment)
@@ -699,6 +717,13 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         foreach (var resource in _resources)
         {
             resource.Dispose(_session);
+        }
+
+        for (var index = 0; index < _passes.Count; index++)
+        {
+            var pass = _passes[index];
+            pass.ReleaseForPool();
+            _passPool.Add(pass);
         }
 
         _resources.Clear();
