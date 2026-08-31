@@ -1,4 +1,3 @@
-using System.Globalization;
 using Delta.Diagnostics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -47,9 +46,9 @@ static void WriteProfile(RenderProfileReport report)
     var counters = report.Counters;
     Console.WriteLine(
         $"Render profile: frame={report.FrameNumber}, status={report.Status}, " +
-        $"build={FormatNanoseconds(timing.Build)}, acquire={FormatNanoseconds(timing.Acquire)}, " +
-        $"record={FormatNanoseconds(timing.Record)}, submit-present={FormatNanoseconds(timing.SubmitAndPresent)}, " +
-        $"fence-wait={FormatNanoseconds(timing.FenceWait)}, layout-shaping={FormatNanoseconds(timing.LayoutAndShapingCpu)}, " +
+        $"build={timing.Build}, acquire={timing.Acquire}, " +
+        $"record={timing.Record}, submit-present={timing.SubmitAndPresent}, " +
+        $"fence-wait={timing.FenceWait}, layout-shaping={timing.LayoutAndShapingCpu}, " +
         $"passes={counters.PassCount}, resources={counters.ResourceCount}, draws={counters.DrawCallCount}, " +
         $"descriptor-binds={counters.DescriptorBindCount}, vertex-binds={counters.VertexBufferBindCount}, " +
         $"index-binds={counters.IndexBufferBindCount}, upload-bytes={counters.UploadBytes}, " +
@@ -58,14 +57,11 @@ static void WriteProfile(RenderProfileReport report)
     for (int index = 0; index < report.Passes.Count; index++)
     {
         var pass = report.Passes[index];
-        string gpu = pass.GpuDuration is { } gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
+        string gpu = pass.GpuDuration?.ToString() ?? "unavailable";
         Console.WriteLine(
-            $"  pass={pass.Name}, kind={pass.Kind}, cpu-record={FormatNanoseconds(pass.CpuRecordDuration)}, gpu={gpu}");
+            $"  pass={pass.Name}, kind={pass.Kind}, cpu-record={pass.CpuRecordDuration}, gpu={gpu}");
     }
 }
-
-static string FormatNanoseconds(ProfileDuration duration)
-    => $"{duration.Nanoseconds.ToString("F2", CultureInfo.InvariantCulture)}ns";
 
 static int ParsePositiveInt(string[] args, string name, int fallback)
 {

@@ -22,7 +22,7 @@ input_path = pathlib.Path(sys.argv[1])
 tsv_path = pathlib.Path(sys.argv[2])
 summary_path = pathlib.Path(sys.argv[3])
 sample_count = int(sys.argv[4])
-unit_pattern = r"ns|us|ms|\u00b5s"
+unit_pattern = r"ps|ns|us|ms|\u00b5s|s|min|h|d"
 
 profile_pattern = re.compile(
     r"Render profile: frame=(?P<frame>\d+), status=(?P<status>[^,]+), "
@@ -40,10 +40,20 @@ profile_pattern = re.compile(
 pass_pattern = re.compile(
     r"^\s+pass=(?P<name>.*?), kind=(?P<kind>.*?), "
     rf"cpu-record=(?P<cpu>[0-9.]+)(?P<cpu_unit>{unit_pattern}), "
-    r"gpu=(?P<gpu>unavailable|[0-9.]+(?:ns|us|ms|\u00b5s))$"
+    rf"gpu=(?P<gpu>unavailable|[0-9.]+(?:{unit_pattern}))$"
 )
 duration_pattern = re.compile(rf"(?P<value>[0-9.]+)(?P<unit>{unit_pattern})")
-factor = {"ns": 1.0, "us": 1_000.0, "ms": 1_000_000.0, "\u00b5s": 1_000.0}
+factor = {
+    "ps": 0.001,
+    "ns": 1.0,
+    "us": 1_000.0,
+    "ms": 1_000_000.0,
+    "\u00b5s": 1_000.0,
+    "s": 1_000_000_000.0,
+    "min": 60_000_000_000.0,
+    "h": 3_600_000_000_000.0,
+    "d": 86_400_000_000_000.0,
+}
 
 
 def duration(value: str, unit: str) -> float:
