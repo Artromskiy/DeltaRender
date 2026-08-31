@@ -836,8 +836,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (!IsFinite(visual.Bounds) || !IsFinite(visual.Paint.FillColor) ||
-            !IsFinite(visual.Paint.StrokeColor) || !IsFinite(visual.Paint.CornerRadii) ||
+        if (!UiDisplayListGeometry.IsFinite(visual.Bounds) || !UiDisplayListGeometry.IsFinite(visual.Paint.FillColor) ||
+            !UiDisplayListGeometry.IsFinite(visual.Paint.StrokeColor) || !UiDisplayListGeometry.IsFinite(visual.Paint.CornerRadii) ||
             !float.IsFinite(visual.Paint.StrokeWidth))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] contains non-finite geometry or paint.");
@@ -845,7 +845,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (visual.Kind == UiVisualKind.SolidRectangle &&
-            (visual.Paint.StrokeWidth != 0 || !IsZero(visual.Paint.CornerRadii)))
+            (visual.Paint.StrokeWidth != 0 || !UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii)))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] requests stroke or rounded geometry without a registered effect shader.");
             return false;
@@ -923,8 +923,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (text.Text is null || !IsFinite(text.BaselineOrigin) || !IsFinite(text.Paint.FillColor) ||
-            !IsFinite(text.Paint.OutlineColor) || !float.IsFinite(text.Paint.OutlineWidth))
+        if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) || !UiDisplayListGeometry.IsFinite(text.Paint.FillColor) ||
+            !UiDisplayListGeometry.IsFinite(text.Paint.OutlineColor) || !float.IsFinite(text.Paint.OutlineWidth))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid shaped value or paint.");
             return false;
@@ -943,7 +943,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         if (!id.IsValid)
         {
-            clip = ViewportRect();
+            clip = UiDisplayListGeometry.ViewportRect(_viewport);
             return true;
         }
 
@@ -960,7 +960,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     private bool TryResolveClip(UiClipId id, out PixelRect result)
     {
-        result = ViewportRect();
+        result = UiDisplayListGeometry.ViewportRect(_viewport);
         var stamp = NextClipStamp();
         var current = id;
         while (current.IsValid)
@@ -985,13 +985,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 return false;
             }
 
-            if (!TryConvertBounds(region.Bounds, out var local))
+            if (!UiDisplayListGeometry.TryConvertBounds(region.Bounds, out var local))
             {
                 AddDiagnostic($"Clip {current.Value} has invalid bounds.");
                 return false;
             }
 
-            result = Intersect(result, local);
+            result = UiDisplayListGeometry.Intersect(result, local);
             current = region.Parent;
         }
 
@@ -1011,59 +1011,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         return _clipMarkEpoch;
-    }
-
-    private PixelRect ViewportRect()
-    {
-        var width = _viewport.Width > int.MaxValue ? int.MaxValue : (int)_viewport.Width;
-        var height = _viewport.Height > int.MaxValue ? int.MaxValue : (int)_viewport.Height;
-        return new PixelRect(0, 0, width, height);
-    }
-
-    private static bool TryConvertBounds(float4 bounds, out PixelRect result)
-    {
-        result = default;
-        var right = (double)bounds.x + bounds.z;
-        var bottom = (double)bounds.y + bounds.w;
-        if (!IsFinite(bounds) || !double.IsFinite(right) || !double.IsFinite(bottom) || bounds.z <= 0 || bounds.w <= 0)
-        {
-            return false;
-        }
-
-        var leftValue = Math.Floor(bounds.x);
-        var topValue = Math.Floor(bounds.y);
-        var rightValue = Math.Ceiling(right);
-        var bottomValue = Math.Ceiling(bottom);
-        var left = ClampToInt(leftValue);
-        var top = ClampToInt(topValue);
-        var rightInt = ClampToInt(rightValue);
-        var bottomInt = ClampToInt(bottomValue);
-        var width = (long)rightInt - left;
-        var height = (long)bottomInt - top;
-        if (width <= 0 || height <= 0)
-        {
-            return false;
-        }
-
-        result = new PixelRect(left, top, width > int.MaxValue ? int.MaxValue : (int)width, height > int.MaxValue ? int.MaxValue : (int)height);
-        return true;
-    }
-
-    private static int ClampToInt(double value)
-        => value <= int.MinValue ? int.MinValue : value >= int.MaxValue ? int.MaxValue : (int)value;
-
-    private static PixelRect Intersect(PixelRect left, PixelRect right)
-    {
-        var x = Math.Max((long)left.X, right.X);
-        var y = Math.Max((long)left.Y, right.Y);
-        var rightEdge = Math.Min((long)left.X + left.Width, (long)right.X + right.Width);
-        var bottomEdge = Math.Min((long)left.Y + left.Height, (long)right.Y + right.Height);
-        if (rightEdge <= x || bottomEdge <= y)
-        {
-            return new PixelRect((int)x, (int)y, 0, 0);
-        }
-
-        return new PixelRect((int)x, (int)y, checked((int)(rightEdge - x)), checked((int)(bottomEdge - y)));
     }
 
     private void ClearFrameStorage()
@@ -1121,14 +1068,5 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         Array.Resize(ref storage, capacity);
     }
-
-    private static bool IsFinite(float2 value)
-        => float.IsFinite(value.x) && float.IsFinite(value.y);
-
-    private static bool IsFinite(float4 value)
-        => float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z) && float.IsFinite(value.w);
-
-    private static bool IsZero(float4 value)
-        => value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
 
 }

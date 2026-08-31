@@ -1,0 +1,69 @@
+using Delta.Maths;
+using Delta.Render.RenderGraph;
+
+namespace Delta.Render.XAML;
+
+internal static class UiDisplayListGeometry
+{
+    internal static PixelRect ViewportRect(PixelExtent viewport)
+    {
+        var width = viewport.Width > int.MaxValue ? int.MaxValue : (int)viewport.Width;
+        var height = viewport.Height > int.MaxValue ? int.MaxValue : (int)viewport.Height;
+        return new PixelRect(0, 0, width, height);
+    }
+
+    internal static bool TryConvertBounds(float4 bounds, out PixelRect result)
+    {
+        result = default;
+        var right = (double)bounds.x + bounds.z;
+        var bottom = (double)bounds.y + bounds.w;
+        if (!IsFinite(bounds) || !double.IsFinite(right) || !double.IsFinite(bottom) || bounds.z <= 0 || bounds.w <= 0)
+        {
+            return false;
+        }
+
+        var leftValue = Math.Floor(bounds.x);
+        var topValue = Math.Floor(bounds.y);
+        var rightValue = Math.Ceiling(right);
+        var bottomValue = Math.Ceiling(bottom);
+        var left = ClampToInt(leftValue);
+        var top = ClampToInt(topValue);
+        var rightInt = ClampToInt(rightValue);
+        var bottomInt = ClampToInt(bottomValue);
+        var width = (long)rightInt - left;
+        var height = (long)bottomInt - top;
+        if (width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        result = new PixelRect(left, top, width > int.MaxValue ? int.MaxValue : (int)width, height > int.MaxValue ? int.MaxValue : (int)height);
+        return true;
+    }
+
+    internal static PixelRect Intersect(PixelRect left, PixelRect right)
+    {
+        var x = Math.Max((long)left.X, right.X);
+        var y = Math.Max((long)left.Y, right.Y);
+        var rightEdge = Math.Min((long)left.X + left.Width, (long)right.X + right.Width);
+        var bottomEdge = Math.Min((long)left.Y + left.Height, (long)right.Y + right.Height);
+        if (rightEdge <= x || bottomEdge <= y)
+        {
+            return new PixelRect((int)x, (int)y, 0, 0);
+        }
+
+        return new PixelRect((int)x, (int)y, checked((int)(rightEdge - x)), checked((int)(bottomEdge - y)));
+    }
+
+    internal static bool IsFinite(float2 value)
+        => float.IsFinite(value.x) && float.IsFinite(value.y);
+
+    internal static bool IsFinite(float4 value)
+        => float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z) && float.IsFinite(value.w);
+
+    internal static bool IsZero(float4 value)
+        => value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
+
+    private static int ClampToInt(double value)
+        => value <= int.MinValue ? int.MinValue : value >= int.MaxValue ? int.MaxValue : (int)value;
+}
