@@ -66,7 +66,9 @@ public sealed class RenderProfilingContractTests
         {
             DrawCallCount = 4,
             DescriptorBindCount = 5,
-            UploadBytes = 128
+            UploadBytes = 128,
+            VertexBufferBindCount = 6,
+            IndexBufferBindCount = 7
         };
 
         Assert.Equal(fenceWait, timing.FenceWait);
@@ -74,5 +76,7 @@ public sealed class RenderProfilingContractTests
         Assert.Equal(4, counters.DrawCallCount);
         Assert.Equal(5, counters.DescriptorBindCount);
         Assert.Equal((ulong)128, counters.UploadBytes);
+        Assert.Equal(6, counters.VertexBufferBindCount);
+        Assert.Equal(7, counters.IndexBufferBindCount);
     }
 }

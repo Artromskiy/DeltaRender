@@ -12,15 +12,15 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var shaderDirectory = GetOption(args, "--shader-dir") ?? ResolveDefaultShaderDirectory();
-        var vertexPath = GetOption(args, "--vertex") ?? Path.Combine(shaderDirectory, "SquareVertex.vert.spv");
-        var fragmentPath = GetOption(args, "--fragment") ?? Path.Combine(shaderDirectory, "SquareFragment.frag.spv");
-        var outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "headless-shader-playground", "square.ppm");
-        var width = ParseUInt(args, "--width", 960);
-        var height = ParseUInt(args, "--height", 540);
-        var frames = ParseUInt(args, "--frames", 1);
-        var vertexCount = ParseUInt(args, "--vertices", 18);
-        var profilingEnabled = HasFlag(args, "--profile");
+        string shaderDirectory = GetOption(args, "--shader-dir") ?? ResolveDefaultShaderDirectory();
+        string vertexPath = GetOption(args, "--vertex") ?? Path.Combine(shaderDirectory, "SquareVertex.vert.spv");
+        string fragmentPath = GetOption(args, "--fragment") ?? Path.Combine(shaderDirectory, "SquareFragment.frag.spv");
+        string outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "headless-shader-playground", "square.ppm");
+        uint width = ParseUInt(args, "--width", 960);
+        uint height = ParseUInt(args, "--height", 540);
+        uint frames = ParseUInt(args, "--frames", 1);
+        uint vertexCount = ParseUInt(args, "--vertices", 18);
+        bool profilingEnabled = HasFlag(args, "--profile");
         if (width == 0 || height == 0 || frames == 0 || vertexCount == 0)
         {
             await Console.Error.WriteLineAsync("--width, --height, --frames and --vertices must be greater than zero.").ConfigureAwait(false);
@@ -48,7 +48,7 @@ internal static class Program
             var graph = session.CreateRenderGraph();
             var feature = new HeadlessRasterFeature(program, session.Target, width, height, vertexCount, ParseFloat(args, "--time", 1.25f));
             IRenderFeature[] features = [feature];
-            for (var frameNumber = 0UL; frameNumber < frames; frameNumber++)
+            for (ulong frameNumber = 0UL; frameNumber < frames; frameNumber++)
             {
                 graph.Build(frameNumber, features);
                 var result = graph.Execute();
@@ -59,7 +59,7 @@ internal static class Program
                 }
             }
 
-            var rgba = new byte[checked((int)((ulong)width * height * 4))];
+            byte[] rgba = new byte[checked((int)((ulong)width * height * 4))];
             if (graph.CopyReadback(feature.Readback, rgba) != rgba.Length)
             {
                 await Console.Error.WriteLineAsync("Headless Vulkan readback did not complete.").ConfigureAwait(false);
@@ -81,13 +81,13 @@ internal static class Program
 
     private static uint ParseUInt(string[] args, string option, uint fallback)
     {
-        var value = GetOption(args, option);
-        return value is not null && uint.TryParse(value, out var parsed) ? parsed : fallback;
+        string? value = GetOption(args, option);
+        return value is not null && uint.TryParse(value, out uint parsed) ? parsed : fallback;
     }
 
     private static string ResolveDefaultShaderDirectory()
     {
-        var local = Path.Combine("artifacts", "headless-shader-playground", "shaders");
+        string local = Path.Combine("artifacts", "headless-shader-playground", "shaders");
         if (File.Exists(Path.Combine(local, "SquareVertex.vert.spv")))
         {
             return local;
@@ -108,13 +108,13 @@ internal static class Program
 
     private static float ParseFloat(string[] args, string option, float fallback)
     {
-        var value = GetOption(args, option);
-        return value is not null && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && float.IsFinite(parsed) ? parsed : fallback;
+        string? value = GetOption(args, option);
+        return value is not null && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) && float.IsFinite(parsed) ? parsed : fallback;
     }
 
     private static bool HasFlag(string[] args, string option)
     {
-        for (var index = 0; index < args.Length; index++)
+        for (int index = 0; index < args.Length; index++)
         {
             if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase))
             {
@@ -134,11 +134,11 @@ internal static class Program
 
         var timing = report.Timing;
         var counters = report.Counters;
-        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build-ns={FormatNanoseconds(timing.Build)} acquire-ns={FormatNanoseconds(timing.Acquire)} record-ns={FormatNanoseconds(timing.Record)} submit-present-ns={FormatNanoseconds(timing.SubmitAndPresent)} readback-ns={FormatNanoseconds(timing.Readback)} fence-wait-ns={FormatNanoseconds(timing.FenceWait)} layout-shaping-ns={FormatNanoseconds(timing.LayoutAndShapingCpu)} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount} draws={counters.DrawCallCount} descriptor-binds={counters.DescriptorBindCount} upload-bytes={counters.UploadBytes}");
-        for (var index = 0; index < report.Passes.Count; index++)
+        Console.WriteLine($"profile frame={report.FrameNumber} status={report.Status} build-ns={FormatNanoseconds(timing.Build)} acquire-ns={FormatNanoseconds(timing.Acquire)} record-ns={FormatNanoseconds(timing.Record)} submit-present-ns={FormatNanoseconds(timing.SubmitAndPresent)} readback-ns={FormatNanoseconds(timing.Readback)} fence-wait-ns={FormatNanoseconds(timing.FenceWait)} layout-shaping-ns={FormatNanoseconds(timing.LayoutAndShapingCpu)} passes={counters.PassCount} raster={counters.RasterPassCount} compute={counters.ComputePassCount} transfer={counters.TransferPassCount} resources={counters.ResourceCount} draws={counters.DrawCallCount} descriptor-binds={counters.DescriptorBindCount} vertex-binds={counters.VertexBufferBindCount} index-binds={counters.IndexBufferBindCount} upload-bytes={counters.UploadBytes}");
+        for (int index = 0; index < report.Passes.Count; index++)
         {
             var pass = report.Passes[index];
-            var gpu = pass.GpuDuration is ProfileDuration gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
+            string gpu = pass.GpuDuration is ProfileDuration gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
             Console.WriteLine($"profile-pass index={index} kind={pass.Kind} name={pass.Name} cpu-ns={FormatNanoseconds(pass.CpuRecordDuration)} gpu-ns={gpu}");
         }
     }
@@ -148,7 +148,7 @@ internal static class Program
 
     private static string? GetOption(string[] args, string option)
     {
-        for (var index = 0; index + 1 < args.Length; index++)
+        for (int index = 0; index + 1 < args.Length; index++)
         {
             if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase))
             {
@@ -161,20 +161,20 @@ internal static class Program
 
     private static void SavePpm(string path, uint width, uint height, ReadOnlySpan<byte> rgba)
     {
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
+        string fullPath = Path.GetFullPath(path);
+        string directory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
         Directory.CreateDirectory(directory);
-        var rgb = new byte[checked((int)((ulong)width * height * 3))];
-        for (var source = 0; source < rgba.Length; source += 4)
+        byte[] rgb = new byte[checked((int)((ulong)width * height * 3))];
+        for (int source = 0; source < rgba.Length; source += 4)
         {
-            var target = source / 4 * 3;
+            int target = source / 4 * 3;
             rgb[target] = rgba[source];
             rgb[target + 1] = rgba[source + 1];
             rgb[target + 2] = rgba[source + 2];
         }
 
         using var stream = File.Create(fullPath);
-        var header = System.Text.Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n");
+        byte[] header = System.Text.Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n");
         stream.Write(header);
         stream.Write(rgb);
     }

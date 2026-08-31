@@ -80,6 +80,12 @@ public readonly record struct RenderProfileCounters(
 
     /// <summary>Total bytes copied into upload staging during graph execution.</summary>
     public ulong UploadBytes { get; init; }
+
+    /// <summary>Number of vertex-buffer bind commands emitted by the command writer.</summary>
+    public int VertexBufferBindCount { get; init; }
+
+    /// <summary>Number of index-buffer bind commands emitted by the command writer.</summary>
+    public int IndexBufferBindCount { get; init; }
 }
 
 public sealed class RenderPassProfile

@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Collections.Generic;
+using System.Globalization;
 using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -21,15 +21,15 @@ internal static class Program
     {
         try
         {
-            var shaderRoot = Path.GetFullPath(GetOption(
+            string shaderRoot = Path.GetFullPath(GetOption(
                 args,
                 "--shader-root",
                 Path.Combine("..", "DeltaShader", "src", "DeltaShader", "CompiledShaders", "Consumers", "DeltaXAML", "samples", "RoundedRectangle.Render", "shaders")));
-            var sliceRoot = Path.GetFullPath(GetOption(
+            string sliceRoot = Path.GetFullPath(GetOption(
                 args,
                 "--slice-root",
                 Path.Combine("..", "DeltaShader", "artifacts", "rounded-rectangle-slice")));
-            var frames = ParsePositiveInt(args, "--frames", DefaultFrames);
+            int frames = ParsePositiveInt(args, "--frames", DefaultFrames);
             var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var rendererScope = renderer.ConfigureAwait(false);
             var session = renderer.CreateHeadlessSession(
@@ -73,10 +73,10 @@ internal static class Program
             solidVisualProgram: solidProgram,
             roundedSliceVisualProgram: sliceProgram);
         var displayList = new UiDisplayList(
-            new[] { visual },
-            Array.Empty<UiClipRegion>(),
-            Array.Empty<UiTextDraw>(),
-            new[] { new UiDrawRef(UiDrawKind.Visual, 0) });
+            [visual],
+            [],
+            [],
+            [new UiDrawRef(UiDrawKind.Visual, 0)]);
         if (!feature.Consume(displayList))
         {
             throw new InvalidOperationException($"{name} was rejected: {string.Join(" | ", feature.Diagnostics)}");
@@ -86,8 +86,8 @@ internal static class Program
         var buildNanoseconds = new List<double>(frames);
         var recordNanoseconds = new List<double>(frames);
         var gpuPassNanoseconds = new List<double>(frames);
-        var countersText = string.Empty;
-        for (var frame = 0; frame < frames; frame++)
+        string countersText = string.Empty;
+        for (int frame = 0; frame < frames; frame++)
         {
             graph.Build((ulong)frame, features);
             var result = graph.Execute();
@@ -103,7 +103,7 @@ internal static class Program
 
             buildNanoseconds.Add(report.Timing.Build.Nanoseconds);
             recordNanoseconds.Add(report.Timing.Record.Nanoseconds);
-            var gpuPassTotal = 0d;
+            double gpuPassTotal = 0d;
             foreach (var pass in report.Passes)
             {
                 if (pass.GpuDuration is { } duration)
@@ -115,6 +115,7 @@ internal static class Program
             gpuPassNanoseconds.Add(gpuPassTotal);
             var counters = report.Counters;
             countersText = $"draws={counters.DrawCallCount} descriptor-binds={counters.DescriptorBindCount} " +
+                $"vertex-binds={counters.VertexBufferBindCount} index-binds={counters.IndexBufferBindCount} " +
                 $"upload-bytes={counters.UploadBytes}";
         }
 
@@ -134,7 +135,7 @@ internal static class Program
     private static double Median(List<double> values)
     {
         values.Sort();
-        var middle = values.Count / 2;
+        int middle = values.Count / 2;
         return values.Count % 2 == 0
             ? (values[middle - 1] + values[middle]) / 2
             : values[middle];
@@ -192,7 +193,7 @@ internal static class Program
 
     private static byte[] ReadShader(string root, string name)
     {
-        var path = Path.Combine(root, name);
+        string path = Path.Combine(root, name);
         return File.Exists(path)
             ? File.ReadAllBytes(path)
             : throw new FileNotFoundException($"Missing generated UI shader artifact: {path}");
@@ -200,7 +201,7 @@ internal static class Program
 
     private static string GetOption(string[] args, string option, string fallback)
     {
-        for (var index = 0; index + 1 < args.Length; index++)
+        for (int index = 0; index + 1 < args.Length; index++)
         {
             if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase))
             {
@@ -213,7 +214,7 @@ internal static class Program
 
     private static int ParsePositiveInt(string[] args, string option, int fallback)
     {
-        var value = GetOption(args, option, string.Empty);
-        return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : fallback;
+        string value = GetOption(args, option, string.Empty);
+        return int.TryParse(value, out int parsed) && parsed > 0 ? parsed : fallback;
     }
 }

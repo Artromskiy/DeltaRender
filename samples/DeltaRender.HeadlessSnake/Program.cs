@@ -4,10 +4,10 @@ using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 
-var frames = ParsePositiveInt(args, "--frames", 600);
-var slots = ParsePositiveInt(args, "--slots", 16);
-var width = ParsePositiveInt(args, "--width", 960);
-var height = ParsePositiveInt(args, "--height", 720);
+int frames = ParsePositiveInt(args, "--frames", 600);
+int slots = ParsePositiveInt(args, "--slots", 16);
+int width = ParsePositiveInt(args, "--width", 960);
+int height = ParsePositiveInt(args, "--height", 720);
 var options = new RenderSessionOptions(EnableProfiling: true, FramesInFlight: slots);
 
 var renderer = new VulkanRenderer(new VulkanRendererOptions());
@@ -18,9 +18,9 @@ var graph = session.CreateRenderGraph();
 var feature = new SnakeFrameFeature();
 IRenderFeature[] features = [feature];
 var snake = new SnakeSimulation(width, height);
-var completedProfiles = 0;
+int completedProfiles = 0;
 
-for (var frame = 0UL; frame < (ulong)frames; frame++)
+for (ulong frame = 0UL; frame < (ulong)frames; frame++)
 {
     snake.Update();
     graph.Build(frame, features);
@@ -51,12 +51,14 @@ static void WriteProfile(RenderProfileReport report)
         $"record={FormatNanoseconds(timing.Record)}, submit-present={FormatNanoseconds(timing.SubmitAndPresent)}, " +
         $"fence-wait={FormatNanoseconds(timing.FenceWait)}, layout-shaping={FormatNanoseconds(timing.LayoutAndShapingCpu)}, " +
         $"passes={counters.PassCount}, resources={counters.ResourceCount}, draws={counters.DrawCallCount}, " +
-        $"descriptor-binds={counters.DescriptorBindCount}, upload-bytes={counters.UploadBytes}, gpu-timestamps={report.Capabilities.GpuTimestamps}");
+        $"descriptor-binds={counters.DescriptorBindCount}, vertex-binds={counters.VertexBufferBindCount}, " +
+        $"index-binds={counters.IndexBufferBindCount}, upload-bytes={counters.UploadBytes}, " +
+        $"gpu-timestamps={report.Capabilities.GpuTimestamps}");
 
-    for (var index = 0; index < report.Passes.Count; index++)
+    for (int index = 0; index < report.Passes.Count; index++)
     {
         var pass = report.Passes[index];
-        var gpu = pass.GpuDuration is { } gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
+        string gpu = pass.GpuDuration is { } gpuDuration ? FormatNanoseconds(gpuDuration) : "unavailable";
         Console.WriteLine(
             $"  pass={pass.Name}, kind={pass.Kind}, cpu-record={FormatNanoseconds(pass.CpuRecordDuration)}, gpu={gpu}");
     }
@@ -67,10 +69,10 @@ static string FormatNanoseconds(ProfileDuration duration)
 
 static int ParsePositiveInt(string[] args, string name, int fallback)
 {
-    for (var index = 0; index + 1 < args.Length; index++)
+    for (int index = 0; index + 1 < args.Length; index++)
     {
         if (string.Equals(args[index], name, StringComparison.Ordinal) &&
-            int.TryParse(args[index + 1], out var value) && value > 0)
+            int.TryParse(args[index + 1], out int value) && value > 0)
         {
             return value;
         }
@@ -83,10 +85,7 @@ internal sealed class SnakeFrameFeature : IRenderFeature
 {
     private readonly SnakeTransferPass _pass = new();
 
-    public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
-    {
-        graph.AddTransferPass("headless-snake-update", _pass);
-    }
+    public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber) => graph.AddTransferPass("headless-snake-update", _pass);
 }
 
 internal sealed class SnakeTransferPass : ITransferPass

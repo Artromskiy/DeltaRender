@@ -31,6 +31,8 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     private ProfileDuration _layoutAndShapingCpu;
     private int _drawCallCount;
     private int _descriptorBindCount;
+    private int _vertexBufferBindCount;
+    private int _indexBufferBindCount;
     private ulong _uploadBytes;
 
     internal VulkanRenderProfiler(Vk api, Device device, PhysicalDevice physicalDevice, uint graphicsFamily)
@@ -76,6 +78,8 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         _layoutAndShapingCpu = ProfileDuration.Zero;
         _drawCallCount = 0;
         _descriptorBindCount = 0;
+        _vertexBufferBindCount = 0;
+        _indexBufferBindCount = 0;
         _uploadBytes = 0;
         _passCount = 0;
     }
@@ -88,7 +92,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return;
         }
 
-        var required = checked(passCount * 2);
+        int required = checked(passCount * 2);
         if (!EnsureQueryPool(required))
         {
             return;
@@ -98,12 +102,12 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         _api.CmdResetQueryPool(commandBuffer, _queryPool, 0, (uint)_queryCount);
     }
 
-    internal long StartPhase() => Stopwatch.GetTimestamp();
+    internal static long StartPhase() => Stopwatch.GetTimestamp();
 
     internal int BeginPass(string name, RenderProfilePassKind kind, CommandBuffer commandBuffer, out long started)
     {
         started = Stopwatch.GetTimestamp();
-        var index = _passCount;
+        int index = _passCount;
         EnsurePassCapacity(index + 1);
         _passMeasurements[index] = new PassMeasurement(name, kind);
         _passCount++;
@@ -141,6 +145,10 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 
     internal void RecordDescriptorBind() => _descriptorBindCount = checked(_descriptorBindCount + 1);
 
+    internal void RecordVertexBufferBind() => _vertexBufferBindCount = checked(_vertexBufferBindCount + 1);
+
+    internal void RecordIndexBufferBind() => _indexBufferBindCount = checked(_indexBufferBindCount + 1);
+
     internal void RecordUploadBytes(ulong bytes) => _uploadBytes = checked(_uploadBytes + bytes);
 
     public void RecordLayoutAndShaping(ProfileDuration duration) => _layoutAndShapingCpu += duration;
@@ -153,10 +161,10 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         }
 
         var passes = new RenderPassProfile[_passCount];
-        var rasterCount = 0;
-        var computeCount = 0;
-        var transferCount = 0;
-        for (var index = 0; index < _passCount; index++)
+        int rasterCount = 0;
+        int computeCount = 0;
+        int transferCount = 0;
+        for (int index = 0; index < _passCount; index++)
         {
             var measurement = _passMeasurements[index];
             passes[index] = new RenderPassProfile(measurement.Name, measurement.Kind, measurement.CpuRecordDuration, measurement.GpuDuration);
@@ -188,7 +196,9 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             {
                 DrawCallCount = _drawCallCount,
                 DescriptorBindCount = _descriptorBindCount,
-                UploadBytes = _uploadBytes
+                UploadBytes = _uploadBytes,
+                VertexBufferBindCount = _vertexBufferBindCount,
+                IndexBufferBindCount = _indexBufferBindCount
             });
     }
 
@@ -212,7 +222,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return true;
         }
 
-        var capacity = _queryCapacity == 0 ? 64 : checked(_queryCapacity * 2);
+        int capacity = _queryCapacity == 0 ? 64 : checked(_queryCapacity * 2);
         capacity = Math.Max(capacity, required);
         var createInfo = new QueryPoolCreateInfo
         {
@@ -245,7 +255,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return;
         }
 
-        var capacity = _passMeasurements.Length == 0 ? 8 : checked(_passMeasurements.Length * 2);
+        int capacity = _passMeasurements.Length == 0 ? 8 : checked(_passMeasurements.Length * 2);
         Array.Resize(ref _passMeasurements, Math.Max(capacity, required));
     }
 
@@ -270,7 +280,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return;
         }
 
-        for (var index = 0; index < _passCount; index++)
+        for (int index = 0; index < _passCount; index++)
         {
             var measurement = _passMeasurements[index];
             measurement.GpuDuration = ConvertTimestampDelta(_queryValues.RefAt(index * 2), _queryValues.RefAt(index * 2 + 1));
@@ -280,14 +290,14 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 
     private ProfileDuration ConvertTimestampDelta(ulong start, ulong end)
     {
-        var delta = unchecked(end - start);
+        ulong delta = unchecked(end - start);
         if (_timestampValidBits < 64)
         {
-            var mask = (1UL << (int)_timestampValidBits) - 1UL;
+            ulong mask = (1UL << (int)_timestampValidBits) - 1UL;
             delta &= mask;
         }
 
-        var picoseconds = delta * _timestampPeriodNanoseconds * 1_000d;
+        double picoseconds = delta * _timestampPeriodNanoseconds * 1_000d;
         if (picoseconds <= 0)
         {
             return ProfileDuration.Zero;

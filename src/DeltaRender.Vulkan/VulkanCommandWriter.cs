@@ -220,6 +220,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         }
 
         session.Api.CmdBindVertexBuffers(session.CommandBuffer, binding, 1, &buffer, &offset);
+        session.ProfilerState?.RecordVertexBufferBind();
         _lastVertexBinding = binding;
         _lastVertexBuffer = buffer;
         _lastVertexOffset = offset;
@@ -238,6 +239,7 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         }
 
         session.Api.CmdBindIndexBuffer(session.CommandBuffer, buffer, offset, indexType);
+        session.ProfilerState?.RecordIndexBufferBind();
         _lastIndexBuffer = buffer;
         _lastIndexOffset = offset;
         _lastIndexType = indexType;

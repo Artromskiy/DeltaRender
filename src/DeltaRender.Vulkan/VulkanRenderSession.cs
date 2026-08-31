@@ -15,7 +15,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private readonly VulkanRenderer _renderer;
     private readonly bool _profilingEnabled;
-    private VulkanRenderProfiler? _profiler;
+    private readonly VulkanRenderProfiler? _profiler;
     private readonly VulkanSurfaceLease? _surfaceLease;
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
@@ -40,8 +40,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly VulkanPipelineCache<IShaderArtifact, VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanTransientResourcePool<TransientBufferKey, BufferAllocation> _transientBuffers = new();
     private readonly VulkanTransientResourcePool<TransientTextureKey, PersistentTexture> _transientTextures = new();
-    private readonly List<DeferredBuffer> _deferredBuffers = new();
-    private readonly List<DeferredTexture> _deferredTextures = new();
+    private readonly List<DeferredBuffer> _deferredBuffers = [];
+    private readonly List<DeferredTexture> _deferredTextures = [];
     private VulkanRenderGraph? _graph;
 
     private SwapchainKHR _swapchain;
@@ -130,7 +130,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             commandBuffer = commandResources.CommandBuffer;
 
             frameResources = new VulkanFrameSlotResources[_frameSlots.Count];
-            for (var index = 0; index < frameResources.Length; index++)
+            for (int index = 0; index < frameResources.Length; index++)
             {
                 var slot = new VulkanFrameSlotResources(this);
                 frameResources[index] = slot;
@@ -224,7 +224,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _frameResources = new VulkanFrameSlotResources[_frameSlots.Count];
         try
         {
-            for (var index = 0; index < _frameResources.Length; index++)
+            for (int index = 0; index < _frameResources.Length; index++)
             {
                 var slot = new VulkanFrameSlotResources(this);
                 _frameResources[index] = slot;
@@ -341,8 +341,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         var allocation = CreateNativeBuffer(description.SizeInBytes, ToVulkanBufferUsage(description.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
-        var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
-        var generation = NextGeneration();
+        ulong value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
+        uint generation = NextGeneration();
         _resources.AddBuffer(value, new PersistentBuffer(allocation, description, generation));
         return new RenderBufferHandle(value, generation);
     }
@@ -356,8 +356,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         var texture = CreateNativeTexture(description);
-        var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
-        var generation = NextGeneration();
+        ulong value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
+        uint generation = NextGeneration();
         _resources.AddTexture(value, texture with { Generation = generation });
         return new RenderTextureHandle(value, generation);
     }
@@ -377,8 +377,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             MaxLod = 1
         };
         VulkanCall.Ensure(_renderer.Api.CreateSampler(_device, samplerInfo, null, out var sampler), "CreateSampler");
-        var value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
-        var generation = NextGeneration();
+        ulong value = unchecked((ulong)Interlocked.Increment(ref _nextResource));
+        uint generation = NextGeneration();
         _resources.AddSampler(value, new PersistentSampler(sampler, generation));
         return new RenderSamplerHandle(value, generation);
     }
@@ -443,14 +443,14 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             var replacements = new HeadlessTarget[_frameResources.Length];
             try
             {
-                for (var index = 0; index < replacements.Length; index++)
+                for (int index = 0; index < replacements.Length; index++)
                 {
                     replacements[index] = CreateHeadlessTarget(newExtent, _renderPass);
                 }
             }
             catch
             {
-                for (var index = 0; index < replacements.Length; index++)
+                for (int index = 0; index < replacements.Length; index++)
                 {
                     if (replacements[index].Image.Handle != default)
                     {
@@ -461,7 +461,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 throw;
             }
 
-            for (var index = 0; index < _frameResources.Length; index++)
+            for (int index = 0; index < _frameResources.Length; index++)
             {
                 var slot = _frameResources[index];
                 var old = new HeadlessTarget(slot.TargetImage, slot.TargetMemory, slot.TargetView, slot.TargetFramebuffer);
@@ -517,9 +517,9 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    private void DestroyFrameResources(Vk api, Device device, VulkanFrameSlotResources[] resources, bool skipFirst = false)
+    private static void DestroyFrameResources(Vk api, Device device, VulkanFrameSlotResources[] resources, bool skipFirst = false)
     {
-        for (var index = resources.Length - 1; index >= 0; index--)
+        for (int index = resources.Length - 1; index >= 0; index--)
         {
             var slot = resources[index];
             if (skipFirst && index == 0)
@@ -565,7 +565,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
 
         var depthTexture = texture;
-        var hasAttachment = depthTexture is not null;
+        bool hasAttachment = depthTexture is not null;
         if (!hasAttachment && !_hasDepthStencilAttachment)
         {
             return;
@@ -631,7 +631,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             else
             {
                 nextHeadlessFramebuffers = new Framebuffer[_frameResources.Length];
-                for (var index = 0; index < nextHeadlessFramebuffers.Length; index++)
+                for (int index = 0; index < nextHeadlessFramebuffers.Length; index++)
                 {
                     nextHeadlessFramebuffers[index] = CreateFramebuffer(
                         Api,
@@ -695,7 +695,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
         else
         {
-            for (var index = 0; index < _frameResources.Length; index++)
+            for (int index = 0; index < _frameResources.Length; index++)
             {
                 _frameResources[index].TargetFramebuffer = nextHeadlessFramebuffers[index];
             }
@@ -803,7 +803,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit(window)");
                 _frameResources[CurrentFrameSlot].InFlight = true;
                 var swapchain = _swapchain;
-                var imageIndex = _activeImage;
+                uint imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
                 var swapchainExtension = _renderer.GetKhrSwapchain();
                 var result = swapchainExtension.QueuePresent(_presentQueue, present);
@@ -853,7 +853,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private void WaitForFence(Fence fence, string operation)
     {
         var profiler = _profiler;
-        var started = profiler?.StartPhase() ?? 0;
+        long started = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         try
         {
             VulkanCall.Ensure(Api.WaitForFences(Device, 1, fence, true, ulong.MaxValue), operation);
@@ -866,7 +866,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     internal void WaitForFrame()
     {
-        var slotIndex = CurrentFrameSlot;
+        int slotIndex = CurrentFrameSlot;
         if (slotIndex < 0 || !_frameResources[slotIndex].InFlight)
         {
             return;

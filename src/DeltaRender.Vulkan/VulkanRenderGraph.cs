@@ -11,13 +11,13 @@ namespace Delta.Render.Vulkan;
 internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {
     private readonly VulkanRenderSession _session;
-    private readonly List<GraphResource> _resources = new();
-    private readonly List<GraphResource> _resourcePool = new();
-    private readonly List<GraphPass> _passes = new();
-    private readonly List<GraphPass> _passPool = new();
+    private readonly List<GraphResource> _resources = [];
+    private readonly List<GraphResource> _resourcePool = [];
+    private readonly List<GraphPass> _passes = [];
+    private readonly List<GraphPass> _passPool = [];
     private readonly VulkanGraphReadback _readback;
     private ResourceState[] _states = [];
-    private int[] _order = Array.Empty<int>();
+    private int[] _order = [];
     private int _orderCount;
     private VulkanRasterCommandContext? _rasterContext;
     private VulkanComputeCommandContext? _computeContext;
@@ -42,13 +42,13 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         ThrowIfDisposed();
         var profiler = _session.ProfilerState;
-        var buildStart = profiler?.StartPhase() ?? 0;
+        long buildStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         profiler?.BeginBuild(frameNumber);
         ResetBuild();
         _session.ReclaimDeferredTransientsForBuild();
         try
         {
-            for (var index = 0; index < features.Length; index++)
+            for (int index = 0; index < features.Length; index++)
             {
                 ArgumentNullException.ThrowIfNull(features[index]);
                 features[index].AddPasses(this, frameNumber);
@@ -92,7 +92,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         var profiler = _session.ProfilerState;
-        var acquireStart = profiler?.StartPhase() ?? 0;
+        long acquireStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         try
         {
             if (!_session.BeginGraphFrame())
@@ -119,17 +119,17 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         Array.Clear(_states, 0, _resources.Count);
         var states = _states;
-        var rasterActive = false;
-        var recordStart = profiler?.StartPhase() ?? 0;
+        bool rasterActive = false;
+        long recordStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         try
         {
             profiler?.BeginGpuFrame(_session.CommandBuffer, _orderCount);
-            for (var orderPosition = 0; orderPosition < _orderCount; orderPosition++)
+            for (int orderPosition = 0; orderPosition < _orderCount; orderPosition++)
             {
-                var passIndex = _order.RefAt(orderPosition);
+                int passIndex = _order.RefAt(orderPosition);
                 var pass = _passes[passIndex];
-                var passProfile = -1;
-                var passStart = 0L;
+                int passProfile = -1;
+                long passStart = 0L;
                 if (profiler is not null)
                 {
                     passProfile = profiler.BeginPass(pass.Name, ToProfilePassKind(pass.Kind), _session.CommandBuffer, out passStart);
@@ -207,10 +207,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 }
                 finally
                 {
-                    if (profiler is not null)
-                    {
-                        profiler.EndPass(passProfile, passStart, _session.CommandBuffer);
-                    }
+                    profiler?.EndPass(passProfile, passStart, _session.CommandBuffer);
                 }
             }
 
@@ -221,7 +218,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
             _readback.Record(states);
             profiler?.EndRecord(recordStart);
-            var submitStart = profiler?.StartPhase() ?? 0;
+            long submitStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
             if (!_session.EndGraphFrame())
             {
                 profiler?.EndSubmitAndPresent(submitStart);
@@ -257,7 +254,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             return;
         }
 
-        var capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
+        int capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
         _states = new ResourceState[Math.Max(capacity, required)];
     }
 
@@ -268,7 +265,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             return;
         }
 
-        var capacity = _order.Length == 0 ? 8 : checked(_order.Length * 2);
+        int capacity = _order.Length == 0 ? 8 : checked(_order.Length * 2);
         _order = new int[Math.Max(capacity, required)];
     }
 
@@ -414,7 +411,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             return new GraphPass(name, kind, pipeline);
         }
 
-        var poolIndex = _passPool.Count - 1;
+        int poolIndex = _passPool.Count - 1;
         var pass = _passPool[poolIndex];
         _passPool.RemoveAt(poolIndex);
         pass.Reset(name, kind, pipeline);
@@ -478,15 +475,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public void UseBuffer(RenderGraphPassHandle pass, RenderGraphBufferHandle buffer, RenderResourceAccess access, RenderPipelineStages stages)
         => AddUse(GetPass(pass), GetBuffer(buffer), access, stages);
 
-    public RenderGraphReadbackHandle ReadbackBuffer(RenderGraphBufferHandle buffer, in BufferRange range)
-    {
-        return _readback.AddBuffer(buffer, range);
-    }
+    public RenderGraphReadbackHandle ReadbackBuffer(RenderGraphBufferHandle buffer, in BufferRange range) => _readback.AddBuffer(buffer, range);
 
-    public RenderGraphReadbackHandle ReadbackTexture(RenderGraphTextureHandle texture, in PixelRect region)
-    {
-        return _readback.AddTexture(texture, region);
-    }
+    public RenderGraphReadbackHandle ReadbackTexture(RenderGraphTextureHandle texture, in PixelRect region) => _readback.AddTexture(texture, region);
 
     internal GraphResource ResolveBuffer(RenderGraphBufferHandle handle) => GetBuffer(handle);
     internal GraphResource ResolveTexture(RenderGraphTextureHandle handle) => GetTexture(handle);
@@ -495,7 +486,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal ulong AllocateStaging(ReadOnlySpan<byte> data)
     {
-        var offset = _session.AllocateStaging(data);
+        ulong offset = _session.AllocateStaging(data);
         _session.ProfilerState?.RecordUploadBytes((ulong)data.Length);
         return offset;
     }
@@ -545,11 +536,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     private void ValidateRasterSegment()
     {
-        var closed = false;
-        var seen = false;
-        for (var orderPosition = 0; orderPosition < _orderCount; orderPosition++)
+        bool closed = false;
+        bool seen = false;
+        for (int orderPosition = 0; orderPosition < _orderCount; orderPosition++)
         {
-            var index = _order.RefAt(orderPosition);
+            int index = _order.RefAt(orderPosition);
             if (_passes[index].Kind == PassKind.Raster)
             {
                 if (closed)
@@ -575,7 +566,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             _resourcePool.Add(resource);
         }
 
-        for (var index = 0; index < _passes.Count; index++)
+        for (int index = 0; index < _passes.Count; index++)
         {
             var pass = _passes[index];
             pass.ReleaseForPool();
@@ -593,10 +584,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         _built = false;
     }
 
-    private void ConfigureRenderPass()
-    {
-        _session.ConfigureDepthStencilAttachment(_hasDepthAttachment ? _depthAttachmentResource?.Texture : null, _depthAttachment);
-    }
+    private void ConfigureRenderPass() => _session.ConfigureDepthStencilAttachment(_hasDepthAttachment ? _depthAttachmentResource?.Texture : null, _depthAttachment);
 
     private void ValidateRasterPipelines()
     {
@@ -633,7 +621,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             return new GraphResource();
         }
 
-        var poolIndex = _resourcePool.Count - 1;
+        int poolIndex = _resourcePool.Count - 1;
         var resource = _resourcePool[poolIndex];
         _resourcePool.RemoveAt(poolIndex);
         resource.ReleaseForPool();
