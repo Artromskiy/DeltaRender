@@ -62,6 +62,8 @@ For the CPU/GPU Maths smoke, refresh the same flat catalog with:
 ```bash
 (cd ../DeltaShader && ./eng/prepare-maths-conformance-artifacts.sh)
 ```
+Run `./eng/check-shader-output-ownership.sh` to reject Render-local generated
+shader binaries and sidecars.
 The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
 shader validation tools are installed; it generates into a temporary directory
 and reports every drifted checked-in artifact without mutating the tree. The
