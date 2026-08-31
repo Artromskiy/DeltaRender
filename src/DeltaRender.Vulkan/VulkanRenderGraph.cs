@@ -210,7 +210,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                         }
                     }
 
-                    VulkanGraphBarrierPlanner.UpdateStates(pass, states);
+                    if (pass.Uses.Count != 0)
+                    {
+                        VulkanGraphBarrierPlanner.UpdateStates(pass, states);
+                    }
                 }
                 finally
                 {
