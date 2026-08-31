@@ -7,6 +7,7 @@ internal sealed class RenderBatchPipelineState : IDisposable
     private readonly IRenderFrameSession _session;
     private readonly ulong _alignment;
     private readonly List<DirtyRange> _dirty = [];
+    private readonly Dictionary<RenderBatchSegment, int> _dirtyIndices = [];
     private readonly List<RenderBufferHandle> _retiredBuffers = [];
     private ulong _nextOffset;
     private ulong _bufferCapacity;
@@ -95,7 +96,7 @@ internal sealed class RenderBatchPipelineState : IDisposable
 
         Buffer = replacement;
         _bufferCapacity = capacity;
-        _dirty.Clear();
+        ClearDirty();
         for (var index = 0; index < _segments.Count; index++)
         {
             var segment = _segments[index];
@@ -111,35 +112,55 @@ internal sealed class RenderBatchPipelineState : IDisposable
         }
 
         var end = checked(offset + length);
+        if (_dirtyIndices.TryGetValue(segment, out var candidateIndex))
+        {
+            if (TryMergeDirty(candidateIndex, segment, offset, end))
+            {
+                return;
+            }
+
+            _dirtyIndices.Remove(segment);
+        }
+
         for (var index = _dirty.Count - 1; index >= 0; index--)
         {
-            var existing = _dirty[index];
-            if (existing.Segment != segment || end < existing.Offset || offset > existing.End)
+            if (!TryMergeDirty(index, segment, offset, end))
             {
                 continue;
             }
 
-            existing.Offset = Math.Min(existing.Offset, offset);
-            existing.End = Math.Max(existing.End, end);
-            _dirty[index] = existing;
+            _dirtyIndices[segment] = index;
             return;
         }
 
+        _dirtyIndices[segment] = _dirty.Count;
         _dirty.Add(new DirtyRange(segment, offset, length));
     }
 
     public void ClearDirty(RenderBatchSegment segment)
     {
+        var removed = false;
         for (var index = _dirty.Count - 1; index >= 0; index--)
         {
             if (_dirty[index].Segment == segment)
             {
                 _dirty.RemoveAt(index);
+                removed = true;
             }
+        }
+
+        _dirtyIndices.Remove(segment);
+        if (removed)
+        {
+            RebuildDirtyIndices();
         }
     }
 
-    public void ClearDirty() => _dirty.Clear();
+    public void ClearDirty()
+    {
+        _dirty.Clear();
+        _dirtyIndices.Clear();
+    }
 
     public void Dispose()
     {
@@ -170,6 +191,34 @@ internal sealed class RenderBatchPipelineState : IDisposable
 
         var remainder = value % alignment;
         return remainder == 0 ? value : checked(value + alignment - remainder);
+    }
+
+    private bool TryMergeDirty(int index, RenderBatchSegment segment, int offset, int end)
+    {
+        if (index < 0 || index >= _dirty.Count)
+        {
+            return false;
+        }
+
+        var existing = _dirty[index];
+        if (existing.Segment != segment || end < existing.Offset || offset > existing.End)
+        {
+            return false;
+        }
+
+        existing.Offset = Math.Min(existing.Offset, offset);
+        existing.End = Math.Max(existing.End, end);
+        _dirty[index] = existing;
+        return true;
+    }
+
+    private void RebuildDirtyIndices()
+    {
+        _dirtyIndices.Clear();
+        for (var index = 0; index < _dirty.Count; index++)
+        {
+            _dirtyIndices[_dirty[index].Segment] = index;
+        }
     }
 
     internal void UploadDirtyRanges(ITransferCommandContext commands)
