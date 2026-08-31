@@ -20,6 +20,25 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal bool HasDepthStencil;
         internal readonly List<GraphUse> Uses = new();
 
+        internal void AddUse(GraphResource resource, RenderResourceAccess access, RenderPipelineStages stages)
+        {
+            for (int index = 0; index < Uses.Count; index++)
+            {
+                var existing = Uses[index];
+                if (!ReferenceEquals(existing.Resource, resource))
+                {
+                    continue;
+                }
+
+                var combinedAccess = existing.Access | access;
+                var combinedStages = existing.Stages | stages;
+                Uses[index] = new GraphUse(resource, combinedAccess, combinedStages, ResourceState.For(combinedAccess, combinedStages));
+                return;
+            }
+
+            Uses.Add(new GraphUse(resource, access, stages, ResourceState.For(access, stages)));
+        }
+
         internal void Reset(string name, PassKind kind, VulkanGraphPipeline? pipeline)
         {
             Name = name;

@@ -67,6 +67,20 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void GraphPassMergesRepeatedResourceUses()
+    {
+        var pass = new VulkanRenderGraph.GraphPass("merge", VulkanRenderGraph.PassKind.Compute, null);
+        var resource = new VulkanRenderGraph.GraphResource();
+
+        pass.AddUse(resource, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
+        pass.AddUse(resource, RenderResourceAccess.Write, RenderPipelineStages.Compute);
+
+        var use = Assert.Single(pass.Uses);
+        Assert.Equal(RenderResourceAccess.ReadWrite, use.Access);
+        Assert.Equal(RenderPipelineStages.Vertex | RenderPipelineStages.Compute, use.Stages);
+    }
+
+    [Fact]
     public void DependencyPlannerHandlesLargeIndependentGraph()
     {
         const int passCount = 4096;
