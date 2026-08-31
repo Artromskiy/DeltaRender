@@ -95,7 +95,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         if (_states.Length < _resources.Count)
         {
-            _states = new ResourceState[_resources.Count];
+            EnsureStateCapacity(_resources.Count);
+            Array.Clear(_states, 0, _resources.Count);
         }
 
         Array.Clear(_states, 0, _resources.Count);
@@ -197,6 +198,17 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
             return Failed();
         }
+    }
+
+    private void EnsureStateCapacity(int required)
+    {
+        if (_states.Length >= required)
+        {
+            return;
+        }
+
+        var capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
+        _states = new ResourceState[Math.Max(capacity, required)];
     }
 
     public int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination)
