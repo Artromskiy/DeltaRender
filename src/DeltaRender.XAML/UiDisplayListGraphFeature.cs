@@ -453,11 +453,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 visualEnd++;
             }
 
-            var pass = graph.AddRasterPass(
-                new RasterPassDescription(
-                    $"DeltaRender.XAML.VisualSegment[{index}:{visualEnd})",
-                    new RasterPipelineDescription(program, cullMode: RasterCullMode.None, blendMode: RenderBlendMode.Alpha)),
-                GetVisualSegmentPass(index, visualEnd - index, segmentInstanceCount));
+            var visualPass = GetVisualSegmentPass(index, visualEnd - index, segmentInstanceCount, program);
+            var pass = graph.AddRasterPass(visualPass.Description, visualPass);
             graph.UseColorAttachment(
                 pass,
                 0,
@@ -477,7 +474,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
     }
 
-    private UiVisualSegmentPass GetVisualSegmentPass(int firstOrderIndex, int visualCount, ulong instanceCount)
+    private UiVisualSegmentPass GetVisualSegmentPass(
+        int firstOrderIndex,
+        int visualCount,
+        ulong instanceCount,
+        IGraphicsShaderProgram program)
     {
         if (_visualSegmentPassCount == _visualSegmentPasses.Length)
         {
@@ -492,7 +493,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualSegmentPasses[_visualSegmentPassCount] = pass;
         }
 
-        pass.SetRange(firstOrderIndex, visualCount, instanceCount);
+        pass.SetRange(firstOrderIndex, visualCount, instanceCount, program);
         _visualSegmentPassCount++;
         return pass;
     }

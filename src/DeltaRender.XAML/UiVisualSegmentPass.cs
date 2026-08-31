@@ -1,15 +1,50 @@
 using Delta.Render.RenderGraph;
+using Delta.Shader.Contract;
 
 namespace Delta.Render.XAML;
 
 internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRasterPass
 {
+    private RasterPipelineDescription? _pipeline;
+    private RasterPassDescription? _description;
+    private IGraphicsShaderProgram? _program;
+    private int _descriptionFirstOrderIndex = -1;
+    private int _descriptionVisualCount = -1;
     private int _firstOrderIndex;
     private int _visualCount;
     private ulong _instanceCount;
 
-    internal void SetRange(int firstOrderIndex, int visualCount, ulong instanceCount)
+    internal RasterPassDescription Description
+        => _description ?? throw new InvalidOperationException("The visual segment description is not initialized.");
+
+    internal void SetRange(
+        int firstOrderIndex,
+        int visualCount,
+        ulong instanceCount,
+        IGraphicsShaderProgram program)
     {
+        ArgumentNullException.ThrowIfNull(program);
+        if (!ReferenceEquals(_program, program))
+        {
+            _program = program;
+            _pipeline = new RasterPipelineDescription(
+                program,
+                cullMode: RasterCullMode.None,
+                blendMode: RenderBlendMode.Alpha);
+            _description = null;
+        }
+
+        if (_description is null ||
+            _descriptionFirstOrderIndex != firstOrderIndex ||
+            _descriptionVisualCount != visualCount)
+        {
+            _description = new RasterPassDescription(
+                $"DeltaRender.XAML.VisualSegment[{firstOrderIndex}:{checked(firstOrderIndex + visualCount)})",
+                _pipeline ?? throw new InvalidOperationException("The visual segment pipeline is not initialized."));
+            _descriptionFirstOrderIndex = firstOrderIndex;
+            _descriptionVisualCount = visualCount;
+        }
+
         _firstOrderIndex = firstOrderIndex;
         _visualCount = visualCount;
         _instanceCount = instanceCount;
