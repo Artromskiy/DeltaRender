@@ -1,2 +1,1 @@
-# Placeholder SPIR-V fixture
-# Step 1 does not execute a graphics pipeline.
+../../../../DeltaShader/src/DeltaShader/CompiledShaders/Consumers/DeltaRender/samples/DeltaRender.Smoke/shaders/clear-triangle.frag.spv
