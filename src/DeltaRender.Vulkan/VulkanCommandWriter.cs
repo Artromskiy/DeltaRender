@@ -6,20 +6,45 @@ namespace Delta.Render.Vulkan;
 
 internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
 {
+    private RenderViewport _lastViewport;
+    private PixelRect _lastScissor;
+    private bool _hasViewport;
+    private bool _hasScissor;
+
+    internal void ResetState()
+    {
+        _hasViewport = false;
+        _hasScissor = false;
+    }
+
     internal void SetViewport(in RenderViewport viewport)
     {
+        if (_hasViewport && _lastViewport.Equals(viewport))
+        {
+            return;
+        }
+
         var value = new Viewport(viewport.X, viewport.Y, viewport.Width, viewport.Height, viewport.MinDepth, viewport.MaxDepth);
         session.Api.CmdSetViewport(session.CommandBuffer, 0, 1, &value);
+        _lastViewport = viewport;
+        _hasViewport = true;
     }
 
     internal void SetScissor(in PixelRect scissor)
     {
+        if (_hasScissor && _lastScissor == scissor)
+        {
+            return;
+        }
+
         var value = new Rect2D
         {
             Offset = new Offset2D(scissor.X, scissor.Y),
             Extent = new Extent2D((uint)scissor.Width, (uint)scissor.Height)
         };
         session.Api.CmdSetScissor(session.CommandBuffer, 0, 1, &value);
+        _lastScissor = scissor;
+        _hasScissor = true;
     }
 
     internal void BindPipeline(PipelineBindPoint bindPoint, Pipeline pipeline)
@@ -49,6 +74,8 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
 
     internal unsafe void BeginRenderPass(RenderPass renderPass, Framebuffer framebuffer, Extent2D extent, ClearValue* clearValues, uint clearValueCount)
     {
+        _hasViewport = false;
+        _hasScissor = false;
         var begin = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo,

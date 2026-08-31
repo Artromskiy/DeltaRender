@@ -109,6 +109,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             profiler?.EndAcquire(acquireStart);
         }
 
+        CommandWriter.ResetState();
         if (_states.Length < _resources.Count)
         {
             EnsureStateCapacity(_resources.Count);
