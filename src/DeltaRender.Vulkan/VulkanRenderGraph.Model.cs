@@ -5,8 +5,8 @@ namespace Delta.Render.Vulkan;
 
 internal sealed unsafe partial class VulkanRenderGraph
 {
-    private enum PassKind : byte { Raster, Compute, Transfer }
-    private sealed class GraphPass(string name, PassKind kind, VulkanGraphPipeline? pipeline)
+    internal enum PassKind : byte { Raster, Compute, Transfer }
+    internal sealed class GraphPass(string name, PassKind kind, VulkanGraphPipeline? pipeline)
     {
         internal string Name = name;
         internal PassKind Kind = kind;
@@ -58,7 +58,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         }
     }
 
-    private readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);
+    internal readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);
     private readonly record struct ResourceState(PipelineStageFlags Stages, AccessFlags Access, ImageLayout Layout)
     {
         internal static ResourceState For(RenderResourceAccess access, RenderPipelineStages stages)

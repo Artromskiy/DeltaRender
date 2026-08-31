@@ -42,7 +42,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             }
 
             ConfigureRenderPass();
-            _order = CompileOrder();
+            _order = _dependencyPlanner.Compile(_passes, _resources.Count);
             ValidateRasterSegment();
             ValidateRasterPipelines();
             _built = true;
@@ -556,10 +556,16 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         CommandWriter.BeginRenderPass(_session.GraphRenderPass, _session.GraphFramebuffer, _session.GraphExtent, clearValues, clearValueCount);
     }
 
+    private readonly VulkanGraphDependencyPlanner _dependencyPlanner = new();
+    private readonly List<BufferMemoryBarrier> _barrierBuffers = new();
+    private readonly List<ImageMemoryBarrier> _barrierImages = new();
+
     private void EmitBarriers(GraphPass pass, ResourceState[] states)
     {
-        var buffers = new List<BufferMemoryBarrier>();
-        var images = new List<ImageMemoryBarrier>();
+        var buffers = _barrierBuffers;
+        var images = _barrierImages;
+        buffers.Clear();
+        images.Clear();
         foreach (var use in pass.Uses)
         {
             var previous = states[use.Resource.Index];
@@ -651,93 +657,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         {
             states[use.Resource.Index] = ResourceState.For(use.Access, use.Stages);
         }
-    }
-
-    private int[] CompileOrder()
-    {
-        var edges = new HashSet<int>[_passes.Count];
-        var indegree = new int[_passes.Count];
-        var lastWriter = new int[_resources.Count];
-        var readers = new List<int>[_resources.Count];
-        Array.Fill(lastWriter, -1);
-        for (var i = 0; i < edges.Length; i++)
-        {
-            edges[i] = new HashSet<int>();
-        }
-
-        for (var i = 0; i < readers.Length; i++)
-        {
-            readers[i] = new List<int>();
-        }
-
-        for (var passIndex = 0; passIndex < _passes.Count; passIndex++)
-        {
-            foreach (var use in _passes[passIndex].Uses)
-            {
-                var resource = use.Resource.Index;
-                if (lastWriter[resource] >= 0)
-                {
-                    AddEdge(lastWriter[resource], passIndex, edges, indegree);
-                }
-
-                if (use.Access.HasFlag(RenderResourceAccess.Write))
-                {
-                    foreach (var reader in readers[resource])
-                    {
-                        AddEdge(reader, passIndex, edges, indegree);
-                    }
-
-                    readers[resource].Clear();
-                    lastWriter[resource] = passIndex;
-                }
-                else if (use.Access.HasFlag(RenderResourceAccess.Read))
-                {
-                    readers[resource].Add(passIndex);
-                }
-            }
-        }
-
-        var ready = new List<int>();
-        for (var i = 0; i < indegree.Length; i++)
-        {
-            if (indegree[i] == 0)
-            {
-                ready.Add(i);
-            }
-        }
-
-        var order = new int[_passes.Count];
-        var count = 0;
-        while (ready.Count != 0)
-        {
-            var readyIndex = 0;
-            for (var index = 1; index < ready.Count; index++)
-            {
-                if (_passes[ready[index]].Kind == PassKind.Transfer)
-                {
-                    readyIndex = index;
-                    break;
-                }
-            }
-
-            var current = ready[readyIndex];
-            ready.RemoveAt(readyIndex);
-            order[count++] = current;
-            foreach (var next in edges[current])
-            {
-                if (--indegree[next] == 0)
-                {
-                    ready.Add(next);
-                }
-            }
-        }
-
-        if (count != order.Length)
-        {
-            throw new InvalidOperationException("Render graph contains a dependency cycle.");
-        }
-
-        return order;
     }
 
     private void ValidateRasterSegment()
@@ -874,14 +793,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
-
-    private static void AddEdge(int from, int to, HashSet<int>[] edges, int[] indegree)
-    {
-        if (from != to && edges[from].Add(to))
-        {
-            indegree[to]++;
-        }
-    }
 
     private static BufferUsageFlags ToBufferUsage(RenderBufferUsage usage)
     {
