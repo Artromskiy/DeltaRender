@@ -79,6 +79,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint _preparedVisualPushConstantSize;
     private uint _preparedVisualPushConstantOffset;
     private bool _hasPreparedVisualDescription;
+    private bool _visualCommandsPrepared;
     private int _validationEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -391,11 +392,21 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         for (var index = 0; index < _orderCount; index++)
         {
-            if (_order.RefAt(index).Kind == UiDrawKind.Visual && !_commandClips.RefAt(index).IsEmpty)
+            var draw = _order.RefAt(index);
+            if (draw.Kind != UiDrawKind.Visual || _commandClips.RefAt(index).IsEmpty)
             {
-                TryPrepareVisual(graph, index);
+                continue;
             }
+
+            if (_visualCommandsPrepared && _visuals.RefAt(draw.Index).Kind != UiVisualKind.Image)
+            {
+                continue;
+            }
+
+            TryPrepareVisual(graph, index);
         }
+
+        _visualCommandsPrepared = true;
 
         if (_visualCount != 0 && !PrepareVisualInstances())
         {
@@ -1033,6 +1044,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _packedVisualFrameKind = default;
         _packedVisualFrameSize = 0;
         _packedVisualFrameOffset = 0;
+        _visualCommandsPrepared = false;
         _hasFrame = false;
         _clipResolver.Clear();
     }
