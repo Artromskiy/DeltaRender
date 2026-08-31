@@ -8,13 +8,19 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
 {
     private RenderViewport _lastViewport;
     private PixelRect _lastScissor;
+    private Pipeline _lastGraphicsPipeline;
+    private Pipeline _lastComputePipeline;
     private bool _hasViewport;
     private bool _hasScissor;
+    private bool _hasGraphicsPipeline;
+    private bool _hasComputePipeline;
 
     internal void ResetState()
     {
         _hasViewport = false;
         _hasScissor = false;
+        _hasGraphicsPipeline = false;
+        _hasComputePipeline = false;
     }
 
     internal void SetViewport(in RenderViewport viewport)
@@ -48,7 +54,30 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
     }
 
     internal void BindPipeline(PipelineBindPoint bindPoint, Pipeline pipeline)
-        => session.Api.CmdBindPipeline(session.CommandBuffer, bindPoint, pipeline);
+    {
+        if (bindPoint == PipelineBindPoint.Graphics)
+        {
+            if (_hasGraphicsPipeline && _lastGraphicsPipeline.Handle == pipeline.Handle)
+            {
+                return;
+            }
+
+            _lastGraphicsPipeline = pipeline;
+            _hasGraphicsPipeline = true;
+        }
+        else if (bindPoint == PipelineBindPoint.Compute)
+        {
+            if (_hasComputePipeline && _lastComputePipeline.Handle == pipeline.Handle)
+            {
+                return;
+            }
+
+            _lastComputePipeline = pipeline;
+            _hasComputePipeline = true;
+        }
+
+        session.Api.CmdBindPipeline(session.CommandBuffer, bindPoint, pipeline);
+    }
 
     internal unsafe void BindDescriptorSets(
         PipelineBindPoint bindPoint,
