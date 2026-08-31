@@ -12,7 +12,8 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     private readonly Device _device;
     private readonly double _timestampPeriodNanoseconds;
     private readonly uint _timestampValidBits;
-    private readonly List<PassMeasurement> _passMeasurements = new();
+    private PassMeasurement[] _passMeasurements = [];
+    private int _passCount;
     private RenderProfilingCapabilities _capabilities;
     private bool _gpuTimestampsEnabled;
     private QueryPool _queryPool;
@@ -66,7 +67,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         _record = ProfileDuration.Zero;
         _submitAndPresent = ProfileDuration.Zero;
         _readback = ProfileDuration.Zero;
-        _passMeasurements.Clear();
+        _passCount = 0;
     }
 
     internal void BeginGpuFrame(CommandBuffer commandBuffer, int passCount)
@@ -92,8 +93,10 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     internal int BeginPass(string name, RenderProfilePassKind kind, CommandBuffer commandBuffer, out long started)
     {
         started = Stopwatch.GetTimestamp();
-        var index = _passMeasurements.Count;
-        _passMeasurements.Add(new PassMeasurement(name, kind));
+        var index = _passCount;
+        EnsurePassCapacity(index + 1);
+        _passMeasurements[index] = new PassMeasurement(name, kind);
+        _passCount++;
         if (_gpuTimestampsEnabled)
         {
             _api.CmdWriteTimestamp(commandBuffer, PipelineStageFlags.TopOfPipeBit, _queryPool, (uint)(index * 2));
@@ -129,11 +132,11 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             ReadGpuDurations();
         }
 
-        var passes = new RenderPassProfile[_passMeasurements.Count];
+        var passes = new RenderPassProfile[_passCount];
         var rasterCount = 0;
         var computeCount = 0;
         var transferCount = 0;
-        for (var index = 0; index < _passMeasurements.Count; index++)
+        for (var index = 0; index < _passCount; index++)
         {
             var measurement = _passMeasurements[index];
             passes[index] = new RenderPassProfile(measurement.Name, measurement.Kind, measurement.CpuRecordDuration, measurement.GpuDuration);
@@ -206,6 +209,17 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         return true;
     }
 
+    private void EnsurePassCapacity(int required)
+    {
+        if (required <= _passMeasurements.Length)
+        {
+            return;
+        }
+
+        var capacity = _passMeasurements.Length == 0 ? 8 : checked(_passMeasurements.Length * 2);
+        Array.Resize(ref _passMeasurements, Math.Max(capacity, required));
+    }
+
     private void ReadGpuDurations()
     {
         if (!_gpuTimestampsEnabled || _queryCount == 0)
@@ -227,7 +241,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return;
         }
 
-        for (var index = 0; index < _passMeasurements.Count; index++)
+        for (var index = 0; index < _passCount; index++)
         {
             var measurement = _passMeasurements[index];
             measurement.GpuDuration = ConvertTimestampDelta(_queryValues.RefAt(index * 2), _queryValues.RefAt(index * 2 + 1));
