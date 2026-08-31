@@ -134,7 +134,11 @@ internal sealed unsafe partial class VulkanRenderGraph
         }
     }
 
-    internal readonly record struct GraphUse(GraphResource Resource, RenderResourceAccess Access, RenderPipelineStages Stages);
+    internal readonly record struct GraphUse(
+        GraphResource Resource,
+        RenderResourceAccess Access,
+        RenderPipelineStages Stages,
+        ResourceState State);
     internal readonly record struct ResourceState(PipelineStageFlags Stages, AccessFlags Access, ImageLayout Layout)
     {
         internal static ResourceState For(RenderResourceAccess access, RenderPipelineStages stages)

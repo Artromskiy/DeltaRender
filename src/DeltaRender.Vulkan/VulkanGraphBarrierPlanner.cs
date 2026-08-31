@@ -18,7 +18,7 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
         foreach (var use in pass.Uses)
         {
             var previous = states.RefAt(use.Resource.Index);
-            var next = VulkanRenderGraph.ResourceState.For(use.Access, use.Stages);
+            var next = use.State;
             if (use.Resource.IsBuffer)
             {
                 if (previous == next)
@@ -64,7 +64,7 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
                 }
 
                 var previous = states.RefAt(use.Resource.Index);
-                var next = VulkanRenderGraph.ResourceState.For(use.Access, use.Stages);
+                var next = use.State;
                 if (previous == next)
                 {
                     continue;
@@ -95,7 +95,7 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
     {
         foreach (var use in pass.Uses)
         {
-            states.RefAt(use.Resource.Index) = VulkanRenderGraph.ResourceState.For(use.Access, use.Stages);
+            states.RefAt(use.Resource.Index) = use.State;
         }
     }
 

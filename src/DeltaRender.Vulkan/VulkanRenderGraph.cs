@@ -683,7 +683,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         {
             throw new ArgumentException("A graph use requires non-empty access and stages.");
         }
-        pass.Uses.Add(new GraphUse(resource, access, stages));
+        pass.Uses.Add(new GraphUse(resource, access, stages, ResourceState.For(access, stages)));
     }
 
     internal void ThrowIfMutable()
