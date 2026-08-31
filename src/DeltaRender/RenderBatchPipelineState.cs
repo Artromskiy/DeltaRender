@@ -172,21 +172,18 @@ internal sealed class RenderBatchPipelineState : IDisposable
         return remainder == 0 ? value : checked(value + alignment - remainder);
     }
 
-    private sealed class RenderBatchPipelineUploadPass(RenderBatchPipelineState pipeline) : ITransferPass
+    internal void UploadDirtyRanges(ITransferCommandContext commands)
     {
-        public void Record(ITransferCommandContext commands)
+        for (var index = 0; index < _dirty.Count; index++)
         {
-            for (var index = 0; index < pipeline._dirty.Count; index++)
-            {
-                var range = pipeline._dirty[index];
-                commands.UploadBuffer(
-                    pipeline.GraphBuffer,
-                    range.Segment.Packed.AsSpan(range.Offset, range.Length),
-                    checked(range.Segment.GpuOffset + (ulong)range.Offset));
-            }
-
-            pipeline.ClearDirty();
+            var range = _dirty[index];
+            commands.UploadBuffer(
+                GraphBuffer,
+                range.Segment.Packed.AsSpan(range.Offset, range.Length),
+                checked(range.Segment.GpuOffset + (ulong)range.Offset));
         }
+
+        ClearDirty();
     }
 
     internal struct DirtyRange
