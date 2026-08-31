@@ -531,6 +531,8 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         var buffers = _barrierBuffers;
         var images = _barrierImages;
+        var sourceStages = PipelineStageFlags.None;
+        var destinationStages = PipelineStageFlags.None;
         buffers.Clear();
         images.Clear();
         foreach (var use in pass.Uses)
@@ -546,16 +548,20 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
                 var allocation = use.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable while planning a barrier.");
                 buffers.Add(new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = allocation.Buffer, Offset = 0, Size = allocation.AllocationSize });
+                sourceStages |= NormalizeBarrierStage(previous.Stages);
+                destinationStages |= NormalizeBarrierStage(next.Stages);
             }
             else if (use.Resource.Image.Handle != default && (previous.Layout != next.Layout || previous.Access != next.Access))
             {
                 images.Add(new ImageMemoryBarrier { SType = StructureType.ImageMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, OldLayout = previous.Layout, NewLayout = next.Layout, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Image = use.Resource.Image, SubresourceRange = new ImageSubresourceRange { AspectMask = use.Resource.AspectMask, LevelCount = 1, LayerCount = 1 } });
+                sourceStages |= NormalizeBarrierStage(previous.Stages);
+                destinationStages |= NormalizeBarrierStage(next.Stages);
             }
         }
 
         if (buffers.Count != 0 || images.Count != 0)
         {
-            CommandWriter.PipelineBarrier(PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
+            CommandWriter.PipelineBarrier(sourceStages, destinationStages, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
         }
     }
 
@@ -597,12 +603,18 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     Size = allocation.AllocationSize
                 };
                 CommandWriter.PipelineBarrier(
-                    PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit,
-                    PipelineStageFlags.AllCommandsBit,
+                    NormalizeBarrierStage(previous.Stages),
+                    NormalizeBarrierStage(next.Stages),
                     in barrier);
                 states.RefAt(use.Resource.Index) = next;
             }
         }
+    }
+
+    private static PipelineStageFlags NormalizeBarrierStage(PipelineStageFlags stages)
+    {
+        var stage = stages & ~PipelineStageFlags.TopOfPipeBit;
+        return stage == PipelineStageFlags.None ? PipelineStageFlags.TopOfPipeBit : stage;
     }
 
     private static bool UsesResource(GraphPass pass, GraphResource resource)
