@@ -65,6 +65,14 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiRectangleShaderKind _packedVisualFrameKind;
     private uint _packedVisualFrameSize;
     private uint _packedVisualFrameOffset;
+    private IGraphicsShaderProgram? _preparedVisualProgram;
+    private UiVisualKind _preparedVisualKind;
+    private UiRectangleShaderKind _preparedVisualShaderKind;
+    private ShaderBinding _preparedVisualInstanceBinding;
+    private uint _preparedVisualInstanceStride;
+    private uint _preparedVisualPushConstantSize;
+    private uint _preparedVisualPushConstantOffset;
+    private bool _hasPreparedVisualDescription;
     private int _clipMarkEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -490,18 +498,44 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var draw = _order.RefAt(orderIndex);
         var visual = _visuals.RefAt(draw.Index);
         var program = ResolveVisualProgram(visual);
-        if (!UiVisualShaderContract.TryDescribeInstance(
-                program,
-                visual.Kind,
-                out var shaderKind,
-                out var instanceBinding,
-                out var instanceStride,
-                out var pushConstantSize,
-                out var pushConstantOffset,
-                out var shaderDiagnostic))
+        UiRectangleShaderKind shaderKind;
+        ShaderBinding instanceBinding;
+        uint instanceStride;
+        uint pushConstantSize;
+        uint pushConstantOffset;
+        if (_hasPreparedVisualDescription &&
+            ReferenceEquals(_preparedVisualProgram, program) &&
+            _preparedVisualKind == visual.Kind)
+        {
+            shaderKind = _preparedVisualShaderKind;
+            instanceBinding = _preparedVisualInstanceBinding;
+            instanceStride = _preparedVisualInstanceStride;
+            pushConstantSize = _preparedVisualPushConstantSize;
+            pushConstantOffset = _preparedVisualPushConstantOffset;
+        }
+        else if (!UiVisualShaderContract.TryDescribeInstance(
+                     program,
+                     visual.Kind,
+                     out shaderKind,
+                     out instanceBinding,
+                     out instanceStride,
+                     out pushConstantSize,
+                     out pushConstantOffset,
+                     out var shaderDiagnostic))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] is unsupported: {shaderDiagnostic}");
             return false;
+        }
+        else
+        {
+            _preparedVisualProgram = program;
+            _preparedVisualKind = visual.Kind;
+            _preparedVisualShaderKind = shaderKind;
+            _preparedVisualInstanceBinding = instanceBinding;
+            _preparedVisualInstanceStride = instanceStride;
+            _preparedVisualPushConstantSize = pushConstantSize;
+            _preparedVisualPushConstantOffset = pushConstantOffset;
+            _hasPreparedVisualDescription = true;
         }
 
         if (!_hasPackedVisualFrame ||
