@@ -4,8 +4,10 @@ using System.Diagnostics;
 using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
+using Delta.Render.Text;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
+using Delta.Shader.Text;
 using Delta.Shader.UI;
 using Delta.Text;
 using Delta.Text.Contract;
@@ -166,6 +168,95 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Single(commands.Scissors);
         Assert.Equal(100f, ReadFloat(commands.PushedConstants[0], 0));
         Assert.Equal(80f, ReadFloat(commands.PushedConstants[0], 4));
+    }
+
+    [Fact]
+    public void TextOnlyDisplayListAddsTextRasterPassWithoutVisualInstances()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(100, 80));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(100, 80),
+            textFeature: textFeature);
+
+        var text = UiTextDraw.WithPaint(
+            new UiTextRunId(1, 1),
+            1,
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)),
+            UiClipId.None);
+        Assert.True(
+            feature.Consume(new UiDisplayList(
+                Array.Empty<UiVisualDraw>(),
+                Array.Empty<UiClipRegion>(),
+                new[] { text },
+                new[] { new UiDrawRef(UiDrawKind.Text, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.NotEmpty(graph.RasterPasses);
+        Assert.Equal(1, feature.BorrowOrder().Length);
+        Assert.Equal(new UiDrawRef(UiDrawKind.Text, 0), feature.BorrowOrder()[0]);
+    }
+
+    [Fact]
+    public void RepeatedTextOnlyConsumeDoesNotAccumulatePreviousFrameRuns()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(100, 80));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(100, 80),
+            textFeature: textFeature);
+        var displayList = new UiDisplayList(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[]
+            {
+                UiTextDraw.WithPaint(
+                    new UiTextRunId(1, 1),
+                    1,
+                    shaped,
+                    new float2(10, 20),
+                    UiTextPaint.Solid(new float4(1, 1, 1, 1)),
+                    UiClipId.None),
+            },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) });
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+        var firstGraph = new RecordingGraphBuilder();
+        feature.AddPasses(firstGraph, 1);
+        var firstCommands = new RecordingRasterCommands();
+        firstGraph.RecordRaster(firstCommands);
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+        var secondGraph = new RecordingGraphBuilder();
+        feature.AddPasses(secondGraph, 2);
+        var secondCommands = new RecordingRasterCommands();
+        secondGraph.RecordRaster(secondCommands);
+
+        Assert.Equal(firstCommands.InstanceCounts, secondCommands.InstanceCounts);
+        Assert.Equal(firstCommands.DrawCount, secondCommands.DrawCount);
     }
 
     [Fact]
@@ -422,6 +513,10 @@ public sealed class UiDisplayListGraphFeatureTests
     private sealed class RecordingSession : IRenderFrameSession, IDisposable
     {
         public RenderDeviceCapabilities Capabilities => default;
+
+        public bool ProfilingEnabled => false;
+
+        public IRenderProfiler? Profiler => null;
 
         public RenderTargetHandle Target => new(1, 1);
 

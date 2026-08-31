@@ -28,6 +28,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     public void Build(ulong frameNumber, ReadOnlySpan<IRenderFeature> features)
     {
         ThrowIfDisposed();
+        var profiler = _session.ProfilerState;
+        var buildStart = profiler?.StartPhase() ?? 0;
+        profiler?.BeginBuild(frameNumber);
         ResetBuild();
         _session.ReclaimDeferredTransientsForBuild();
         try
@@ -49,6 +52,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             ResetBuild();
             throw;
         }
+        finally
+        {
+            profiler?.EndBuild(buildStart);
+        }
     }
 
     public RenderGraphExecutionResult Execute()
@@ -62,19 +69,28 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         if (_order.Length == 0)
         {
             _built = false;
+            _session.ProfilerState?.Complete(RenderGraphExecutionStatus.NoWork, _resources.Count);
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.NoWork, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
         }
 
+        var profiler = _session.ProfilerState;
+        var acquireStart = profiler?.StartPhase() ?? 0;
         try
         {
             if (!_session.BeginGraphFrame())
             {
+                profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
                 return Failed();
             }
         }
         catch (VulkanOperationException exception)
         {
+            profiler?.Complete(ClassifyFailure(exception), _resources.Count);
             return Failed(exception);
+        }
+        finally
+        {
+            profiler?.EndAcquire(acquireStart);
         }
 
         if (_states.Length < _resources.Count)
@@ -85,47 +101,65 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         Array.Clear(_states, 0, _resources.Count);
         var states = _states;
         var rasterActive = false;
+        var recordStart = profiler?.StartPhase() ?? 0;
         try
         {
             for (var orderPosition = 0; orderPosition < _order.Length; orderPosition++)
             {
                 var passIndex = _order[orderPosition];
                 var pass = _passes[passIndex];
-                EmitBarriers(pass, states);
-                if (pass.Kind == PassKind.Raster)
+                var passProfile = -1;
+                var passStart = 0L;
+                if (profiler is not null)
                 {
-                    if (!rasterActive)
-                    {
-                        EmitRasterSegmentEntryBarriers(orderPosition, states);
-                        BeginRaster(pass);
-                        rasterActive = true;
-                    }
-
-                    var rasterPipeline = pass.Pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.");
-                    rasterPipeline.BeginBindings();
-                    pass.Raster?.Record(new VulkanRasterCommandContext(this, rasterPipeline));
+                    passProfile = profiler.BeginPass(pass.Name, ToProfilePassKind(pass.Kind), out passStart);
                 }
-                else
-                {
-                    if (rasterActive)
-                    {
-                        CommandWriter.EndRenderPass();
-                        rasterActive = false;
-                    }
 
-                    if (pass.Kind == PassKind.Compute)
+                try
+                {
+                    EmitBarriers(pass, states);
+                    if (pass.Kind == PassKind.Raster)
                     {
-                        var computePipeline = pass.Pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.");
-                        computePipeline.BeginBindings();
-                        pass.Compute?.Record(new VulkanComputeCommandContext(this, computePipeline));
+                        if (!rasterActive)
+                        {
+                            EmitRasterSegmentEntryBarriers(orderPosition, states);
+                            BeginRaster(pass);
+                            rasterActive = true;
+                        }
+
+                        var rasterPipeline = pass.Pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.");
+                        rasterPipeline.BeginBindings();
+                        pass.Raster?.Record(new VulkanRasterCommandContext(this, rasterPipeline));
                     }
                     else
                     {
-                        pass.Transfer?.Record(new VulkanTransferCommandContext(this));
+                        if (rasterActive)
+                        {
+                            CommandWriter.EndRenderPass();
+                            rasterActive = false;
+                        }
+
+                        if (pass.Kind == PassKind.Compute)
+                        {
+                            var computePipeline = pass.Pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.");
+                            computePipeline.BeginBindings();
+                            pass.Compute?.Record(new VulkanComputeCommandContext(this, computePipeline));
+                        }
+                        else
+                        {
+                            pass.Transfer?.Record(new VulkanTransferCommandContext(this));
+                        }
+                    }
+
+                    UpdateStates(pass, states);
+                }
+                finally
+                {
+                    if (profiler is not null)
+                    {
+                        profiler.EndPass(passProfile, passStart);
                     }
                 }
-
-                UpdateStates(pass, states);
             }
 
             if (rasterActive)
@@ -134,22 +168,32 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             }
 
             RecordReadbacks(states);
+            profiler?.EndRecord(recordStart);
+            var submitStart = profiler?.StartPhase() ?? 0;
             if (!_session.EndGraphFrame())
             {
+                profiler?.EndSubmitAndPresent(submitStart);
+                profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
                 return Failed();
             }
+            profiler?.EndSubmitAndPresent(submitStart);
 
             _built = false;
+            profiler?.Complete(RenderGraphExecutionStatus.Submitted, _resources.Count);
             return new RenderGraphExecutionResult(RenderGraphExecutionStatus.Submitted, ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
         }
         catch (VulkanOperationException exception)
         {
             _session.AbortGraphFrame();
+            profiler?.EndRecord(recordStart);
+            profiler?.Complete(ClassifyFailure(exception), _resources.Count);
             return Failed(exception);
         }
         catch
         {
             _session.AbortGraphFrame();
+            profiler?.EndRecord(recordStart);
+            profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
             return Failed();
         }
     }
@@ -878,6 +922,15 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal static RenderGraphExecutionStatus ClassifyFailure(VulkanOperationException? exception)
         => exception?.Result == Result.ErrorDeviceLost ? RenderGraphExecutionStatus.DeviceLost : RenderGraphExecutionStatus.Failed;
+
+    private static Delta.Render.RenderProfilePassKind ToProfilePassKind(PassKind kind)
+        => kind switch
+        {
+            PassKind.Raster => Delta.Render.RenderProfilePassKind.Raster,
+            PassKind.Compute => Delta.Render.RenderProfilePassKind.Compute,
+            PassKind.Transfer => Delta.Render.RenderProfilePassKind.Transfer,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
 
 
 }

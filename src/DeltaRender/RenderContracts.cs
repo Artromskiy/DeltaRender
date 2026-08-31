@@ -11,6 +11,10 @@ public interface IRenderFrameSession : IAsyncDisposable
 {
     RenderDeviceCapabilities Capabilities { get; }
 
+    bool ProfilingEnabled { get; }
+
+    IRenderProfiler? Profiler { get; }
+
     RenderTargetHandle Target { get; }
 
     IRenderGraph CreateRenderGraph();

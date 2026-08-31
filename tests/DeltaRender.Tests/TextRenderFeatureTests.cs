@@ -603,6 +603,10 @@ public sealed class TextRenderFeatureTests
 
         public RenderDeviceCapabilities Capabilities => default;
 
+        public bool ProfilingEnabled => false;
+
+        public IRenderProfiler? Profiler => null;
+
         public RenderTargetHandle Target => new(1, 1);
 
         public int ResourceCreationCount { get; private set; }

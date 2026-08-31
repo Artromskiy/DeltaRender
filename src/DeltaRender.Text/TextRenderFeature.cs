@@ -422,11 +422,11 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _batchCount = 0;
         var useStamp = NextAtlasUseStamp();
         EnsureRunBatchCapacity(_pendingRunCount);
-        var penX = 0f;
-        var penY = 0f;
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
         {
             var pending = _pendingRuns[runIndex];
+            var penX = 0f;
+            var penY = 0f;
             var runInstanceStart = _instanceCount;
             _localRunBatchCount = 0;
             if (TryReuseRun(pending, out var cachedRun))
@@ -447,14 +447,16 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 var runX = pending.OriginX + penX;
                 var runY = pending.OriginY + penY;
+                var glyphPenX = 0f;
+                var glyphPenY = 0f;
                 foreach (var glyph in run.Glyphs.Span)
                 {
                     var placement = GetOrCreateGlyph(run, glyph, useStamp);
                     if (!placement.IsEmpty && TryClip(pending.Clip, _viewport, out var clip))
                     {
                         EnsureInstanceCapacity(_instanceCount + 1);
-                        var glyphX = runX + glyph.OffsetX;
-                        var glyphY = runY + glyph.OffsetY;
+                        var glyphX = runX + glyphPenX + glyph.OffsetX;
+                        var glyphY = runY + glyphPenY + glyph.OffsetY;
                         var plane = placement.PlaneBounds;
                         _instances[_instanceCount] = new GlyphInstance
                         {
@@ -468,6 +470,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                         firstBatch = firstBatch < 0 ? batchIndex : firstBatch;
                         _instanceCount++;
                     }
+
+                    glyphPenX += glyph.AdvanceX;
+                    glyphPenY += glyph.AdvanceY;
                 }
 
                 penX += run.AdvanceX;
@@ -804,20 +809,22 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
     }
 
-    private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge)
+    private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge, int count = 1)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+
         if (allowMerge && _batchCount > 0)
         {
             ref var last = ref _batches[_batchCount - 1];
             if (last.PageIndex == pageIndex && last.Clip == clip && last.Start + last.Count == instance)
             {
-                last.Count++;
+                last.Count = checked(last.Count + count);
                 return _batchCount - 1;
             }
         }
 
         EnsureBatchCapacity(_batchCount + 1);
-        _batches[_batchCount] = new TextBatch(pageIndex, clip, instance, 1);
+        _batches[_batchCount] = new TextBatch(pageIndex, clip, instance, count);
         return _batchCount++;
     }
 
@@ -849,7 +856,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 cachedBatch.Clip,
                 cachedBatch.PageIndex,
                 checked(instanceStart + cachedBatch.Start),
-                mergeWithPrevious || batchIndex > 0);
+                mergeWithPrevious || batchIndex > 0,
+                cachedBatch.Count);
             firstBatch = firstBatch < 0 ? batch : firstBatch;
         }
 

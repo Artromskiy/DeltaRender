@@ -530,6 +530,10 @@ public sealed class RenderBatchingTests
 
         public RenderDeviceCapabilities Capabilities => new(0, 4, 128, 4, 64, 64, 1, 1, 65535, 65535, 65535);
 
+        public bool ProfilingEnabled => false;
+
+        public IRenderProfiler? Profiler => null;
+
         public RenderTargetHandle Target => new(1, 1);
 
         public int BufferCreationCount { get; private set; }

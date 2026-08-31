@@ -257,6 +257,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         ThrowIfDisposed();
         _diagnostics.Clear();
+        _textFeature?.Clear();
         ClearFrameStorage();
 
         EnsureCapacity(ref _visuals, displayList.Visuals.Length);
@@ -402,37 +403,38 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             if (_textFeature is null)
             {
                 AddDiagnostic("Text payloads require a caller-owned DeltaRender.Text adapter.");
-                return;
             }
-
-            var textRunCount = 0;
-            var previousWasText = false;
-            for (var index = 0; index < _orderCount; index++)
+            else
             {
-                var draw = _order[index];
-                if (draw.Kind != UiDrawKind.Text)
+                var textRunCount = 0;
+                var previousWasText = false;
+                for (var index = 0; index < _orderCount; index++)
                 {
-                    previousWasText = false;
-                    continue;
+                    var draw = _order[index];
+                    if (draw.Kind != UiDrawKind.Text)
+                    {
+                        previousWasText = false;
+                        continue;
+                    }
+
+                    var text = _texts[draw.Index];
+                    var color = text.Paint.FillColor;
+                    _textRunIndices[index] = _textFeature.QueueCompositeRun(
+                        text.Text,
+                        text.BaselineOrigin.x,
+                        text.BaselineOrigin.y,
+                        new Vector4(color.x, color.y, color.z, color.w),
+                        _commandClips[index],
+                        mergeWithPrevious: previousWasText,
+                        producerRunId: text.RunId.Value,
+                        producerRunGeneration: text.RunId.Generation,
+                        producerRunVersion: text.Version);
+                    textRunCount++;
+                    previousWasText = true;
                 }
 
-                var text = _texts[draw.Index];
-                var color = text.Paint.FillColor;
-                _textRunIndices[index] = _textFeature.QueueCompositeRun(
-                    text.Text,
-                    text.BaselineOrigin.x,
-                    text.BaselineOrigin.y,
-                    new Vector4(color.x, color.y, color.z, color.w),
-                    _commandClips[index],
-                    mergeWithPrevious: previousWasText,
-                    producerRunId: text.RunId.Value,
-                    producerRunGeneration: text.RunId.Generation,
-                    producerRunVersion: text.Version);
-                textRunCount++;
-                previousWasText = true;
+                textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph);
             }
-
-            textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph);
         }
 
         for (var index = 0; index < _orderCount; index++)
@@ -443,7 +445,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
         }
 
-        if (!PrepareVisualInstances())
+        if (_visualCount != 0 && !PrepareVisualInstances())
         {
             return;
         }

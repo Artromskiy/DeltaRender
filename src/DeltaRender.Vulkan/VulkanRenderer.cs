@@ -66,7 +66,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     public ValueTask DisposeAsync() => DisposeResourcesAsync();
 
-    public IRenderFrameSession CreateWindowSession(IRenderWindow window)
+    public IRenderFrameSession CreateWindowSession(IRenderWindow window, RenderSessionOptions options = default)
     {
         var sessionDiagnostics = new RenderDiagnosticBag();
         ArgumentNullException.ThrowIfNull(window);
@@ -110,7 +110,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 throw new InvalidOperationException("Failed to load VK_KHR_swapchain device extension.");
             }
 
-            return VulkanRenderSession.Create(this, surfaceLease, window.Metrics);
+            return VulkanRenderSession.Create(this, surfaceLease, window.Metrics, options);
         }
         catch (Exception exception)
         {
@@ -133,7 +133,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     /// follows the same Build/Execute path as a window session, but Execute submits and waits
     /// for completion instead of acquiring or presenting a swapchain image.
     /// </summary>
-    public IRenderFrameSession CreateHeadlessSession(uint width, uint height)
+    public IRenderFrameSession CreateHeadlessSession(uint width, uint height, RenderSessionOptions options = default)
     {
         if (width == 0)
         {
@@ -155,10 +155,10 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             }
         }
 
-        return VulkanRenderSession.CreateHeadless(this, new PixelExtent(width, height));
+        return VulkanRenderSession.CreateHeadless(this, new PixelExtent(width, height), options);
     }
 
-    public IRenderFrameSession CreateComputeSession()
+    public IRenderFrameSession CreateComputeSession(RenderSessionOptions options = default)
     {
         var diagnostics = new RenderDiagnosticBag();
         if (!IsInitialized)
@@ -170,7 +170,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             }
         }
 
-        return VulkanRenderSession.CreateCompute(this);
+        return VulkanRenderSession.CreateCompute(this, options);
     }
 
     internal VulkanDeviceContext GetDeviceContext(bool windowed)

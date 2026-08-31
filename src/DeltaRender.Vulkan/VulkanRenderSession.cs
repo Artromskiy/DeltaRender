@@ -14,6 +14,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private static long _nextResource;
 
     private readonly VulkanRenderer _renderer;
+    private readonly bool _profilingEnabled;
+    private readonly VulkanRenderProfiler? _profiler;
     private readonly VulkanSurfaceLease? _surfaceLease;
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
@@ -64,9 +66,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private readonly List<BufferAllocation> _retiredStaging = new();
     private ulong _stagingCursor;
 
-    private VulkanRenderSession(VulkanRenderer renderer, VulkanSurfaceLease? surfaceLease, WindowMetrics metrics, bool windowed)
+    private VulkanRenderSession(VulkanRenderer renderer, VulkanSurfaceLease? surfaceLease, WindowMetrics metrics, bool windowed, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        _profilingEnabled = options.EnableProfiling;
+        _profiler = _profilingEnabled ? new VulkanRenderProfiler() : null;
         _surfaceLease = surfaceLease;
         _windowed = windowed;
         _hasTarget = true;
@@ -143,9 +147,11 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    private VulkanRenderSession(VulkanRenderer renderer)
+    private VulkanRenderSession(VulkanRenderer renderer, RenderSessionOptions options)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        _profilingEnabled = options.EnableProfiling;
+        _profiler = _profilingEnabled ? new VulkanRenderProfiler() : null;
         _hasTarget = false;
         _windowed = false;
         _surfaceLease = null;
@@ -206,23 +212,23 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         }
     }
 
-    internal static VulkanRenderSession Create(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, WindowMetrics metrics)
+    internal static VulkanRenderSession Create(VulkanRenderer renderer, VulkanSurfaceLease surfaceLease, WindowMetrics metrics, RenderSessionOptions options)
     {
         ArgumentNullException.ThrowIfNull(surfaceLease);
-        return new VulkanRenderSession(renderer, surfaceLease, metrics, true);
+        return new VulkanRenderSession(renderer, surfaceLease, metrics, true, options);
     }
 
-    internal static VulkanRenderSession CreateHeadless(VulkanRenderer renderer, PixelExtent extent)
+    internal static VulkanRenderSession CreateHeadless(VulkanRenderer renderer, PixelExtent extent, RenderSessionOptions options)
     {
         if (extent.IsEmpty)
         {
             throw new ArgumentException("A headless target must have a non-empty extent.", nameof(extent));
         }
 
-        return new VulkanRenderSession(renderer, null, new WindowMetrics(extent.Width, extent.Height, 1), false);
+        return new VulkanRenderSession(renderer, null, new WindowMetrics(extent.Width, extent.Height, 1), false, options);
     }
 
-    internal static VulkanRenderSession CreateCompute(VulkanRenderer renderer) => new(renderer);
+    internal static VulkanRenderSession CreateCompute(VulkanRenderer renderer, RenderSessionOptions options) => new(renderer, options);
 
     public RenderDeviceCapabilities Capabilities
     {
@@ -246,6 +252,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     }
 
     public RenderTargetHandle Target => _hasTarget && !_disposed ? _target : default;
+
+    public bool ProfilingEnabled => _profilingEnabled;
+
+    public IRenderProfiler? Profiler => _profiler;
 
     public IRenderGraph CreateRenderGraph()
     {
@@ -366,6 +376,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     }
 
     internal Vk Api => _renderer.Api;
+
+    internal VulkanRenderProfiler? ProfilerState => _profiler;
     internal Device Device => _device;
     internal PhysicalDevice PhysicalDevice => _physicalDevice;
     internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
