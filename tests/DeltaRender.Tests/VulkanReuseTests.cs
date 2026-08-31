@@ -13,7 +13,7 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
     private readonly ITestOutputHelper _output = output;
 
     [Fact]
-    public void DependencyPlannerKeepsEmptyGraphAndSingleEmptyPassAllocationFree()
+    public void DependencyPlannerKeepsTrivialGraphsAllocationFree()
     {
         var planner = new VulkanGraphDependencyPlanner();
         Span<int> order = stackalloc int[1];
@@ -24,8 +24,9 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
         Assert.Equal(0, planner.ResourceCapacity);
 
         var pass = new VulkanRenderGraph.GraphPass("empty", VulkanRenderGraph.PassKind.Transfer, null);
+        pass.AddUse(new VulkanRenderGraph.GraphResource(), RenderResourceAccess.Read, RenderPipelineStages.Transfer);
         var passes = new[] { pass };
-        Assert.Equal(1, planner.Compile(passes, 0, order));
+        Assert.Equal(1, planner.Compile(passes, 1, order));
         Assert.Equal(0, order[0]);
         Assert.Equal(0, planner.PassCapacity);
         Assert.Equal(0, planner.ResourceCapacity);

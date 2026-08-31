@@ -28,7 +28,7 @@ internal sealed class VulkanGraphDependencyPlanner
             return 0;
         }
 
-        if (passes.Count == 1 && passes[0].Uses.Count == 0)
+        if (passes.Count == 1)
         {
             order[0] = 0;
             return 1;
