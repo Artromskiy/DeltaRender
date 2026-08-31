@@ -28,5 +28,7 @@ internal sealed class VulkanFrameSlotResources
 
     internal Framebuffer TargetFramebuffer;
 
+    internal bool InFlight;
+
     internal VulkanStagingBuffer StagingBuffer { get; }
 }

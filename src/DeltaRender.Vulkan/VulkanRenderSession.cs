@@ -806,6 +806,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 var renderComplete = _renderComplete;
                 var submit = new SubmitInfo { SType = StructureType.SubmitInfo, WaitSemaphoreCount = 1, PWaitSemaphores = &imageAvailable, PWaitDstStageMask = &waitStage, CommandBufferCount = 1, PCommandBuffers = &commandBuffer, SignalSemaphoreCount = 1, PSignalSemaphores = &renderComplete };
                 VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit(window)");
+                _frameResources[CurrentFrameSlot].InFlight = true;
                 var swapchain = _swapchain;
                 var imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
@@ -824,6 +825,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             {
                 var submit = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &commandBuffer };
                 VulkanCall.Ensure(Api.QueueSubmit(_graphicsQueue, 1, &submit, _frameFence), "QueueSubmit");
+                _frameResources[CurrentFrameSlot].InFlight = true;
             }
 
             return true;
@@ -876,7 +878,16 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     }
 
     internal void WaitForFrame()
-        => WaitForFence(_frameFence, "WaitForFence");
+    {
+        var slotIndex = CurrentFrameSlot;
+        if (slotIndex < 0 || !_frameResources[slotIndex].InFlight)
+        {
+            return;
+        }
+
+        WaitForFence(_frameFence, "WaitForFence");
+        _frameResources[slotIndex].InFlight = false;
+    }
 
     private void WaitForAllFrameSlots()
     {
@@ -888,9 +899,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         foreach (var slot in _frameResources)
         {
-            if (slot.Fence.Handle != default)
+            if (slot.InFlight && slot.Fence.Handle != default)
             {
                 WaitForFence(slot.Fence, "WaitForFrameSlotFence");
+                slot.InFlight = false;
             }
         }
     }
