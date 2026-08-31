@@ -17,8 +17,8 @@ internal static class Program
         var fragmentPath = Path.Combine(shaderDirectory, "Fragment.frag.spv");
         if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
         {
-            await Console.Error.WriteLineAsync($"Generated shader artifacts were not found in {shaderDirectory}.");
-            await Console.Error.WriteLineAsync("Pass --shader-dir with a DeltaShader-generated fullscreen vertex/fragment pair.");
+            await Console.Error.WriteLineAsync($"Generated shader artifacts were not found in {shaderDirectory}.").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync("Pass --shader-dir with a DeltaShader-generated fullscreen vertex/fragment pair.").ConfigureAwait(false);
             return 1;
         }
 
@@ -31,14 +31,16 @@ internal static class Program
             new WindowConfiguration("Delta.Render Shader Sandbox", 960, 540, true, true));
         if (!windowResult.Success || windowResult.Window is not { } window)
         {
-            await Console.Error.WriteLineAsync("Window creation failed.");
-            await Console.Error.WriteLineAsync(windowResult.Diagnostics.ToText());
+            await Console.Error.WriteLineAsync("Window creation failed.").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(windowResult.Diagnostics.ToText()).ConfigureAwait(false);
             return 1;
         }
 
         await using var windowLease = window.ConfigureAwait(false);
-        await using var renderer = new VulkanRenderer(new VulkanRendererOptions());
-        await using var session = renderer.CreateWindowSession(window);
+        var renderer = new VulkanRenderer(new VulkanRendererOptions());
+        await using var rendererLease = renderer.ConfigureAwait(false);
+        var session = renderer.CreateWindowSession(window);
+        await using var sessionLease = session.ConfigureAwait(false);
 
         var vertexShader = await File.ReadAllBytesAsync(vertexPath).ConfigureAwait(false);
         var fragmentShader = await File.ReadAllBytesAsync(fragmentPath).ConfigureAwait(false);
@@ -74,12 +76,12 @@ internal static class Program
                 renderedFrames++;
             }
 
-            await Console.Out.WriteLineAsync($"shader-sandbox frames={renderedFrames} source=DeltaShader artifact=present");
+            await Console.Out.WriteLineAsync($"shader-sandbox frames={renderedFrames} source=DeltaShader artifact=present").ConfigureAwait(false);
             return 0;
         }
         catch (Exception exception)
         {
-            await Console.Error.WriteLineAsync("Shader sandbox failed:");
+            await Console.Error.WriteLineAsync("Shader sandbox failed:").ConfigureAwait(false);
             await Console.Error.WriteLineAsync(exception.ToString()).ConfigureAwait(false);
             return 1;
         }
