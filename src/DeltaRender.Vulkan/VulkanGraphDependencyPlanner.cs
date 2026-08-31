@@ -6,6 +6,7 @@ namespace Delta.Render.Vulkan;
 internal sealed class VulkanGraphDependencyPlanner
 {
     private List<int>[] _edges = [];
+    private int[] _edgeMarks = [];
     private int[] _indegree = [];
     private int[] _lastWriter = [];
     private List<int>[] _readers = [];
@@ -40,6 +41,7 @@ internal sealed class VulkanGraphDependencyPlanner
         }
 
         EnsureStorage(passes.Count, resourceCount);
+        Array.Clear(_edgeMarks, 0, passes.Count);
         Array.Clear(_indegree, 0, passes.Count);
         Array.Fill(_lastWriter, -1, 0, resourceCount);
 
@@ -158,6 +160,11 @@ internal sealed class VulkanGraphDependencyPlanner
             _indegree = new int[GrowCapacity(_indegree.Length, passCount)];
         }
 
+        if (_edgeMarks.Length < passCount)
+        {
+            _edgeMarks = new int[GrowCapacity(_edgeMarks.Length, passCount)];
+        }
+
         if (_lastWriter.Length < resourceCount)
         {
             _lastWriter = new int[GrowCapacity(_lastWriter.Length, resourceCount)];
@@ -204,8 +211,9 @@ internal sealed class VulkanGraphDependencyPlanner
 
     private void AddEdge(int from, int to)
     {
-        if (from != to && !_edges.RefAt(from).Contains(to))
+        if (from != to && _edgeMarks.RefAt(to) != from + 1)
         {
+            _edgeMarks.RefAt(to) = from + 1;
             _edges.RefAt(from).Add(to);
             _indegree.RefAt(to)++;
         }

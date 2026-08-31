@@ -152,6 +152,57 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void DependencyPlannerHandlesManySharedResourceReaders()
+    {
+        const int resourceCount = 128;
+        const int readerCount = 128;
+        var planner = new VulkanGraphDependencyPlanner();
+        var resources = new VulkanRenderGraph.GraphResource[resourceCount];
+        for (int index = 0; index < resources.Length; index++)
+        {
+            resources[index] = new VulkanRenderGraph.GraphResource { Index = index };
+        }
+
+        var passes = new List<VulkanRenderGraph.GraphPass>(readerCount + 1);
+        var writer = new VulkanRenderGraph.GraphPass("writer", VulkanRenderGraph.PassKind.Transfer, null);
+        for (int index = 0; index < resources.Length; index++)
+        {
+            writer.AddUse(resources[index], RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+        }
+
+        passes.Add(writer);
+        for (int readerIndex = 0; readerIndex < readerCount; readerIndex++)
+        {
+            var reader = new VulkanRenderGraph.GraphPass($"reader-{readerIndex}", VulkanRenderGraph.PassKind.Compute, null);
+            for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
+            {
+                reader.AddUse(resources[resourceIndex], RenderResourceAccess.Read, RenderPipelineStages.Compute);
+            }
+
+            passes.Add(reader);
+        }
+
+        int[] order = new int[passes.Count];
+        Assert.Equal(passes.Count, planner.Compile(passes, resourceCount, order));
+        for (int index = 0; index < order.Length; index++)
+        {
+            Assert.Equal(index, order[index]);
+        }
+
+        long[] samples = new long[5];
+        for (int index = 0; index < samples.Length; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            Assert.Equal(passes.Count, planner.Compile(passes, resourceCount, order));
+            samples[index] = Stopwatch.GetTimestamp() - started;
+        }
+
+        Array.Sort(samples);
+        double medianNanoseconds = samples[samples.Length / 2] * 1_000_000_000d / Stopwatch.Frequency;
+        _output.WriteLine($"128 shared resources/readers median planner time: {medianNanoseconds:F2} ns");
+    }
+
+    [Fact]
     public void PipelineCacheCreatesOnceAndReportsWarmHit()
     {
         var cache = new VulkanPipelineCache<object, int>(ReferenceEqualityComparer.Instance);
