@@ -180,4 +180,21 @@ public sealed class VulkanReuseTests
         Assert.Equal(0, pool.ReuseCount);
         Assert.Equal(0, pool.FreeCount);
     }
+
+    [Fact]
+    public void TransientPoolSupportsDirectTakeAndCreateAccounting()
+    {
+        var pool = new VulkanTransientResourcePool<string, int>();
+
+        Assert.False(pool.TryTake("color", out _));
+
+        pool.RecordCreated();
+        pool.Return("color", 42);
+
+        Assert.True(pool.TryTake("color", out var reused));
+        Assert.Equal(42, reused);
+        Assert.Equal(1, pool.CreateCount);
+        Assert.Equal(1, pool.ReuseCount);
+        Assert.Equal(0, pool.FreeCount);
+    }
 }

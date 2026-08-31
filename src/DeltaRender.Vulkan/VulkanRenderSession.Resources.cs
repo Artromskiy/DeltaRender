@@ -13,7 +13,7 @@ internal sealed unsafe partial class VulkanRenderSession
         try
         {
             var requirements = Api.GetBufferMemoryRequirements(Device, buffer);
-            var type = FindMemoryType(requirements.MemoryTypeBits, required, preferred);
+            uint type = FindMemoryType(requirements.MemoryTypeBits, required, preferred);
             var properties = MemoryProperties.MemoryTypes[(int)type].PropertyFlags;
             var memory = AllocateMemory(requirements.Size, type, "AllocateBufferMemory");
             try
@@ -37,7 +37,7 @@ internal sealed unsafe partial class VulkanRenderSession
     private DeviceMemory AllocateAndBindImageMemory(Image image)
     {
         var requirements = Api.GetImageMemoryRequirements(Device, image);
-        var type = FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
+        uint type = FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
         DeviceMemory memory = default;
         try
         {
@@ -92,15 +92,27 @@ internal sealed unsafe partial class VulkanRenderSession
     internal BufferAllocation CreateTransientBuffer(in RenderBufferDescription description)
     {
         var key = new TransientBufferKey(description.SizeInBytes, description.Usage);
-        var copy = description;
-        return _transientBuffers.Acquire(key, () => CreateNativeBuffer(copy.SizeInBytes, ToVulkanBufferUsage(copy.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit));
+        if (_transientBuffers.TryTake(key, out var reused))
+        {
+            return reused;
+        }
+
+        var created = CreateNativeBuffer(description.SizeInBytes, ToVulkanBufferUsage(description.Usage), MemoryPropertyFlags.DeviceLocalBit, MemoryPropertyFlags.DeviceLocalBit);
+        _transientBuffers.RecordCreated();
+        return created;
     }
 
     internal PersistentTexture CreateTransientTexture(in RenderTextureDescription description)
     {
         var key = new TransientTextureKey(description.Width, description.Height, description.Format, description.MipLevels, description.Layers, description.Samples, description.Usage);
-        var copy = description;
-        return _transientTextures.Acquire(key, () => CreateNativeTexture(copy));
+        if (_transientTextures.TryTake(key, out var reused))
+        {
+            return reused;
+        }
+
+        var created = CreateNativeTexture(description);
+        _transientTextures.RecordCreated();
+        return created;
     }
 
     internal void DeferTransient(BufferAllocation allocation, in RenderBufferDescription description)
@@ -146,7 +158,7 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private void ReclaimDeferredTransientsForSlot(int slotIndex)
     {
-        for (var index = _deferredTextures.Count - 1; index >= 0; index--)
+        for (int index = _deferredTextures.Count - 1; index >= 0; index--)
         {
             var deferred = _deferredTextures[index];
             if (deferred.FrameSlot != slotIndex)
@@ -158,7 +170,7 @@ internal sealed unsafe partial class VulkanRenderSession
             _deferredTextures.RemoveAt(index);
         }
 
-        for (var index = _deferredBuffers.Count - 1; index >= 0; index--)
+        for (int index = _deferredBuffers.Count - 1; index >= 0; index--)
         {
             var deferred = _deferredBuffers[index];
             if (deferred.FrameSlot != slotIndex)

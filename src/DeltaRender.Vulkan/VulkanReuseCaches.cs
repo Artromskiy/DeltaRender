@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Delta.Render.Vulkan;
 
@@ -43,8 +44,8 @@ internal sealed class VulkanTransientResourcePool<TKey, TValue>
     where TKey : notnull
     where TValue : notnull
 {
-    private readonly Dictionary<TKey, List<TValue>> _free = new();
-    private readonly HashSet<TValue> _inPool = new();
+    private readonly Dictionary<TKey, List<TValue>> _free = [];
+    private readonly HashSet<TValue> _inPool = [];
 
     internal int CreateCount { get; private set; }
 
@@ -57,20 +58,33 @@ internal sealed class VulkanTransientResourcePool<TKey, TValue>
     internal TValue Acquire(TKey key, Func<TValue> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
-        if (_free.TryGetValue(key, out var resources) && resources.Count > 0)
+        if (TryTake(key, out var value))
         {
-            var last = resources.Count - 1;
-            var value = resources[last];
-            resources.RemoveAt(last);
-            _inPool.Remove(value);
-            ReuseCount++;
             return value;
         }
 
         var created = factory();
-        CreateCount++;
+        RecordCreated();
         return created;
     }
+
+    internal bool TryTake(TKey key, [MaybeNullWhen(false)] out TValue value)
+    {
+        if (_free.TryGetValue(key, out var resources) && resources.Count > 0)
+        {
+            int last = resources.Count - 1;
+            value = resources[last];
+            resources.RemoveAt(last);
+            _inPool.Remove(value);
+            ReuseCount++;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    internal void RecordCreated() => CreateCount++;
 
     internal void Return(TKey key, TValue value)
     {
@@ -81,7 +95,7 @@ internal sealed class VulkanTransientResourcePool<TKey, TValue>
 
         if (!_free.TryGetValue(key, out var resources))
         {
-            resources = new List<TValue>();
+            resources = [];
             _free.Add(key, resources);
         }
 
