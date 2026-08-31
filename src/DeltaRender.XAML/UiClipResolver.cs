@@ -9,16 +9,28 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
     private readonly List<string> _diagnostics = diagnostics;
     private UiClipRegion[] _clips = [];
     private PixelRect[] _resolvedClips = [];
+    private int[] _resolvedEpochs = [];
     private int[] _clipMarks = [];
     private int _clipCount;
     private int _clipMarkEpoch;
+    private int _frameEpoch;
 
     internal void SetFrame(UiClipRegion[] clips, int count)
     {
         _clips = clips;
         _clipCount = count;
         EnsureCapacity(ref _resolvedClips, count);
+        EnsureCapacity(ref _resolvedEpochs, count);
         EnsureCapacity(ref _clipMarks, count);
+        if (_frameEpoch == int.MaxValue)
+        {
+            Array.Clear(_resolvedEpochs, 0, count);
+            _frameEpoch = 1;
+        }
+        else
+        {
+            _frameEpoch++;
+        }
     }
 
     internal void Clear()
@@ -49,6 +61,12 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
     internal bool TryResolve(UiClipId id, out PixelRect result)
     {
         result = UiDisplayListGeometry.ViewportRect(_viewport);
+        if (id.IsValid && _resolvedEpochs.RefAt(id.Value) == _frameEpoch)
+        {
+            result = _resolvedClips.RefAt(id.Value);
+            return true;
+        }
+
         var stamp = NextClipStamp();
         var current = id;
         while (current.IsValid)
@@ -66,6 +84,12 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
             }
 
             _clipMarks.RefAt(current.Value) = stamp;
+            if (_resolvedEpochs.RefAt(current.Value) == _frameEpoch)
+            {
+                result = UiDisplayListGeometry.Intersect(result, _resolvedClips.RefAt(current.Value));
+                break;
+            }
+
             var region = _clips.RefAt(current.Value);
             if (region.Kind != UiClipKind.Rectangle)
             {
@@ -84,6 +108,7 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
         }
 
         _resolvedClips.RefAt(id.Value) = result;
+        _resolvedEpochs.RefAt(id.Value) = _frameEpoch;
         return true;
     }
 
