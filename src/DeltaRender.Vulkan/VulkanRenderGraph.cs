@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
 using System.Text;
 using Delta.Render;
 using Delta.Render.RenderGraph;
@@ -29,11 +28,14 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private bool _hasDepthAttachment;
     private bool _built;
     private bool _disposed;
+    private readonly VulkanGraphDependencyPlanner _dependencyPlanner = new();
+    private readonly VulkanGraphBarrierPlanner _barrierPlanner;
 
     internal VulkanRenderGraph(VulkanRenderSession session)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _readback = new VulkanGraphReadback(this);
+        _barrierPlanner = new VulkanGraphBarrierPlanner(this);
     }
 
     public void Build(ulong frameNumber, ReadOnlySpan<IRenderFeature> features)
@@ -135,12 +137,12 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
                 try
                 {
-                    EmitBarriers(pass, states);
+                    _barrierPlanner.Emit(pass, states);
                     if (pass.Kind == PassKind.Raster)
                     {
                         if (!rasterActive)
                         {
-                            EmitRasterSegmentEntryBarriers(orderPosition, states);
+                            _barrierPlanner.EmitRasterSegmentEntry(orderPosition, states);
                             BeginRaster(pass);
                             rasterActive = true;
                         }
@@ -201,7 +203,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                         }
                     }
 
-                    UpdateStates(pass, states);
+                    VulkanGraphBarrierPlanner.UpdateStates(pass, states);
                 }
                 finally
                 {
@@ -514,6 +516,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     internal BufferAllocation StagingBuffer => _session.StagingBuffer;
     internal VulkanRenderSession Session => _session;
+    internal int OrderCount => _orderCount;
+
+    internal GraphPass OrderedPassAt(int position) => _passes[_order.RefAt(position)];
 
     private void BeginRaster(GraphPass pass)
     {
@@ -532,121 +537,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         CommandWriter.BeginRenderPass(_session.GraphRenderPass, _session.GraphFramebuffer, _session.GraphExtent, clearValues, clearValueCount);
-    }
-
-    private readonly VulkanGraphDependencyPlanner _dependencyPlanner = new();
-    private readonly List<BufferMemoryBarrier> _barrierBuffers = new();
-    private readonly List<ImageMemoryBarrier> _barrierImages = new();
-
-    private void EmitBarriers(GraphPass pass, ResourceState[] states)
-    {
-        var buffers = _barrierBuffers;
-        var images = _barrierImages;
-        var sourceStages = PipelineStageFlags.None;
-        var destinationStages = PipelineStageFlags.None;
-        buffers.Clear();
-        images.Clear();
-        foreach (var use in pass.Uses)
-        {
-            var previous = states.RefAt(use.Resource.Index);
-            var next = ResourceState.For(use.Access, use.Stages);
-            if (use.Resource.IsBuffer)
-            {
-                if (previous == next)
-                {
-                    continue;
-                }
-
-                var allocation = use.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable while planning a barrier.");
-                buffers.Add(new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = allocation.Buffer, Offset = 0, Size = allocation.AllocationSize });
-                sourceStages |= NormalizeBarrierStage(previous.Stages);
-                destinationStages |= NormalizeBarrierStage(next.Stages);
-            }
-            else if (use.Resource.Image.Handle != default && (previous.Layout != next.Layout || previous.Access != next.Access))
-            {
-                images.Add(new ImageMemoryBarrier { SType = StructureType.ImageMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = next.Access, OldLayout = previous.Layout, NewLayout = next.Layout, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Image = use.Resource.Image, SubresourceRange = new ImageSubresourceRange { AspectMask = use.Resource.AspectMask, LevelCount = 1, LayerCount = 1 } });
-                sourceStages |= NormalizeBarrierStage(previous.Stages);
-                destinationStages |= NormalizeBarrierStage(next.Stages);
-            }
-        }
-
-        if (buffers.Count != 0 || images.Count != 0)
-        {
-            CommandWriter.PipelineBarrier(sourceStages, destinationStages, CollectionsMarshal.AsSpan(buffers), CollectionsMarshal.AsSpan(images));
-        }
-    }
-
-    private void EmitRasterSegmentEntryBarriers(int firstRasterPosition, ResourceState[] states)
-    {
-        var firstPass = _passes[_order.RefAt(firstRasterPosition)];
-        for (var orderPosition = firstRasterPosition + 1; orderPosition < _orderCount; orderPosition++)
-        {
-            var pass = _passes[_order.RefAt(orderPosition)];
-            if (pass.Kind != PassKind.Raster)
-            {
-                break;
-            }
-
-            foreach (var use in pass.Uses)
-            {
-                if (!use.Resource.IsBuffer || UsesResource(firstPass, use.Resource))
-                {
-                    continue;
-                }
-
-                var previous = states.RefAt(use.Resource.Index);
-                var next = ResourceState.For(use.Access, use.Stages);
-                if (previous == next)
-                {
-                    continue;
-                }
-
-                var allocation = use.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The graph buffer is unavailable while planning a raster entry barrier.");
-                var barrier = new BufferMemoryBarrier
-                {
-                    SType = StructureType.BufferMemoryBarrier,
-                    SrcAccessMask = previous.Access,
-                    DstAccessMask = next.Access,
-                    SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                    Buffer = allocation.Buffer,
-                    Offset = 0,
-                    Size = allocation.AllocationSize
-                };
-                CommandWriter.PipelineBarrier(
-                    NormalizeBarrierStage(previous.Stages),
-                    NormalizeBarrierStage(next.Stages),
-                    in barrier);
-                states.RefAt(use.Resource.Index) = next;
-            }
-        }
-    }
-
-    private static PipelineStageFlags NormalizeBarrierStage(PipelineStageFlags stages)
-    {
-        var stage = stages & ~PipelineStageFlags.TopOfPipeBit;
-        return stage == PipelineStageFlags.None ? PipelineStageFlags.TopOfPipeBit : stage;
-    }
-
-    private static bool UsesResource(GraphPass pass, GraphResource resource)
-    {
-        foreach (var use in pass.Uses)
-        {
-            if (ReferenceEquals(use.Resource, resource))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static void UpdateStates(GraphPass pass, ResourceState[] states)
-    {
-        foreach (var use in pass.Uses)
-        {
-            states.RefAt(use.Resource.Index) = ResourceState.For(use.Access, use.Stages);
-        }
     }
 
     private void ValidateRasterSegment()
