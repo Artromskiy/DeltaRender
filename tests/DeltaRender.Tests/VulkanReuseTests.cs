@@ -91,14 +91,19 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
     public void GraphPassMergesRepeatedResourceUses()
     {
         var pass = new VulkanRenderGraph.GraphPass("merge", VulkanRenderGraph.PassKind.Compute, null);
-        var resource = new VulkanRenderGraph.GraphResource();
+        var first = new VulkanRenderGraph.GraphResource();
+        var second = new VulkanRenderGraph.GraphResource();
 
-        pass.AddUse(resource, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
-        pass.AddUse(resource, RenderResourceAccess.Write, RenderPipelineStages.Compute);
+        pass.AddUse(first, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
+        pass.AddUse(second, RenderResourceAccess.Write, RenderPipelineStages.Fragment);
+        pass.AddUse(first, RenderResourceAccess.Write, RenderPipelineStages.Compute);
+        pass.AddUse(first, RenderResourceAccess.Read, RenderPipelineStages.Transfer);
 
-        var use = Assert.Single(pass.Uses);
-        Assert.Equal(RenderResourceAccess.ReadWrite, use.Access);
-        Assert.Equal(RenderPipelineStages.Vertex | RenderPipelineStages.Compute, use.Stages);
+        Assert.Equal(2, pass.Uses.Count);
+        Assert.Equal(first, pass.Uses[0].Resource);
+        Assert.Equal(RenderResourceAccess.ReadWrite, pass.Uses[0].Access);
+        Assert.Equal(RenderPipelineStages.Vertex | RenderPipelineStages.Compute | RenderPipelineStages.Transfer, pass.Uses[0].Stages);
+        Assert.Equal(second, pass.Uses[1].Resource);
     }
 
     [Fact]

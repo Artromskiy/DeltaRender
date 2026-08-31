@@ -19,23 +19,38 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal DepthStencilAttachmentDescription DepthStencil;
         internal bool HasDepthStencil;
         internal readonly List<GraphUse> Uses = new();
+        private GraphResource? _lastUseResource;
+        private int _lastUseIndex = -1;
 
         internal void AddUse(GraphResource resource, RenderResourceAccess access, RenderPipelineStages stages)
         {
-            for (int index = 0; index < Uses.Count; index++)
+            int existingIndex = ReferenceEquals(_lastUseResource, resource) ? _lastUseIndex : -1;
+            if ((uint)existingIndex >= (uint)Uses.Count)
             {
-                var existing = Uses[index];
-                if (!ReferenceEquals(existing.Resource, resource))
+                existingIndex = -1;
+                for (int index = 0; index < Uses.Count; index++)
                 {
-                    continue;
+                    if (ReferenceEquals(Uses[index].Resource, resource))
+                    {
+                        existingIndex = index;
+                        break;
+                    }
                 }
+            }
 
+            if (existingIndex >= 0)
+            {
+                var existing = Uses[existingIndex];
                 var combinedAccess = existing.Access | access;
                 var combinedStages = existing.Stages | stages;
-                Uses[index] = new GraphUse(resource, combinedAccess, combinedStages, ResourceState.For(combinedAccess, combinedStages));
+                Uses[existingIndex] = new GraphUse(resource, combinedAccess, combinedStages, ResourceState.For(combinedAccess, combinedStages));
+                _lastUseResource = resource;
+                _lastUseIndex = existingIndex;
                 return;
             }
 
+            _lastUseResource = resource;
+            _lastUseIndex = Uses.Count;
             Uses.Add(new GraphUse(resource, access, stages, ResourceState.For(access, stages)));
         }
 
@@ -52,6 +67,8 @@ internal sealed unsafe partial class VulkanRenderGraph
             DepthStencil = default;
             HasDepthStencil = false;
             Uses.Clear();
+            _lastUseResource = null;
+            _lastUseIndex = -1;
         }
 
         internal void ReleaseForPool()
@@ -66,6 +83,8 @@ internal sealed unsafe partial class VulkanRenderGraph
             DepthStencil = default;
             HasDepthStencil = false;
             Uses.Clear();
+            _lastUseResource = null;
+            _lastUseIndex = -1;
         }
     }
 
