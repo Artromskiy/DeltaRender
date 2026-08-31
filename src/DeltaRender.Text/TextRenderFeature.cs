@@ -730,11 +730,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _pages.Length;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_pages.Length, required);
 
         Array.Resize(ref _pages, capacity);
         Array.Resize(ref _pageGraphHandles, capacity);
@@ -747,11 +743,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _uploadPageIndices.Length;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_uploadPageIndices.Length, required);
 
         Array.Resize(ref _uploadPageIndices, capacity);
     }
@@ -976,11 +968,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _pendingRuns.Length;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_pendingRuns.Length, required);
         Array.Resize(ref _pendingRuns, capacity);
     }
 
@@ -991,11 +979,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _batches.Length * 2;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_batches.Length, required);
         Array.Resize(ref _batches, capacity);
     }
 
@@ -1006,11 +990,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _localRunBatches.Length * 2;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_localRunBatches.Length, required);
 
         Array.Resize(ref _localRunBatches, capacity);
     }
@@ -1022,11 +1002,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             return;
         }
 
-        var capacity = _runBatchStarts.Length;
-        while (capacity < required)
-        {
-            capacity = checked(capacity * 2);
-        }
+        var capacity = GrowCapacity(_runBatchStarts.Length, required);
 
         Array.Resize(ref _runBatchStarts, capacity);
         Array.Resize(ref _runBatchCounts, capacity);
@@ -1042,6 +1018,17 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         Array.Clear(_runBatchCounts, 0, _runBatchCounts.Length);
         _glyphs.Clear();
         _runCache.Clear();
+    }
+
+    private static int GrowCapacity(int current, int required)
+    {
+        var capacity = Math.Max(1, current);
+        while (capacity < required)
+        {
+            capacity = checked(capacity * 2);
+        }
+
+        return capacity;
     }
 
     private static (GlyphImageEncoding Encoding, RenderTextureFormat Format, int BytesPerPixel) DescribeImageFormat(GlyphImageMode mode)
