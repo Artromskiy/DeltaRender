@@ -5,7 +5,7 @@ namespace Delta.Render.Vulkan;
 
 internal sealed class VulkanGraphDependencyPlanner
 {
-    private HashSet<int>[] _edges = [];
+    private List<int>[] _edges = [];
     private int[] _indegree = [];
     private int[] _lastWriter = [];
     private List<int>[] _readers = [];
@@ -100,10 +100,10 @@ internal sealed class VulkanGraphDependencyPlanner
         if (_edges.Length < passCount)
         {
             var capacity = GrowCapacity(_edges.Length, passCount);
-            _edges = new HashSet<int>[capacity];
+            _edges = new List<int>[capacity];
             for (var index = 0; index < capacity; index++)
             {
-                _edges[index] = new HashSet<int>();
+                _edges[index] = new List<int>();
             }
         }
 
@@ -148,8 +148,9 @@ internal sealed class VulkanGraphDependencyPlanner
 
     private void AddEdge(int from, int to)
     {
-        if (from != to && _edges[from].Add(to))
+        if (from != to && !_edges[from].Contains(to))
         {
+            _edges[from].Add(to);
             _indegree[to]++;
         }
     }
