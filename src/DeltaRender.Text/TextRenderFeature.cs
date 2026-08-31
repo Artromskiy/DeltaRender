@@ -731,53 +731,6 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private readonly record struct PendingRun(
-        ShapedText Text,
-        float OriginX,
-        float OriginY,
-        Vector4 Color,
-        PixelRect Clip,
-        bool MergeWithPrevious,
-        TextRunCacheKey CacheKey,
-        uint Version);
-
-    private readonly record struct TextRunCacheKey(uint Value, uint Generation)
-    {
-        public bool IsValid => Value != 0 && Generation != 0;
-    }
-
-    private sealed class CachedRun
-    {
-        public byte[] PackedBytes { get; set; } = [];
-        public TextBatch[] Batches { get; set; } = new TextBatch[4];
-        public int PackedByteCount;
-        public int InstanceCount;
-        public int BatchCount;
-        public uint Version;
-        public float OriginX;
-        public float OriginY;
-        public Vector4 Color;
-        public PixelRect Clip;
-        public bool MergeWithPrevious;
-        public ulong AtlasEpoch;
-    }
-
-    private struct TextBatch
-    {
-        public TextBatch(int pageIndex, PixelRect clip, int start, int count)
-        {
-            PageIndex = pageIndex;
-            Clip = clip;
-            Start = start;
-            Count = count;
-        }
-
-        public int PageIndex;
-        public PixelRect Clip;
-        public int Start;
-        public int Count;
-    }
-
     private sealed class TextUploadPass(TextRenderFeature owner) : ITransferPass
     {
         public void Record(ITransferCommandContext commands)
