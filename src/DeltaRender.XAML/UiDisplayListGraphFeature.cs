@@ -27,6 +27,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiClipRegion[] _clips = [];
     private UiTextDraw[] _texts = [];
     private UiDrawRef[] _order = [];
+    private UiVisualSegmentPass?[] _visualSegmentPasses = [];
+    private int _visualSegmentPassCount;
     private PixelRect[] _resolvedClips = [];
     private PixelRect[] _commandClips = [];
     private byte[] _visualInstanceBytes = [];
@@ -224,6 +226,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _resolvedClips.RefAt(index) = resolvedClip;
         }
 
+        _visualSegmentPassCount = 0;
         for (var index = 0; index < _orderCount; index++)
         {
             var draw = _order.RefAt(index);
@@ -442,7 +445,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 new RasterPassDescription(
                     $"DeltaRender.XAML.VisualSegment[{index}:{visualEnd})",
                     new RasterPipelineDescription(program, cullMode: RasterCullMode.None, blendMode: RenderBlendMode.Alpha)),
-                new UiVisualSegmentPass(this, index, visualEnd - index));
+                GetVisualSegmentPass(index, visualEnd - index));
             graph.UseColorAttachment(
                 pass,
                 0,
@@ -460,6 +463,26 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             index = visualEnd - 1;
         }
+    }
+
+    private UiVisualSegmentPass GetVisualSegmentPass(int firstOrderIndex, int visualCount)
+    {
+        if (_visualSegmentPassCount == _visualSegmentPasses.Length)
+        {
+            var newLength = _visualSegmentPassCount == 0 ? 4 : _visualSegmentPassCount * 2;
+            Array.Resize(ref _visualSegmentPasses, newLength);
+        }
+
+        var pass = _visualSegmentPasses[_visualSegmentPassCount];
+        if (pass is null)
+        {
+            pass = new UiVisualSegmentPass(this);
+            _visualSegmentPasses[_visualSegmentPassCount] = pass;
+        }
+
+        pass.SetRange(firstOrderIndex, visualCount);
+        _visualSegmentPassCount++;
+        return pass;
     }
 
     private bool TryPrepareVisual(IRenderGraphBuilder graph, int orderIndex)
@@ -1074,13 +1097,19 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private static bool IsZero(float4 value)
         => value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
 
-    private sealed class UiVisualSegmentPass(
-        UiDisplayListGraphFeature owner,
-        int firstOrderIndex,
-        int visualCount) : IRasterPass
+    private sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRasterPass
     {
+        private int _firstOrderIndex;
+        private int _visualCount;
+
+        internal void SetRange(int firstOrderIndex, int visualCount)
+        {
+            _firstOrderIndex = firstOrderIndex;
+            _visualCount = visualCount;
+        }
+
         public void Record(IRasterCommandContext commands)
-            => owner.RecordVisualSegment(commands, firstOrderIndex, visualCount);
+            => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount);
     }
 
     private sealed class UiVisualUploadPass(UiDisplayListGraphFeature owner) : ITransferPass
