@@ -67,7 +67,7 @@ internal static class Sdl3Runtime
     }
 
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
-    public static bool TryCreateWindow(string title, uint width, uint height, bool resizable, out ulong windowHandle, out RenderDiagnosticBag diagnostics)
+    public static bool TryCreateWindow(string title, uint width, uint height, bool resizable, bool highDpi, out ulong windowHandle, out RenderDiagnosticBag diagnostics)
     {
         windowHandle = 0;
         diagnostics = new RenderDiagnosticBag();
@@ -78,6 +78,11 @@ internal static class Sdl3Runtime
             if (resizable)
             {
                 flags |= SDL.WindowFlags.Resizable;
+            }
+
+            if (highDpi)
+            {
+                flags |= SDL.WindowFlags.HighPixelDensity;
             }
 
             var handle = SDL.CreateWindow(title, (int)width, (int)height, flags);
@@ -94,6 +99,61 @@ internal static class Sdl3Runtime
         catch (Exception ex)
         {
             diagnostics.Add(RenderDiagnosticSeverity.Error, "SDL-WINDOW", $"SDL window creation threw {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "SDL3-CS is a native FFI boundary; Try* converts binding failures into renderer diagnostics.")]
+    public static bool TryGetWindowMetrics(
+        ulong windowHandle,
+        out WindowMetrics metrics,
+        out RenderDiagnosticBag diagnostics)
+    {
+        metrics = default;
+        diagnostics = new RenderDiagnosticBag();
+
+        try
+        {
+            var handle = new IntPtr(unchecked((long)windowHandle));
+            if (!SDL.GetWindowSize(handle, out var logicalWidth, out var logicalHeight) || logicalWidth <= 0 || logicalHeight <= 0)
+            {
+                AddSdlError(diagnostics, "SDL-METRICS", "SDL window logical size query failed.");
+                return false;
+            }
+
+            if (!SDL.GetWindowSizeInPixels(handle, out var drawableWidth, out var drawableHeight) || drawableWidth <= 0 || drawableHeight <= 0)
+            {
+                AddSdlError(diagnostics, "SDL-METRICS", "SDL window drawable pixel size query failed.");
+                return false;
+            }
+
+            var dpiScale = SDL.GetWindowPixelDensity(handle);
+            if (!float.IsFinite(dpiScale) || dpiScale <= 0)
+            {
+                dpiScale = MathF.Max(
+                    (float)drawableWidth / logicalWidth,
+                    (float)drawableHeight / logicalHeight);
+            }
+
+            if (!float.IsFinite(dpiScale) || dpiScale <= 0)
+            {
+                diagnostics.Add(RenderDiagnosticSeverity.Error, "SDL-METRICS", "SDL returned an invalid window pixel density.");
+                return false;
+            }
+
+            metrics = new WindowMetrics(
+                checked((uint)logicalWidth),
+                checked((uint)logicalHeight),
+                dpiScale)
+            {
+                DrawableWidth = checked((uint)drawableWidth),
+                DrawableHeight = checked((uint)drawableHeight),
+            };
+            return true;
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Add(RenderDiagnosticSeverity.Error, "SDL-METRICS", $"SDL window metrics query threw {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

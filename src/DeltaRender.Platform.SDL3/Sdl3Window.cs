@@ -8,12 +8,20 @@ public sealed class Sdl3Window : IRenderWindow
     private bool _closed;
 
     public Sdl3Window(ulong handle, WindowConfiguration configuration)
+        : this(
+            handle,
+            configuration,
+            new WindowMetrics(configuration.Width, configuration.Height, 1.0f))
+    {
+    }
+
+    internal Sdl3Window(ulong handle, WindowConfiguration configuration, WindowMetrics metrics)
     {
         Id = RenderWindowId.New();
         Handle = new RenderWindowHandle(handle);
         _handle = handle;
         Title = configuration.Title;
-        Metrics = new WindowMetrics(configuration.Width, configuration.Height, 1.0f);
+        Metrics = metrics;
         VulkanSurfaceSource = new Sdl3VulkanSurfaceSource(handle);
     }
 

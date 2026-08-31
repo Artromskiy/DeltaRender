@@ -1,3 +1,5 @@
+using Delta.Render.RenderGraph;
+
 namespace Delta.Render;
 
 public readonly record struct RenderWindowId(Guid Value)
@@ -12,6 +14,17 @@ public readonly record struct RenderWindowHandle(ulong Value)
 
 public readonly record struct WindowMetrics(uint Width, uint Height, float DpiScale)
 {
+    /// <summary>Physical drawable width in pixels, or <see cref="Width"/> when unspecified.</summary>
+    public uint DrawableWidth { get; init; }
+
+    /// <summary>Physical drawable height in pixels, or <see cref="Height"/> when unspecified.</summary>
+    public uint DrawableHeight { get; init; }
+
+    /// <summary>Physical render target extent corresponding to this window.</summary>
+    public PixelExtent DrawableExtent => new(
+        DrawableWidth == 0 ? Width : DrawableWidth,
+        DrawableHeight == 0 ? Height : DrawableHeight);
+
     public bool IsValid => Width > 0 && Height > 0 && float.IsFinite(DpiScale) && DpiScale > 0;
 }
 

@@ -20,13 +20,20 @@ public sealed class Sdl3WindowFactory : IRenderWindowFactory
             return WindowCreateResult.Failure(diagnostics);
         }
 
-        if (!Sdl3Runtime.TryCreateWindow(configuration.Title, configuration.Width, configuration.Height, configuration.Resizable, out var handle, out var createDiag))
+        if (!Sdl3Runtime.TryCreateWindow(configuration.Title, configuration.Width, configuration.Height, configuration.Resizable, configuration.HighDpi, out var handle, out var createDiag))
         {
             diagnostics.Merge(createDiag);
             return WindowCreateResult.Failure(diagnostics);
         }
 
-        var window = new Sdl3Window(handle, configuration);
+        if (!Sdl3Runtime.TryGetWindowMetrics(handle, out var metrics, out var metricsDiag))
+        {
+            diagnostics.Merge(metricsDiag);
+            _ = Sdl3Runtime.TryDestroyWindow(handle);
+            return WindowCreateResult.Failure(diagnostics);
+        }
+
+        var window = new Sdl3Window(handle, configuration, metrics);
         return WindowCreateResult.SuccessResult(window, diagnostics);
     }
 

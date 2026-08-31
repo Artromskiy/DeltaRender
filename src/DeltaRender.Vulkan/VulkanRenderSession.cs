@@ -83,7 +83,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _graphicsFamily = deviceContext.GraphicsFamily;
         _presentFamily = deviceContext.PresentFamily;
         _memoryProperties = deviceContext.MemoryProperties;
-        _extent = new Extent2D(Math.Max(1u, metrics.Width), Math.Max(1u, metrics.Height));
+        var drawableExtent = metrics.DrawableExtent;
+        _extent = new Extent2D(Math.Max(1u, drawableExtent.Width), Math.Max(1u, drawableExtent.Height));
 
         RenderPass renderPass = default;
         CommandPool commandPool = default;
