@@ -276,7 +276,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     {
         uint familyCount = 0;
         api.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, null);
-        if (familyCount == 0 || graphicsFamily >= familyCount)
+        if (graphicsFamily >= familyCount)
         {
             return 0;
         }
