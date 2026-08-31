@@ -15,6 +15,23 @@ internal static class VulkanCall
 
 internal sealed class VulkanOperationException : InvalidOperationException
 {
+    public VulkanOperationException()
+        : this("The Vulkan operation failed.")
+    {
+    }
+
+    public VulkanOperationException(string message)
+        : base(message)
+    {
+        Result = Result.Success;
+    }
+
+    public VulkanOperationException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        Result = Result.Success;
+    }
+
     internal VulkanOperationException(Result result, string operation)
         : base($"{operation} failed: {result}")
     {
