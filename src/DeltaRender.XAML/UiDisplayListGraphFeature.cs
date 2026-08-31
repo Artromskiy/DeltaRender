@@ -443,11 +443,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
 
             var visualEnd = index + 1;
+            var segmentInstanceCount = (ulong)_visualInstanceCounts.RefAt(index);
             while (visualEnd < _orderCount &&
                    _order.RefAt(visualEnd).Kind == UiDrawKind.Visual &&
                    !_commandClips.RefAt(visualEnd).IsEmpty &&
                    CanJoinVisualSegment(index, visualEnd))
             {
+                segmentInstanceCount = checked(segmentInstanceCount + (ulong)_visualInstanceCounts.RefAt(visualEnd));
                 visualEnd++;
             }
 
@@ -455,7 +457,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 new RasterPassDescription(
                     $"DeltaRender.XAML.VisualSegment[{index}:{visualEnd})",
                     new RasterPipelineDescription(program, cullMode: RasterCullMode.None, blendMode: RenderBlendMode.Alpha)),
-                GetVisualSegmentPass(index, visualEnd - index));
+                GetVisualSegmentPass(index, visualEnd - index, segmentInstanceCount));
             graph.UseColorAttachment(
                 pass,
                 0,
@@ -475,7 +477,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
     }
 
-    private UiVisualSegmentPass GetVisualSegmentPass(int firstOrderIndex, int visualCount)
+    private UiVisualSegmentPass GetVisualSegmentPass(int firstOrderIndex, int visualCount, ulong instanceCount)
     {
         if (_visualSegmentPassCount == _visualSegmentPasses.Length)
         {
@@ -490,7 +492,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualSegmentPasses[_visualSegmentPassCount] = pass;
         }
 
-        pass.SetRange(firstOrderIndex, visualCount);
+        pass.SetRange(firstOrderIndex, visualCount, instanceCount);
         _visualSegmentPassCount++;
         return pass;
     }
@@ -741,7 +743,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
            _visualInstanceStrides.RefAt(firstOrderIndex) == _visualInstanceStrides.RefAt(nextOrderIndex) &&
            _visualInstanceBindings.RefAt(firstOrderIndex) == _visualInstanceBindings.RefAt(nextOrderIndex);
 
-    internal void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
+    internal void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount, ulong segmentInstanceCount)
     {
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
         commands.PushConstants(_visualFramePushConstants.AsSpan(
@@ -750,11 +752,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualFramePushConstantOffsets.RefAt(firstOrderIndex));
         var stride = _visualInstanceStrides.RefAt(firstOrderIndex);
         var segmentEnd = checked(firstOrderIndex + visualCount);
-        ulong segmentInstanceCount = 0;
-        for (var orderIndex = firstOrderIndex; orderIndex < segmentEnd; orderIndex++)
-        {
-            segmentInstanceCount = checked(segmentInstanceCount + (ulong)_visualInstanceCounts.RefAt(orderIndex));
-        }
 
         if (_flatVisualInstanceBuffer)
         {

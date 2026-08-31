@@ -6,13 +6,15 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
 {
     private int _firstOrderIndex;
     private int _visualCount;
+    private ulong _instanceCount;
 
-    internal void SetRange(int firstOrderIndex, int visualCount)
+    internal void SetRange(int firstOrderIndex, int visualCount, ulong instanceCount)
     {
         _firstOrderIndex = firstOrderIndex;
         _visualCount = visualCount;
+        _instanceCount = instanceCount;
     }
 
     public void Record(IRasterCommandContext commands)
-        => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount);
+        => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount, _instanceCount);
 }
