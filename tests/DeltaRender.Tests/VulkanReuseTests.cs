@@ -1,11 +1,20 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using Delta.Render.Vulkan;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Delta.Render.Tests;
 
 public sealed class VulkanReuseTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public VulkanReuseTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public void DependencyPlannerReusesCapacityWhenGraphShrinksAndGrows()
     {
@@ -48,6 +57,36 @@ public sealed class VulkanReuseTests
         Assert.Equal(2, order[0]);
         Assert.Equal(0, order[1]);
         Assert.Equal(1, order[2]);
+    }
+
+    [Fact]
+    public void DependencyPlannerHandlesLargeIndependentGraph()
+    {
+        const int passCount = 4096;
+        var planner = new VulkanGraphDependencyPlanner();
+        var passes = new List<VulkanRenderGraph.GraphPass>(passCount);
+        for (var index = 0; index < passCount; index++)
+        {
+            var kind = index % 8 == 0
+                ? VulkanRenderGraph.PassKind.Transfer
+                : VulkanRenderGraph.PassKind.Raster;
+            passes.Add(new VulkanRenderGraph.GraphPass($"pass-{index}", kind, null));
+        }
+
+        var order = new int[passCount];
+        Assert.Equal(passCount, planner.Compile(passes, 0, order));
+
+        var samples = new long[5];
+        for (var index = 0; index < samples.Length; index++)
+        {
+            var started = Stopwatch.GetTimestamp();
+            Assert.Equal(passCount, planner.Compile(passes, 0, order));
+            samples[index] = Stopwatch.GetTimestamp() - started;
+        }
+
+        Array.Sort(samples);
+        var medianNanoseconds = samples[samples.Length / 2] * 1_000_000_000d / Stopwatch.Frequency;
+        _output.WriteLine($"4096 independent passes median planner time: {medianNanoseconds:F2} ns");
     }
 
     [Fact]
