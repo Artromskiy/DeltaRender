@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
+using Delta.Render;
+using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,6 +11,25 @@ namespace Delta.Render.Tests;
 public sealed class VulkanReuseTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _output = output;
+
+    [Fact]
+    public void DependencyPlannerKeepsEmptyGraphAndSingleEmptyPassAllocationFree()
+    {
+        var planner = new VulkanGraphDependencyPlanner();
+        Span<int> order = stackalloc int[1];
+        var empty = Array.Empty<VulkanRenderGraph.GraphPass>();
+
+        Assert.Equal(0, planner.Compile(empty, 0, order));
+        Assert.Equal(0, planner.PassCapacity);
+        Assert.Equal(0, planner.ResourceCapacity);
+
+        var pass = new VulkanRenderGraph.GraphPass("empty", VulkanRenderGraph.PassKind.Transfer, null);
+        var passes = new[] { pass };
+        Assert.Equal(1, planner.Compile(passes, 0, order));
+        Assert.Equal(0, order[0]);
+        Assert.Equal(0, planner.PassCapacity);
+        Assert.Equal(0, planner.ResourceCapacity);
+    }
 
     [Fact]
     public void DependencyPlannerReusesCapacityWhenGraphShrinksAndGrows()

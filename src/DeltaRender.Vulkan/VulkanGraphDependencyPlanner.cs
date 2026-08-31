@@ -23,6 +23,17 @@ internal sealed class VulkanGraphDependencyPlanner
             throw new ArgumentException("The destination order span is too small for the graph.", nameof(order));
         }
 
+        if (passes.Count == 0)
+        {
+            return 0;
+        }
+
+        if (passes.Count == 1 && passes[0].Uses.Count == 0)
+        {
+            order[0] = 0;
+            return 1;
+        }
+
         EnsureStorage(passes.Count, resourceCount);
         Array.Clear(_indegree, 0, passes.Count);
         Array.Fill(_lastWriter, -1, 0, resourceCount);
