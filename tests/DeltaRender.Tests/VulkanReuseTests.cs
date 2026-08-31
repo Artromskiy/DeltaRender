@@ -30,6 +30,20 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
         Assert.Equal(0, order[0]);
         Assert.Equal(0, planner.PassCapacity);
         Assert.Equal(0, planner.ResourceCapacity);
+
+        var independent = new[]
+        {
+            new VulkanRenderGraph.GraphPass("raster", VulkanRenderGraph.PassKind.Raster, null),
+            new VulkanRenderGraph.GraphPass("transfer", VulkanRenderGraph.PassKind.Transfer, null),
+            new VulkanRenderGraph.GraphPass("compute", VulkanRenderGraph.PassKind.Compute, null),
+        };
+        Span<int> independentOrder = stackalloc int[3];
+        Assert.Equal(3, planner.Compile(independent, 0, independentOrder));
+        Assert.Equal(1, independentOrder[0]);
+        Assert.Equal(0, independentOrder[1]);
+        Assert.Equal(2, independentOrder[2]);
+        Assert.Equal(0, planner.PassCapacity);
+        Assert.Equal(0, planner.ResourceCapacity);
     }
 
     [Fact]

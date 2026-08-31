@@ -34,6 +34,11 @@ internal sealed class VulkanGraphDependencyPlanner
             return 1;
         }
 
+        if (resourceCount == 0)
+        {
+            return CompileIndependent(passes, order);
+        }
+
         EnsureStorage(passes.Count, resourceCount);
         Array.Clear(_indegree, 0, passes.Count);
         Array.Fill(_lastWriter, -1, 0, resourceCount);
@@ -43,24 +48,26 @@ internal sealed class VulkanGraphDependencyPlanner
             foreach (var use in passes[passIndex].Uses)
             {
                 var resource = use.Resource.Index;
-                if (_lastWriter.RefAt(resource) >= 0)
+                int lastWriter = _lastWriter.RefAt(resource);
+                if (lastWriter >= 0)
                 {
-                    AddEdge(_lastWriter.RefAt(resource), passIndex);
+                    AddEdge(lastWriter, passIndex);
                 }
 
-                if (use.Access.HasFlag(RenderResourceAccess.Write))
+                var readers = _readers.RefAt(resource);
+                if ((use.Access & RenderResourceAccess.Write) != 0)
                 {
-                    foreach (var reader in _readers.RefAt(resource))
+                    foreach (var reader in readers)
                     {
                         AddEdge(reader, passIndex);
                     }
 
-                    _readers.RefAt(resource).Clear();
+                    readers.Clear();
                     _lastWriter.RefAt(resource) = passIndex;
                 }
-                else if (use.Access.HasFlag(RenderResourceAccess.Read))
+                else if ((use.Access & RenderResourceAccess.Read) != 0)
                 {
-                    _readers.RefAt(resource).Add(passIndex);
+                    readers.Add(passIndex);
                 }
             }
         }
@@ -99,6 +106,28 @@ internal sealed class VulkanGraphDependencyPlanner
         if (count != passes.Count)
         {
             throw new InvalidOperationException("Render graph contains a dependency cycle.");
+        }
+
+        return count;
+    }
+
+    private static int CompileIndependent(IReadOnlyList<VulkanRenderGraph.GraphPass> passes, Span<int> order)
+    {
+        int count = 0;
+        for (int index = 0; index < passes.Count; index++)
+        {
+            if (passes[index].Kind == VulkanRenderGraph.PassKind.Transfer)
+            {
+                order[count++] = index;
+            }
+        }
+
+        for (int index = 0; index < passes.Count; index++)
+        {
+            if (passes[index].Kind != VulkanRenderGraph.PassKind.Transfer)
+            {
+                order[count++] = index;
+            }
         }
 
         return count;
