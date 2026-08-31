@@ -49,7 +49,7 @@ internal sealed class RenderBatchSegment
     public void Append(int itemIndex, ReadOnlySpan<byte> payload)
     {
         EnsureCapacity(Count + 1);
-        ItemIndices[Count] = itemIndex;
+        ItemIndices.RefAt(Count) = itemIndex;
         payload.CopyTo(Packed.AsSpan(Count * _stride));
         Count++;
         MarkDirty((Count - 1) * _stride, _stride);
@@ -68,7 +68,7 @@ internal sealed class RenderBatchSegment
             Packed.AsSpan(sourceOffset, movedBytes).CopyTo(Packed.AsSpan(destinationOffset, movedBytes));
         }
 
-        ItemIndices[position] = itemIndex;
+        ItemIndices.RefAt(position) = itemIndex;
         payload.CopyTo(Packed.AsSpan(position * _stride, _stride));
         Count++;
         MarkDirty(position * _stride, checked((Count - position) * _stride));
@@ -106,7 +106,7 @@ internal sealed class RenderBatchSegment
 
     public void CopySlot(int sourcePosition, int destinationPosition)
     {
-        ItemIndices[destinationPosition] = ItemIndices[sourcePosition];
+        ItemIndices.RefAt(destinationPosition) = ItemIndices.RefAt(sourcePosition);
         Packed.AsSpan(sourcePosition * _stride, _stride).CopyTo(Packed.AsSpan(destinationPosition * _stride, _stride));
         MarkDirty(destinationPosition * _stride, _stride);
     }

@@ -108,7 +108,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             profiler?.BeginGpuFrame(_session.CommandBuffer, _order.Length);
             for (var orderPosition = 0; orderPosition < _order.Length; orderPosition++)
             {
-                var passIndex = _order[orderPosition];
+                var passIndex = _order.RefAt(orderPosition);
                 var pass = _passes[passIndex];
                 var passProfile = -1;
                 var passStart = 0L;
@@ -509,19 +509,20 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     throw new InvalidOperationException("The texture readback image is unavailable.");
                 }
 
+                var previous = states.RefAt(request.Resource.Index);
                 var imageBarrier = new ImageMemoryBarrier
                 {
                     SType = StructureType.ImageMemoryBarrier,
-                    SrcAccessMask = states[request.Resource.Index].Access,
+                    SrcAccessMask = previous.Access,
                     DstAccessMask = AccessFlags.TransferReadBit,
-                    OldLayout = states[request.Resource.Index].Layout,
+                    OldLayout = previous.Layout,
                     NewLayout = ImageLayout.TransferSrcOptimal,
                     SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
                     DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
                     Image = image,
                     SubresourceRange = new ImageSubresourceRange { AspectMask = ImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 }
                 };
-                var previousStages = states[request.Resource.Index].Stages;
+                var previousStages = previous.Stages;
                 CommandWriter.PipelineBarrier(previousStages == 0 ? PipelineStageFlags.TopOfPipeBit : previousStages, PipelineStageFlags.TransferBit, in imageBarrier);
                 var copy = new BufferImageCopy
                 {
@@ -537,7 +538,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             else
             {
                 var buffer = request.Resource.Buffer?.Allocation ?? throw new InvalidOperationException("The buffer readback resource is unavailable.");
-                var previous = states[request.Resource.Index];
+                var previous = states.RefAt(request.Resource.Index);
                 var sourceBarrier = new BufferMemoryBarrier { SType = StructureType.BufferMemoryBarrier, SrcAccessMask = previous.Access, DstAccessMask = AccessFlags.TransferReadBit, SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored, Buffer = buffer.Buffer, Offset = request.SourceOffset, Size = (ulong)request.Size };
                 CommandWriter.PipelineBarrier(previous.Stages == 0 ? PipelineStageFlags.TopOfPipeBit : previous.Stages, PipelineStageFlags.TransferBit, in sourceBarrier);
                 var copy = new BufferCopy { SrcOffset = request.SourceOffset, DstOffset = offset, Size = (ulong)request.Size };
@@ -580,7 +581,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         images.Clear();
         foreach (var use in pass.Uses)
         {
-            var previous = states[use.Resource.Index];
+            var previous = states.RefAt(use.Resource.Index);
             var next = ResourceState.For(use.Access, use.Stages);
             if (use.Resource.IsBuffer)
             {
@@ -606,10 +607,10 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
     private void EmitRasterSegmentEntryBarriers(int firstRasterPosition, ResourceState[] states)
     {
-        var firstPass = _passes[_order[firstRasterPosition]];
+        var firstPass = _passes[_order.RefAt(firstRasterPosition)];
         for (var orderPosition = firstRasterPosition + 1; orderPosition < _order.Length; orderPosition++)
         {
-            var pass = _passes[_order[orderPosition]];
+            var pass = _passes[_order.RefAt(orderPosition)];
             if (pass.Kind != PassKind.Raster)
             {
                 break;
@@ -622,7 +623,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     continue;
                 }
 
-                var previous = states[use.Resource.Index];
+                var previous = states.RefAt(use.Resource.Index);
                 var next = ResourceState.For(use.Access, use.Stages);
                 if (previous == next)
                 {
@@ -645,7 +646,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     PipelineStageFlags.TopOfPipeBit | PipelineStageFlags.AllCommandsBit,
                     PipelineStageFlags.AllCommandsBit,
                     in barrier);
-                states[use.Resource.Index] = next;
+                states.RefAt(use.Resource.Index) = next;
             }
         }
     }
@@ -667,7 +668,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     {
         foreach (var use in pass.Uses)
         {
-            states[use.Resource.Index] = ResourceState.For(use.Access, use.Stages);
+            states.RefAt(use.Resource.Index) = ResourceState.For(use.Access, use.Stages);
         }
     }
 

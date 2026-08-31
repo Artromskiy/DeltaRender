@@ -230,7 +230,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         for (var index = 0; index < _passMeasurements.Count; index++)
         {
             var measurement = _passMeasurements[index];
-            measurement.GpuDuration = ConvertTimestampDelta(_queryValues[index * 2], _queryValues[index * 2 + 1]);
+            measurement.GpuDuration = ConvertTimestampDelta(_queryValues.RefAt(index * 2), _queryValues.RefAt(index * 2 + 1));
             _passMeasurements[index] = measurement;
         }
     }

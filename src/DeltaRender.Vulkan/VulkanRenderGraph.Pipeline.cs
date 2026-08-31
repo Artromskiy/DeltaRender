@@ -50,7 +50,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal void BindBuffer(VulkanRenderGraph graph, ShaderBinding binding, RenderGraphBufferHandle handle, ulong offset, ulong sizeInBytes)
         {
             var index = FindBinding(binding);
-            var declaration = _bindings[index];
+            var declaration = _bindings.RefAt(index);
             if (declaration.DescriptorType is not DescriptorType.StorageBuffer and not DescriptorType.UniformBuffer)
             {
                 throw new ArgumentException($"Shader binding set {binding.Set}, binding {binding.Binding} is not a buffer.", nameof(binding));
@@ -73,7 +73,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         internal void BindTexture(VulkanRenderGraph graph, ShaderBinding binding, RenderGraphTextureHandle handle, RenderSamplerHandle sampler)
         {
             var index = FindBinding(binding);
-            var declaration = _bindings[index];
+            var declaration = _bindings.RefAt(index);
             if (declaration.DescriptorType != DescriptorType.CombinedImageSampler)
             {
                 throw new ArgumentException($"Shader binding set {binding.Set}, binding {binding.Binding} is not a sampled texture.", nameof(binding));
@@ -92,23 +92,23 @@ internal sealed unsafe partial class VulkanRenderGraph
 
         private void WriteDescriptor(VulkanRenderGraph graph, int index, ShaderBinding binding, DescriptorType descriptorType, DescriptorBufferInfo* bufferInfo, DescriptorImageInfo* imageInfo)
         {
-            if (_descriptorCacheValid[index])
+            if (_descriptorCacheValid.RefAt(index))
             {
                 if (bufferInfo != null)
                 {
-                    var cached = _cachedBuffers[index];
+                    var cached = _cachedBuffers.RefAt(index);
                     if (cached.Buffer.Handle == bufferInfo->Buffer.Handle && cached.Offset == bufferInfo->Offset && cached.Range == bufferInfo->Range)
                     {
-                        _bound[index] = true;
+                        _bound.RefAt(index) = true;
                         return;
                     }
                 }
                 else if (imageInfo != null)
                 {
-                    var cached = _cachedImages[index];
+                    var cached = _cachedImages.RefAt(index);
                     if (cached.Sampler.Handle == imageInfo->Sampler.Handle && cached.ImageView.Handle == imageInfo->ImageView.Handle && cached.ImageLayout == imageInfo->ImageLayout)
                     {
-                        _bound[index] = true;
+                        _bound.RefAt(index) = true;
                         return;
                     }
                 }
@@ -117,7 +117,7 @@ internal sealed unsafe partial class VulkanRenderGraph
             var write = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
-                DstSet = _descriptorSets[binding.Set],
+                DstSet = _descriptorSets.RefAt(binding.Set),
                 DstBinding = binding.Binding,
                 DescriptorCount = 1,
                 DescriptorType = descriptorType,
@@ -127,24 +127,24 @@ internal sealed unsafe partial class VulkanRenderGraph
             graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
             if (bufferInfo != null)
             {
-                _cachedBuffers[index] = *bufferInfo;
+                _cachedBuffers.RefAt(index) = *bufferInfo;
             }
             else if (imageInfo != null)
             {
-                _cachedImages[index] = *imageInfo;
+                _cachedImages.RefAt(index) = *imageInfo;
             }
 
-            _descriptorCacheValid[index] = true;
-            _bound[index] = true;
+            _descriptorCacheValid.RefAt(index) = true;
+            _bound.RefAt(index) = true;
         }
 
         internal void Bind(VulkanRenderGraph graph)
         {
             for (var index = 0; index < _bound.Length; index++)
             {
-                if (!_bound[index])
+                if (!_bound.RefAt(index))
                 {
-                    throw new InvalidOperationException($"Shader binding set {_bindings[index].Binding.Set}, binding {_bindings[index].Binding.Binding} was not provided.");
+                    throw new InvalidOperationException($"Shader binding set {_bindings.RefAt(index).Binding.Set}, binding {_bindings.RefAt(index).Binding.Binding} was not provided.");
                 }
             }
 
@@ -161,7 +161,7 @@ internal sealed unsafe partial class VulkanRenderGraph
         {
             for (var index = 0; index < _bindings.Length; index++)
             {
-                if (_bindings[index].Binding == binding)
+                if (_bindings.RefAt(index).Binding == binding)
                 {
                     return index;
                 }

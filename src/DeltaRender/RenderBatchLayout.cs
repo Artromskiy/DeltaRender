@@ -81,7 +81,7 @@ internal sealed class RenderBatchLayout
 
         if (_itemLookup.TryGetValue(change.Id, out var itemIndex))
         {
-            ref var existing = ref _items[itemIndex];
+            ref var existing = ref _items.RefAt(itemIndex);
             if (!existing.Active && change.Id.Generation <= existing.Id.Generation)
             {
                 diagnostic = $"Item handle {change.Id} is stale after removal.";
@@ -120,7 +120,7 @@ internal sealed class RenderBatchLayout
 
         itemIndex = AllocateItemIndex();
         _itemLookup.Add(change.Id, itemIndex);
-        _items[itemIndex] = new ItemState
+        _items.RefAt(itemIndex) = new ItemState
         {
             Id = change.Id,
             Version = change.Version,
@@ -145,7 +145,7 @@ internal sealed class RenderBatchLayout
             return false;
         }
 
-        ref var item = ref _items[itemIndex];
+        ref var item = ref _items.RefAt(itemIndex);
         if (!item.Active || id.Generation != item.Id.Generation)
         {
             diagnostic = $"Item handle {id} is stale.";
@@ -179,7 +179,7 @@ internal sealed class RenderBatchLayout
 
     private void InsertUnordered(int itemIndex, ReadOnlySpan<byte> payload)
     {
-        ref var item = ref _items[itemIndex];
+        ref var item = ref _items.RefAt(itemIndex);
         if (_unorderedSegments.TryGetValue(item.Key, out var segment))
         {
             segment.Append(itemIndex, payload);
@@ -198,7 +198,7 @@ internal sealed class RenderBatchLayout
 
     private void InsertOrdered(int itemIndex, ReadOnlySpan<byte> payload)
     {
-        ref var item = ref _items[itemIndex];
+        ref var item = ref _items.RefAt(itemIndex);
         var segmentIndex = FindFirstOrderedSegment(item.Order, item.Id);
         if (segmentIndex == _orderedSegments.Count)
         {
@@ -216,13 +216,13 @@ internal sealed class RenderBatchLayout
         }
 
         var candidate = _orderedSegments[segmentIndex];
-        var first = _items[candidate.ItemIndices[0]];
+        var first = _items.RefAt(candidate.ItemIndices.RefAt(0));
         if (Compare(item.Order, item.Id, first.Order, first.Id) < 0)
         {
             if (segmentIndex > 0 && _orderedSegments[segmentIndex - 1].Key == item.Key)
             {
                 var previous = _orderedSegments[segmentIndex - 1];
-                var previousLast = _items[previous.ItemIndices[previous.Count - 1]];
+                var previousLast = _items.RefAt(previous.ItemIndices.RefAt(previous.Count - 1));
                 if (Compare(previousLast.Order, previousLast.Id, item.Order, item.Id) < 0)
                 {
                     previous.Append(itemIndex, payload);
@@ -245,9 +245,15 @@ internal sealed class RenderBatchLayout
         }
 
         var position = 0;
-        while (position < candidate.Count &&
-               Compare(_items[candidate.ItemIndices[position]].Order, _items[candidate.ItemIndices[position]].Id, item.Order, item.Id) < 0)
+        while (position < candidate.Count)
         {
+            var candidateItemIndex = candidate.ItemIndices.RefAt(position);
+            ref var candidateItem = ref _items.RefAt(candidateItemIndex);
+            if (Compare(candidateItem.Order, candidateItem.Id, item.Order, item.Id) >= 0)
+            {
+                break;
+            }
+
             position++;
         }
 
@@ -283,7 +289,7 @@ internal sealed class RenderBatchLayout
         {
             var middle = low + ((high - low) >> 1);
             var segment = _orderedSegments[middle];
-            var last = _items[segment.ItemIndices[segment.Count - 1]];
+            var last = _items.RefAt(segment.ItemIndices.RefAt(segment.Count - 1));
             if (Compare(order, id, last.Order, last.Id) <= 0)
             {
                 high = middle;
@@ -299,10 +305,10 @@ internal sealed class RenderBatchLayout
 
     private void InsertNewOrderedSegment(int segmentIndex, int itemIndex, ReadOnlySpan<byte> payload)
     {
-        var segment = CreateSegment(_items[itemIndex].Key);
+        var segment = CreateSegment(_items.RefAt(itemIndex).Key);
         segment.Append(itemIndex, payload);
         _orderedSegments.Insert(segmentIndex, segment);
-        ref var item = ref _items[itemIndex];
+        ref var item = ref _items.RefAt(itemIndex);
         item.Segment = segment;
         item.Position = 0;
     }
@@ -315,9 +321,9 @@ internal sealed class RenderBatchLayout
             var lastPosition = segment.Count - 1;
             if (item.Position != lastPosition)
             {
-                var movedItemIndex = segment.ItemIndices[lastPosition];
+                var movedItemIndex = segment.ItemIndices.RefAt(lastPosition);
                 segment.CopySlot(lastPosition, item.Position);
-                ref var movedItem = ref _items[movedItemIndex];
+                ref var movedItem = ref _items.RefAt(movedItemIndex);
                 movedItem.Position = item.Position;
                 movedItem.Segment = segment;
             }
@@ -382,8 +388,8 @@ internal sealed class RenderBatchLayout
         var itemIndices = segment.ItemIndices;
         for (var position = 0; position < segment.Count; position++)
         {
-            var itemIndex = TrustedArrayAccess.RefAt(itemIndices, position);
-            ref var item = ref TrustedArrayAccess.RefAt(_items, itemIndex);
+            var itemIndex = itemIndices.RefAt(position);
+            ref var item = ref _items.RefAt(itemIndex);
             item.Segment = segment;
             item.Position = position;
         }
