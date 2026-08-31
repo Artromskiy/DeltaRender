@@ -9,7 +9,13 @@ internal abstract unsafe class VulkanCommandContext(VulkanRenderGraph graph, Vul
 {
     protected VulkanRenderGraph Graph { get; } = graph;
 
-    protected VulkanRenderGraph.VulkanGraphPipeline Pipeline { get; } = pipeline;
+    protected VulkanRenderGraph.VulkanGraphPipeline Pipeline { get; private set; } = pipeline;
+
+    internal void Rebind(VulkanRenderGraph.VulkanGraphPipeline pipeline)
+    {
+        ArgumentNullException.ThrowIfNull(pipeline);
+        Pipeline = pipeline;
+    }
 
     public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0)
         => Graph.BindBuffer(Pipeline, binding, buffer, offset, sizeInBytes);

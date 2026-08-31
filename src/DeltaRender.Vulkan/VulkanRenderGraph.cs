@@ -18,6 +18,9 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private readonly List<ReadbackRequest> _readbacks = new();
     private ResourceState[] _states = [];
     private int[] _order = Array.Empty<int>();
+    private VulkanRasterCommandContext? _rasterContext;
+    private VulkanComputeCommandContext? _computeContext;
+    private VulkanTransferCommandContext? _transferContext;
     private GraphResource? _depthAttachmentResource;
     private GraphResource? _targetResource;
     private DepthStencilAttachmentDescription _depthAttachment;
@@ -136,7 +139,21 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
                         var rasterPipeline = pass.Pipeline ?? throw new InvalidOperationException("Raster pass has no pipeline.");
                         rasterPipeline.BeginBindings();
-                        pass.Raster?.Record(new VulkanRasterCommandContext(this, rasterPipeline));
+                        if (pass.Raster is { } raster)
+                        {
+                            var context = _rasterContext;
+                            if (context is null)
+                            {
+                                context = new VulkanRasterCommandContext(this, rasterPipeline);
+                                _rasterContext = context;
+                            }
+                            else
+                            {
+                                context.Rebind(rasterPipeline);
+                            }
+
+                            raster.Record(context);
+                        }
                     }
                     else
                     {
@@ -150,11 +167,29 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                         {
                             var computePipeline = pass.Pipeline ?? throw new InvalidOperationException("Compute pass has no pipeline.");
                             computePipeline.BeginBindings();
-                            pass.Compute?.Record(new VulkanComputeCommandContext(this, computePipeline));
+                            if (pass.Compute is { } compute)
+                            {
+                                var context = _computeContext;
+                                if (context is null)
+                                {
+                                    context = new VulkanComputeCommandContext(this, computePipeline);
+                                    _computeContext = context;
+                                }
+                                else
+                                {
+                                    context.Rebind(computePipeline);
+                                }
+
+                                compute.Record(context);
+                            }
                         }
                         else
                         {
-                            pass.Transfer?.Record(new VulkanTransferCommandContext(this));
+                            if (pass.Transfer is { } transfer)
+                            {
+                                var context = _transferContext ??= new VulkanTransferCommandContext(this);
+                                transfer.Record(context);
+                            }
                         }
                     }
 
