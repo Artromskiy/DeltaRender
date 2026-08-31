@@ -58,10 +58,14 @@ internal sealed class RenderBatchSegment
     public void Insert(int position, int itemIndex, ReadOnlySpan<byte> payload)
     {
         EnsureCapacity(Count + 1);
-        for (var index = Count; index > position; index--)
+        var movedCount = Count - position;
+        if (movedCount > 0)
         {
-            ItemIndices[index] = ItemIndices[index - 1];
-            Packed.AsSpan((index - 1) * _stride, _stride).CopyTo(Packed.AsSpan(index * _stride, _stride));
+            ItemIndices.AsSpan(position, movedCount).CopyTo(ItemIndices.AsSpan(position + 1, movedCount));
+            var movedBytes = checked(movedCount * _stride);
+            var sourceOffset = checked(position * _stride);
+            var destinationOffset = checked((position + 1) * _stride);
+            Packed.AsSpan(sourceOffset, movedBytes).CopyTo(Packed.AsSpan(destinationOffset, movedBytes));
         }
 
         ItemIndices[position] = itemIndex;
@@ -73,15 +77,13 @@ internal sealed class RenderBatchSegment
     public RenderBatchSegment Split(int position)
     {
         var right = new RenderBatchSegment(Pipeline, Material, Key, _viewport);
-        right.EnsureCapacity(Count - position);
-        for (var index = position; index < Count; index++)
-        {
-            var rightIndex = index - position;
-            right.ItemIndices[rightIndex] = ItemIndices[index];
-            Packed.AsSpan(index * _stride, _stride).CopyTo(right.Packed.AsSpan(rightIndex * _stride, _stride));
-        }
+        var rightCount = Count - position;
+        right.EnsureCapacity(rightCount);
+        ItemIndices.AsSpan(position, rightCount).CopyTo(right.ItemIndices.AsSpan(0, rightCount));
+        var rightBytes = checked(rightCount * _stride);
+        Packed.AsSpan(checked(position * _stride), rightBytes).CopyTo(right.Packed.AsSpan(0, rightBytes));
 
-        right.Count = Count - position;
+        right.Count = rightCount;
         right.MarkDirty(0, checked(right.Count * _stride));
         Count = position;
         Pipeline.ClearDirty(this);
@@ -90,10 +92,12 @@ internal sealed class RenderBatchSegment
 
     public void RemoveAt(int position)
     {
-        for (var index = position; index < Count - 1; index++)
+        var movedCount = Count - position - 1;
+        if (movedCount > 0)
         {
-            ItemIndices[index] = ItemIndices[index + 1];
-            Packed.AsSpan((index + 1) * _stride, _stride).CopyTo(Packed.AsSpan(index * _stride, _stride));
+            ItemIndices.AsSpan(position + 1, movedCount).CopyTo(ItemIndices.AsSpan(position, movedCount));
+            var movedBytes = checked(movedCount * _stride);
+            Packed.AsSpan(checked((position + 1) * _stride), movedBytes).CopyTo(Packed.AsSpan(position * _stride, movedBytes));
         }
 
         Count--;
@@ -110,13 +114,10 @@ internal sealed class RenderBatchSegment
     public void AppendSegment(RenderBatchSegment other)
     {
         EnsureCapacity(Count + other.Count);
-        for (var index = 0; index < other.Count; index++)
-        {
-            ItemIndices[Count + index] = other.ItemIndices[index];
-            other.Packed.AsSpan(index * _stride, _stride).CopyTo(Packed.AsSpan((Count + index) * _stride, _stride));
-        }
-
         var oldCount = Count;
+        other.ItemIndices.AsSpan(0, other.Count).CopyTo(ItemIndices.AsSpan(oldCount, other.Count));
+        var appendedBytes = checked(other.Count * _stride);
+        other.Packed.AsSpan(0, appendedBytes).CopyTo(Packed.AsSpan(checked(oldCount * _stride), appendedBytes));
         Count += other.Count;
         MarkDirty(oldCount * _stride, checked(other.Count * _stride));
     }
