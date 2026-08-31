@@ -21,6 +21,11 @@ deterministic order, plans transient reuse and records the required barriers.
 Execute then acquires a presentable target when needed, records the compiled
 passes, submits once and presents when applicable.
 
+An internal topology-cache experiment is guarded by
+`VulkanRenderGraph.EnableTopologyCache`, currently `false`. When enabled, an
+exact pass/resource/use topology match may reuse the dependency order; current
+payload, transient lifetime and runtime resource states are still refreshed.
+
 Normal execution must not wait for queue idle. `CopyReadback` waits only for the
 submission that produced the requested data.
 

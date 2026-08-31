@@ -10,6 +10,7 @@ namespace Delta.Render.Vulkan;
 
 internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {
+    private const bool EnableTopologyCache = false;
     private readonly VulkanRenderSession _session;
     private readonly List<GraphResource> _resources = [];
     private readonly List<GraphResource> _resourcePool = [];
@@ -19,6 +20,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
     private ResourceState[] _states = [];
     private int[] _order = [];
     private int _orderCount;
+    private TopologyToken[] _topologyTokens = [];
+    private TopologyToken[] _candidateTopologyTokens = [];
+    private int _topologyTokenCount;
+    private int _compiledOrderCount;
+    private bool _hasCompiledTopology;
     private VulkanRasterCommandContext? _rasterContext;
     private VulkanComputeCommandContext? _computeContext;
     private VulkanTransferCommandContext? _transferContext;
@@ -55,8 +61,30 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             }
 
             ConfigureRenderPass();
-            EnsureOrderCapacity(_passes.Count);
-            _orderCount = _dependencyPlanner.Compile(_passes, _resources.Count, _order);
+            var topologyUnchanged = false;
+            var topologyTokenCount = 0;
+            if (EnableTopologyCache)
+            {
+                topologyUnchanged = TryCaptureTopology(out topologyTokenCount);
+            }
+
+            if (topologyUnchanged)
+            {
+                _orderCount = _compiledOrderCount;
+            }
+            else
+            {
+                EnsureOrderCapacity(_passes.Count);
+                var compiledOrderCount = _dependencyPlanner.Compile(_passes, _resources.Count, _order);
+                ValidateRasterSegment();
+                if (EnableTopologyCache)
+                {
+                    CommitTopology(topologyTokenCount, compiledOrderCount);
+                }
+
+                _orderCount = compiledOrderCount;
+            }
+
             ValidateRasterSegment();
             ValidateRasterPipelines();
             _built = true;
@@ -323,6 +351,110 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
 
         int capacity = _order.Length == 0 ? 8 : checked(_order.Length * 2);
         _order = new int[Math.Max(capacity, required)];
+    }
+
+    private bool TryCaptureTopology(out int tokenCount)
+    {
+        tokenCount = 0;
+        EnsureTopologyCapacity(checked(_resources.Count + _passes.Count + CountUses()));
+
+        for (int index = 0; index < _resources.Count; index++)
+        {
+            var resource = _resources[index];
+            ulong flags = 0;
+            if (resource.IsTexture)
+            {
+                flags |= 1;
+            }
+
+            if (resource.IsBuffer)
+            {
+                flags |= 2;
+            }
+
+            if (resource.IsTarget)
+            {
+                flags |= 4;
+            }
+
+            _candidateTopologyTokens[tokenCount++] = new TopologyToken(1, index, -1, flags, null);
+        }
+
+        for (int passIndex = 0; passIndex < _passes.Count; passIndex++)
+        {
+            var pass = _passes[passIndex];
+            _candidateTopologyTokens[tokenCount++] = new TopologyToken(
+                2,
+                passIndex,
+                -1,
+                (ulong)pass.Kind,
+                pass.Pipeline);
+
+            foreach (var use in pass.Uses)
+            {
+                ulong flags = ((ulong)(uint)use.Access << 32) | (uint)use.Stages;
+                _candidateTopologyTokens[tokenCount++] = new TopologyToken(
+                    3,
+                    passIndex,
+                    use.Resource.Index,
+                    flags,
+                    null);
+            }
+        }
+
+        if (!_hasCompiledTopology || _topologyTokenCount != tokenCount)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < tokenCount; index++)
+        {
+            if (!_candidateTopologyTokens[index].Equals(_topologyTokens[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void CommitTopology(int tokenCount, int orderCount)
+    {
+        (_topologyTokens, _candidateTopologyTokens) = (_candidateTopologyTokens, _topologyTokens);
+        _topologyTokenCount = tokenCount;
+        _compiledOrderCount = orderCount;
+        _hasCompiledTopology = true;
+    }
+
+    private int CountUses()
+    {
+        var count = 0;
+        foreach (var pass in _passes)
+        {
+            count = checked(count + pass.Uses.Count);
+        }
+
+        return count;
+    }
+
+    private void EnsureTopologyCapacity(int required)
+    {
+        if (_topologyTokens.Length >= required && _candidateTopologyTokens.Length >= required)
+        {
+            return;
+        }
+
+        int capacity = _topologyTokens.Length == 0 ? 8 : checked(_topologyTokens.Length * 2);
+        capacity = Math.Max(capacity, required);
+        if (_topologyTokens.Length < capacity)
+        {
+            _topologyTokens = new TopologyToken[capacity];
+        }
+
+        if (_candidateTopologyTokens.Length < capacity)
+        {
+            _candidateTopologyTokens = new TopologyToken[capacity];
+        }
     }
 
     public int CopyReadback(RenderGraphReadbackHandle readback, Span<byte> destination)
@@ -721,6 +853,36 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             throw new ArgumentException("A graph use requires non-empty access and stages.");
         }
         pass.AddUse(resource, access, stages);
+    }
+
+    private readonly struct TopologyToken
+    {
+        private readonly byte _kind;
+        private readonly int _index;
+        private readonly int _resourceIndex;
+        private readonly ulong _flags;
+        private readonly VulkanGraphPipeline? _pipeline;
+
+        internal TopologyToken(
+            byte kind,
+            int index,
+            int resourceIndex,
+            ulong flags,
+            VulkanGraphPipeline? pipeline)
+        {
+            _kind = kind;
+            _index = index;
+            _resourceIndex = resourceIndex;
+            _flags = flags;
+            _pipeline = pipeline;
+        }
+
+        internal bool Equals(TopologyToken other)
+            => _kind == other._kind &&
+               _index == other._index &&
+               _resourceIndex == other._resourceIndex &&
+               _flags == other._flags &&
+               ReferenceEquals(_pipeline, other._pipeline);
     }
 
     internal void ThrowIfMutable()
