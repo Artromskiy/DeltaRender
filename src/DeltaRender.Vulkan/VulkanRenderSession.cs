@@ -15,7 +15,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private readonly VulkanRenderer _renderer;
     private readonly bool _profilingEnabled;
-    private readonly VulkanRenderProfiler? _profiler;
+    private VulkanRenderProfiler? _profiler;
     private readonly VulkanSurfaceLease? _surfaceLease;
     private readonly SurfaceKHR _surface;
     private readonly bool _windowed;
@@ -70,7 +70,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _profilingEnabled = options.EnableProfiling;
-        _profiler = _profilingEnabled ? new VulkanRenderProfiler() : null;
+        _profiler = null;
         _surfaceLease = surfaceLease;
         _windowed = windowed;
         _hasTarget = true;
@@ -83,6 +83,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _graphicsFamily = deviceContext.GraphicsFamily;
         _presentFamily = deviceContext.PresentFamily;
         _memoryProperties = deviceContext.MemoryProperties;
+        _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         var drawableExtent = metrics.DrawableExtent;
         _extent = new Extent2D(Math.Max(1u, drawableExtent.Width), Math.Max(1u, drawableExtent.Height));
 
@@ -152,7 +153,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _profilingEnabled = options.EnableProfiling;
-        _profiler = _profilingEnabled ? new VulkanRenderProfiler() : null;
+        _profiler = null;
         _hasTarget = false;
         _windowed = false;
         _surfaceLease = null;
@@ -165,6 +166,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _graphicsFamily = deviceContext.GraphicsFamily;
         _presentFamily = deviceContext.PresentFamily;
         _memoryProperties = deviceContext.MemoryProperties;
+        _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         _format = Format.R8G8B8A8Unorm;
         _renderPass = default;
         _swapchainExtension = null;
@@ -712,6 +714,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         {
             Api.DeviceWaitIdle(Device);
         }
+        _profiler?.Dispose();
         DisposePersistentResources();
         DisposeStaging();
         DisposeTargetResources();

@@ -104,6 +104,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var recordStart = profiler?.StartPhase() ?? 0;
         try
         {
+            profiler?.BeginGpuFrame(_session.CommandBuffer, _order.Length);
             for (var orderPosition = 0; orderPosition < _order.Length; orderPosition++)
             {
                 var passIndex = _order[orderPosition];
@@ -112,7 +113,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 var passStart = 0L;
                 if (profiler is not null)
                 {
-                    passProfile = profiler.BeginPass(pass.Name, ToProfilePassKind(pass.Kind), out passStart);
+                    passProfile = profiler.BeginPass(pass.Name, ToProfilePassKind(pass.Kind), _session.CommandBuffer, out passStart);
                 }
 
                 try
@@ -157,7 +158,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                 {
                     if (profiler is not null)
                     {
-                        profiler.EndPass(passProfile, passStart);
+                        profiler.EndPass(passProfile, passStart, _session.CommandBuffer);
                     }
                 }
             }
