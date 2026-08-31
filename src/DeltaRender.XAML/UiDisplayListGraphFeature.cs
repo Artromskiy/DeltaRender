@@ -680,7 +680,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualInstancePayloadDirty = false;
     }
 
-    private void RecordVisualUpload(ITransferCommandContext commands)
+    internal void RecordVisualUpload(ITransferCommandContext commands)
     {
         commands.UploadBuffer(
             _visualInstanceGraphHandle,
@@ -705,7 +705,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
            _visualInstanceStrides.RefAt(firstOrderIndex) == _visualInstanceStrides.RefAt(nextOrderIndex) &&
            _visualInstanceBindings.RefAt(firstOrderIndex) == _visualInstanceBindings.RefAt(nextOrderIndex);
 
-    private void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
+    internal void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount)
     {
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
         commands.PushConstants(_visualFramePushConstants.AsSpan(
@@ -1097,30 +1097,4 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private static bool IsZero(float4 value)
         => value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
 
-    private sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRasterPass
-    {
-        private int _firstOrderIndex;
-        private int _visualCount;
-
-        internal void SetRange(int firstOrderIndex, int visualCount)
-        {
-            _firstOrderIndex = firstOrderIndex;
-            _visualCount = visualCount;
-        }
-
-        public void Record(IRasterCommandContext commands)
-            => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount);
-    }
-
-    private sealed class UiVisualUploadPass(UiDisplayListGraphFeature owner) : ITransferPass
-    {
-        public void Record(ITransferCommandContext commands)
-            => owner.RecordVisualUpload(commands);
-    }
-
-    private sealed class UiTextPass(TextRenderFeature feature, int firstRun, int runCount) : IRasterPass
-    {
-        public void Record(IRasterCommandContext commands)
-            => feature.RecordCompositeRuns(commands, firstRun, runCount);
-    }
 }
