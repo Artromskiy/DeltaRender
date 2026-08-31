@@ -10,6 +10,7 @@ internal enum UiRectangleShaderKind : byte
 {
     Solid,
     Rounded,
+    RoundedSlice,
 }
 
 internal static class UiVisualShaderContract
@@ -18,10 +19,14 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi SolidFragmentAbi = SolidRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedVertexAbi = RoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedFragmentAbi = RoundedRectangleGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi RoundedSliceVertexAbi = RoundedRectangleSliceGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi RoundedSliceFragmentAbi = RoundedRectangleSliceGraphicsShaderProgram.FragmentAbi;
 
     internal static int MaxPushConstantSize { get; } = checked((int)Math.Max(
         SolidVertexAbi.PushConstants[0].Size,
-        RoundedVertexAbi.PushConstants[0].Size));
+        Math.Max(
+            RoundedVertexAbi.PushConstants[0].Size,
+            RoundedSliceVertexAbi.PushConstants[0].Size)));
 
     internal static bool TryDescribe(
         IGraphicsShaderProgram program,
@@ -34,6 +39,19 @@ internal static class UiVisualShaderContract
         shaderKind = default;
         pushConstantSize = 0;
         diagnostic = string.Empty;
+
+        if ((visualKind == UiVisualKind.RoundedRectangle || visualKind == UiVisualKind.Border) &&
+            program.Vertex is { } sliceVertex &&
+            program.Fragment is { } sliceFragment &&
+            string.Equals(sliceVertex.EntryPoint, "rounded-rectangle-slice", StringComparison.Ordinal) &&
+            string.Equals(sliceFragment.EntryPoint, "rounded-rectangle-slice", StringComparison.Ordinal) &&
+            SameAbi(sliceVertex.Abi, RoundedSliceVertexAbi) &&
+            SameAbi(sliceFragment.Abi, RoundedSliceFragmentAbi))
+        {
+            shaderKind = UiRectangleShaderKind.RoundedSlice;
+            pushConstantSize = RoundedSliceVertexAbi.PushConstants[0].Size;
+            return true;
+        }
 
         ShaderAbi expectedVertex;
         ShaderAbi expectedFragment;
@@ -66,6 +84,7 @@ internal static class UiVisualShaderContract
             {
                 UiRectangleShaderKind.Solid => "solid",
                 UiRectangleShaderKind.Rounded => "rounded",
+                UiRectangleShaderKind.RoundedSlice => "rounded-slice",
                 _ => "unknown",
             };
             diagnostic = $"Visual kind {visualKind} requires the matching generated DeltaShader.UI {shaderName}-rectangle ABI.";
@@ -179,6 +198,23 @@ internal static class UiVisualShaderContract
         };
     }
 
+    internal static int MaxInstanceCount(UiRectangleShaderKind shaderKind)
+        => shaderKind == UiRectangleShaderKind.RoundedSlice ? 9 : 1;
+
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        uint instanceStride,
+        Span<byte> destination)
+    {
+        if (shaderKind != UiRectangleShaderKind.RoundedSlice)
+        {
+            return PackInstance(shaderKind, in visual, destination);
+        }
+
+        return UiRoundedRectangleSlicePacker.Pack(in visual, instanceStride, destination);
+    }
+
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
         PixelExtent viewport,
@@ -189,6 +225,7 @@ internal static class UiVisualShaderContract
         {
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedSlice => RoundedRectangleSliceGraphicsShaderProgram.PackRoundedRectangleSliceVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }

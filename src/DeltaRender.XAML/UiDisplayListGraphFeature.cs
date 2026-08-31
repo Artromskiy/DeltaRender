@@ -37,6 +37,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint[] _visualInstanceStrides = [];
     private ShaderBinding[] _visualInstanceBindings = [];
     private UiRectangleShaderKind[] _visualShaderKinds = [];
+    private int[] _visualInstanceCounts = [];
     private uint[] _visualFramePushConstantOffsets = [];
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
     private RenderSamplerHandle[] _visualImageSamplers = [];
@@ -192,6 +193,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualInstanceStrides, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceBindings, displayList.Order.Length);
         EnsureCapacity(ref _visualShaderKinds, displayList.Order.Length);
+        EnsureCapacity(ref _visualInstanceCounts, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceOffsets, displayList.Order.Length);
         EnsureCapacity(ref _visualFramePushConstantOffsets, displayList.Order.Length);
         EnsureCapacity(ref _visualImageTextures, displayList.Order.Length);
@@ -490,6 +492,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualInstanceStrides.RefAt(orderIndex) = instanceStride;
         _visualInstanceBindings.RefAt(orderIndex) = instanceBinding;
         _visualShaderKinds.RefAt(orderIndex) = shaderKind;
+        _visualInstanceCounts.RefAt(orderIndex) = UiVisualShaderContract.MaxInstanceCount(shaderKind);
         _visualFramePushConstantOffsets.RefAt(orderIndex) = pushConstantOffset;
         _visualImageTextures.RefAt(orderIndex) = null;
         _visualImageSamplers.RefAt(orderIndex) = default;
@@ -534,21 +537,24 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             var stride = _visualInstanceStrides.RefAt(orderIndex);
             var offset = checked((int)byteCursor);
-            var end = checked(offset + (int)stride);
+            var maxInstanceBytes = checked((int)stride * _visualInstanceCounts.RefAt(orderIndex));
+            var end = checked(offset + maxInstanceBytes);
             EnsureCapacity(ref _visualInstanceBytes, end);
             var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
-            var written = UiVisualShaderContract.PackInstance(
+            var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
                 in visual,
-                _visualInstanceBytes.AsSpan(offset, checked((int)stride)));
-            if (written != stride)
+                stride,
+                _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
+            if (written <= 0 || written % (int)stride != 0)
             {
-                AddDiagnostic($"Visual at Order[{orderIndex}] generated instance packer wrote {written} bytes; expected {stride}.");
+                AddDiagnostic($"Visual at Order[{orderIndex}] generated instance packer wrote {written} bytes; expected a positive multiple of {stride}.");
                 return false;
             }
 
+            _visualInstanceCounts.RefAt(orderIndex) = written / (int)stride;
             _visualInstanceOffsets.RefAt(orderIndex) = offset;
-            byteCursor = checked(byteCursor + stride);
+            byteCursor = checked(byteCursor + (uint)written);
             previousOrderIndex = orderIndex;
         }
 
@@ -663,6 +669,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualFramePushConstantOffsets.RefAt(firstOrderIndex));
         var stride = _visualInstanceStrides.RefAt(firstOrderIndex);
         var segmentEnd = checked(firstOrderIndex + visualCount);
+        ulong segmentInstanceCount = 0;
+        for (var orderIndex = firstOrderIndex; orderIndex < segmentEnd; orderIndex++)
+        {
+            segmentInstanceCount = checked(segmentInstanceCount + (ulong)_visualInstanceCounts.RefAt(orderIndex));
+        }
+
         if (_flatVisualInstanceBuffer)
         {
             commands.BindBuffer(_visualInstanceBindings.RefAt(firstOrderIndex), _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
@@ -673,7 +685,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualInstanceBindings.RefAt(firstOrderIndex),
                 _visualInstanceGraphHandle,
                 checked((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)),
-                checked((ulong)stride * (ulong)visualCount));
+                checked((ulong)stride * segmentInstanceCount));
         }
 
         var drawStart = firstOrderIndex;
@@ -681,16 +693,28 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         {
             var clip = _commandClips.RefAt(drawStart);
             var drawEnd = drawStart + 1;
+            var firstDrawOrder = drawStart;
+            uint instanceCount = (uint)_visualInstanceCounts.RefAt(drawStart);
             while (drawEnd < segmentEnd && _commandClips.RefAt(drawEnd) == clip)
             {
+                if (instanceCount == 0 && _visualInstanceCounts.RefAt(drawEnd) != 0)
+                {
+                    firstDrawOrder = drawEnd;
+                }
+
+                instanceCount = checked(instanceCount + (uint)_visualInstanceCounts.RefAt(drawEnd));
                 drawEnd++;
             }
 
-            commands.SetScissor(clip);
-            var firstInstance = _flatVisualInstanceBuffer
-                ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(drawStart) / stride))
-                : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(drawStart) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
-            commands.Draw(6, checked((uint)(drawEnd - drawStart)), 0, firstInstance);
+            if (instanceCount != 0)
+            {
+                commands.SetScissor(clip);
+                var firstInstance = _flatVisualInstanceBuffer
+                    ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) / stride))
+                    : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
+                commands.Draw(6, instanceCount, 0, firstInstance);
+            }
+
             drawStart = drawEnd;
         }
     }
@@ -979,6 +1003,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         Array.Clear(_visualInstanceStrides, 0, _visualCount);
         Array.Clear(_visualInstanceBindings, 0, _visualCount);
         Array.Clear(_visualShaderKinds, 0, _visualCount);
+        Array.Clear(_visualInstanceCounts, 0, _orderCount);
         Array.Clear(_visualInstanceOffsets, 0, _visualCount);
         Array.Clear(_visualFramePushConstantOffsets, 0, _visualCount);
         Array.Clear(_visualImageTextures, 0, _visualCount);
