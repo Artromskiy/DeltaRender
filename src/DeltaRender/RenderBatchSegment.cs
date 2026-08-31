@@ -3,6 +3,7 @@ namespace Delta.Render.RenderGraph;
 internal sealed class RenderBatchSegment
 {
     private readonly PixelExtent _viewport;
+    private readonly int _stride;
     private int _capacity;
 
     public RenderBatchSegment(
@@ -15,9 +16,10 @@ internal sealed class RenderBatchSegment
         Material = material;
         Pipeline = pipeline;
         Key = key;
+        _stride = checked((int)pipeline.InstanceStride);
         _capacity = 1;
         ItemIndices = new int[1];
-        Packed = new byte[checked((int)pipeline.InstanceStride)];
+        Packed = new byte[_stride];
         GpuOffset = pipeline.Allocate(_capacity);
         Description = new RasterPassDescription(
             $"Delta.Render.Batch[{key.Pipeline.Value}:{key.Material.Value}]",
@@ -48,41 +50,39 @@ internal sealed class RenderBatchSegment
     {
         EnsureCapacity(Count + 1);
         ItemIndices[Count] = itemIndex;
-        payload.CopyTo(Packed.AsSpan(Count * checked((int)Pipeline.InstanceStride)));
+        payload.CopyTo(Packed.AsSpan(Count * _stride));
         Count++;
-        MarkDirty((Count - 1) * checked((int)Pipeline.InstanceStride), checked((int)Pipeline.InstanceStride));
+        MarkDirty((Count - 1) * _stride, _stride);
     }
 
     public void Insert(int position, int itemIndex, ReadOnlySpan<byte> payload)
     {
         EnsureCapacity(Count + 1);
-        var stride = checked((int)Pipeline.InstanceStride);
         for (var index = Count; index > position; index--)
         {
             ItemIndices[index] = ItemIndices[index - 1];
-            Packed.AsSpan((index - 1) * stride, stride).CopyTo(Packed.AsSpan(index * stride, stride));
+            Packed.AsSpan((index - 1) * _stride, _stride).CopyTo(Packed.AsSpan(index * _stride, _stride));
         }
 
         ItemIndices[position] = itemIndex;
-        payload.CopyTo(Packed.AsSpan(position * stride, stride));
+        payload.CopyTo(Packed.AsSpan(position * _stride, _stride));
         Count++;
-        MarkDirty(position * stride, checked((Count - position) * stride));
+        MarkDirty(position * _stride, checked((Count - position) * _stride));
     }
 
     public RenderBatchSegment Split(int position)
     {
         var right = new RenderBatchSegment(Pipeline, Material, Key, _viewport);
-        var stride = checked((int)Pipeline.InstanceStride);
         right.EnsureCapacity(Count - position);
         for (var index = position; index < Count; index++)
         {
             var rightIndex = index - position;
             right.ItemIndices[rightIndex] = ItemIndices[index];
-            Packed.AsSpan(index * stride, stride).CopyTo(right.Packed.AsSpan(rightIndex * stride, stride));
+            Packed.AsSpan(index * _stride, _stride).CopyTo(right.Packed.AsSpan(rightIndex * _stride, _stride));
         }
 
         right.Count = Count - position;
-        right.MarkDirty(0, checked(right.Count * stride));
+        right.MarkDirty(0, checked(right.Count * _stride));
         Count = position;
         Pipeline.ClearDirty(this);
         return right;
@@ -90,51 +90,47 @@ internal sealed class RenderBatchSegment
 
     public void RemoveAt(int position)
     {
-        var stride = checked((int)Pipeline.InstanceStride);
         for (var index = position; index < Count - 1; index++)
         {
             ItemIndices[index] = ItemIndices[index + 1];
-            Packed.AsSpan((index + 1) * stride, stride).CopyTo(Packed.AsSpan(index * stride, stride));
+            Packed.AsSpan((index + 1) * _stride, _stride).CopyTo(Packed.AsSpan(index * _stride, _stride));
         }
 
         Count--;
-        MarkDirty(position * stride, checked((Count - position) * stride));
+        MarkDirty(position * _stride, checked((Count - position) * _stride));
     }
 
     public void CopySlot(int sourcePosition, int destinationPosition)
     {
-        var stride = checked((int)Pipeline.InstanceStride);
         ItemIndices[destinationPosition] = ItemIndices[sourcePosition];
-        Packed.AsSpan(sourcePosition * stride, stride).CopyTo(Packed.AsSpan(destinationPosition * stride, stride));
-        MarkDirty(destinationPosition * stride, stride);
+        Packed.AsSpan(sourcePosition * _stride, _stride).CopyTo(Packed.AsSpan(destinationPosition * _stride, _stride));
+        MarkDirty(destinationPosition * _stride, _stride);
     }
 
     public void AppendSegment(RenderBatchSegment other)
     {
         EnsureCapacity(Count + other.Count);
-        var stride = checked((int)Pipeline.InstanceStride);
         for (var index = 0; index < other.Count; index++)
         {
             ItemIndices[Count + index] = other.ItemIndices[index];
-            other.Packed.AsSpan(index * stride, stride).CopyTo(Packed.AsSpan((Count + index) * stride, stride));
+            other.Packed.AsSpan(index * _stride, _stride).CopyTo(Packed.AsSpan((Count + index) * _stride, _stride));
         }
 
         var oldCount = Count;
         Count += other.Count;
-        MarkDirty(oldCount * stride, checked(other.Count * stride));
+        MarkDirty(oldCount * _stride, checked(other.Count * _stride));
     }
 
     public void SetPayload(int position, ReadOnlySpan<byte> payload)
     {
-        var stride = checked((int)Pipeline.InstanceStride);
-        var destination = Packed.AsSpan(position * stride, stride);
+        var destination = Packed.AsSpan(position * _stride, _stride);
         if (destination.SequenceEqual(payload))
         {
             return;
         }
 
         payload.CopyTo(destination);
-        MarkDirty(position * stride, stride);
+        MarkDirty(position * _stride, _stride);
     }
 
     public void MarkDirty(int offset, int length) => Pipeline.AddDirty(this, offset, length);
@@ -156,12 +152,12 @@ internal sealed class RenderBatchSegment
         var oldItems = ItemIndices;
         _capacity = next;
         ItemIndices = new int[next];
-        Packed = new byte[checked(next * (int)Pipeline.InstanceStride)];
+        Packed = new byte[checked(next * _stride)];
         oldItems.AsSpan(0, Count).CopyTo(ItemIndices);
-        oldPacked.AsSpan(0, checked(Count * (int)Pipeline.InstanceStride)).CopyTo(Packed);
+        oldPacked.AsSpan(0, checked(Count * _stride)).CopyTo(Packed);
         GpuOffset = Pipeline.Allocate(next);
         Pipeline.ClearDirty(this);
-        MarkDirty(0, checked(Count * (int)Pipeline.InstanceStride));
+        MarkDirty(0, checked(Count * _stride));
     }
 
     private sealed class SegmentRasterPass(RenderBatchSegment segment, PixelExtent viewport) : IRasterPass
