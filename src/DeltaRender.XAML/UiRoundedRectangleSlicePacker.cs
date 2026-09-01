@@ -14,15 +14,17 @@ internal static class UiRoundedRectangleSlicePacker
         Span<byte> destination)
     {
         var stride = checked((int)instanceStride);
+        var bounds = Scale(visual.Bounds, dpiScale);
+        var radii = Scale(visual.Paint.CornerRadii, dpiScale);
         var rectangle = new RoundedRectangleParameters(
-            visual.Bounds,
+            bounds,
             visual.Paint.FillColor,
             visual.Paint.StrokeColor,
-            visual.Paint.CornerRadii,
+            radii,
             ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale));
         Span<RoundedRectangleSliceParameters> slices = stackalloc RoundedRectangleSliceParameters[9];
         var sliceCount = RoundedRectangleSliceBuilder.Build(in rectangle, slices);
-        var reducedSliceCount = TryBuildSevenSlices(visual.Bounds, visual.Paint.CornerRadii, slices, sliceCount);
+        var reducedSliceCount = TryBuildSevenSlices(bounds, radii, slices, sliceCount);
         if (reducedSliceCount != 0)
         {
             sliceCount = reducedSliceCount;
@@ -53,15 +55,17 @@ internal static class UiRoundedRectangleSlicePacker
         Span<byte> destination)
     {
         var stride = checked((int)instanceStride);
+        var bounds = Scale(visual.Bounds, dpiScale);
+        var radii = Scale(visual.Paint.CornerRadii, dpiScale);
         var rectangle = new RoundedRectangleParameters(
-            visual.Bounds,
+            bounds,
             visual.Paint.FillColor,
             visual.Paint.StrokeColor,
-            visual.Paint.CornerRadii,
+            radii,
             ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale));
         Span<RoundedRectangleSliceParameters> slices = stackalloc RoundedRectangleSliceParameters[9];
         var sliceCount = RoundedRectangleSliceBuilder.Build(in rectangle, slices);
-        var reducedSliceCount = TryBuildSevenSlices(visual.Bounds, visual.Paint.CornerRadii, slices, sliceCount);
+        var reducedSliceCount = TryBuildSevenSlices(bounds, radii, slices, sliceCount);
         if (reducedSliceCount != 0)
         {
             sliceCount = reducedSliceCount;
@@ -74,7 +78,11 @@ internal static class UiRoundedRectangleSlicePacker
         }
 
         Span<ClipAwareRoundedRectangleSliceParameters> clipAwareSlices = stackalloc ClipAwareRoundedRectangleSliceParameters[9];
-        var clipRect = new float4(clip.X, clip.Y, clip.Width, clip.Height);
+        var clipRect = new float4(
+            clip.X * dpiScale,
+            clip.Y * dpiScale,
+            clip.Width * dpiScale,
+            clip.Height * dpiScale);
         for (var index = 0; index < sliceCount; index++)
         {
             var slice = slices[index];
@@ -183,4 +191,11 @@ internal static class UiRoundedRectangleSlicePacker
             PaintUnits.Device => value,
             _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
         };
+
+    private static float4 Scale(float4 value, float dpiScale)
+        => new(
+            value.x * dpiScale,
+            value.y * dpiScale,
+            value.z * dpiScale,
+            value.w * dpiScale);
 }

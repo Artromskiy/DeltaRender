@@ -395,10 +395,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     var identity = _identities.RefAt(index);
                     _textRunIndices.RefAt(index) = _textFeature.QueueCompositeRun(
                         text.Text,
-                        text.BaselineOrigin.x,
-                        text.BaselineOrigin.y,
+                        text.BaselineOrigin.x * _dpiScale,
+                        text.BaselineOrigin.y * _dpiScale,
                         new Vector4(color.x, color.y, color.z, color.w),
-                        _commandClips.RefAt(index),
+                        ScaleClip(_commandClips.RefAt(index)),
                         mergeWithPrevious: previousWasText,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
@@ -1034,7 +1034,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             if (instanceCount != 0)
             {
-                commands.SetScissor(clip);
+                commands.SetScissor(ScaleClip(clip));
                 var firstInstance = _flatVisualInstanceBuffer
                     ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) / stride))
                     : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
@@ -1043,6 +1043,21 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             drawStart = drawEnd;
         }
+    }
+
+    private PixelRect ScaleClip(PixelRect clip)
+    {
+        if (_dpiScale == 1f || clip.IsEmpty)
+        {
+            return clip;
+        }
+
+        var scale = (double)_dpiScale;
+        var left = checked((int)Math.Floor(clip.X * scale));
+        var top = checked((int)Math.Floor(clip.Y * scale));
+        var right = checked((int)Math.Ceiling((clip.X + (double)clip.Width) * scale));
+        var bottom = checked((int)Math.Ceiling((clip.Y + (double)clip.Height) * scale));
+        return new PixelRect(left, top, checked(right - left), checked(bottom - top));
     }
 
     /// <inheritdoc />

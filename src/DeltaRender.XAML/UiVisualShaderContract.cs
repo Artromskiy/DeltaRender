@@ -205,14 +205,14 @@ internal static class UiVisualShaderContract
         return shaderKind switch
         {
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexInstancesElement(
-                new SolidRectangleParameters(visual.Bounds, visual.Paint.FillColor),
+                new SolidRectangleParameters(Scale(visual.Bounds, dpiScale), visual.Paint.FillColor),
                 destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexInstancesElement(
                 new RoundedRectangleParameters(
-                    visual.Bounds,
+                    Scale(visual.Bounds, dpiScale),
                     visual.Paint.FillColor,
                     visual.Paint.StrokeColor,
-                    visual.Paint.CornerRadii,
+                    Scale(visual.Paint.CornerRadii, dpiScale),
                     ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale)),
                 destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
@@ -226,18 +226,22 @@ internal static class UiVisualShaderContract
         float dpiScale,
         Span<byte> destination)
     {
-        var clipRect = new float4(clip.X, clip.Y, clip.Width, clip.Height);
+        var clipRect = new float4(
+            clip.X * dpiScale,
+            clip.Y * dpiScale,
+            clip.Width * dpiScale,
+            clip.Height * dpiScale);
         return shaderKind switch
         {
             UiRectangleShaderKind.ClipAwareSolid => ClipAwareSolidRectangleGraphicsShaderProgram.PackClipAwareSolidRectangleVertexInstancesElement(
-                new ClipAwareSolidRectangleParameters(visual.Bounds, visual.Paint.FillColor, clipRect),
+                new ClipAwareSolidRectangleParameters(Scale(visual.Bounds, dpiScale), visual.Paint.FillColor, clipRect),
                 destination),
             UiRectangleShaderKind.ClipAwareRounded => ClipAwareRoundedRectangleGraphicsShaderProgram.PackClipAwareRoundedRectangleVertexInstancesElement(
                 new ClipAwareRoundedRectangleParameters(
-                    visual.Bounds,
+                    Scale(visual.Bounds, dpiScale),
                     visual.Paint.FillColor,
                     visual.Paint.StrokeColor,
-                    visual.Paint.CornerRadii,
+                    Scale(visual.Paint.CornerRadii, dpiScale),
                     ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale),
                     clipRect),
                 destination),
@@ -291,6 +295,13 @@ internal static class UiVisualShaderContract
             PaintUnits.Device => value,
             _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
         };
+
+    private static float4 Scale(float4 value, float dpiScale)
+        => new(
+            value.x * dpiScale,
+            value.y * dpiScale,
+            value.z * dpiScale,
+            value.w * dpiScale);
 
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
