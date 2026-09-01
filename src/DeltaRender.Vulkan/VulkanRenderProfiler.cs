@@ -30,6 +30,11 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
     private ProfileDuration _readback;
     private ProfileDuration _fenceWait;
     private ProfileDuration _layoutAndShapingCpu;
+    private ProfileDuration _commandBufferEnd;
+    private ProfileDuration _submitPreparation;
+    private ProfileDuration _synchronizationSetup;
+    private ProfileDuration _queueSubmit;
+    private ProfileDuration _queuePresent;
     private int _drawCallCount;
     private int _descriptorBindCount;
     private int _vertexBufferBindCount;
@@ -84,6 +89,11 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         _readback = ProfileDuration.Zero;
         _fenceWait = ProfileDuration.Zero;
         _layoutAndShapingCpu = ProfileDuration.Zero;
+        _commandBufferEnd = ProfileDuration.Zero;
+        _submitPreparation = ProfileDuration.Zero;
+        _synchronizationSetup = ProfileDuration.Zero;
+        _queueSubmit = ProfileDuration.Zero;
+        _queuePresent = ProfileDuration.Zero;
         _drawCallCount = 0;
         _descriptorBindCount = 0;
         _vertexBufferBindCount = 0;
@@ -149,6 +159,16 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 
     internal void EndFenceWait(long started) => _fenceWait += Measure(started);
 
+    internal void EndCommandBuffer(long started) => _commandBufferEnd += Measure(started);
+
+    internal void EndSubmitPreparation(long started) => _submitPreparation += Measure(started);
+
+    internal void EndSynchronizationSetup(long started) => _synchronizationSetup += Measure(started);
+
+    internal void EndQueueSubmit(long started) => _queueSubmit += Measure(started);
+
+    internal void EndQueuePresent(long started) => _queuePresent += Measure(started);
+
     internal void DisableGpuTimestampsForCurrentFrame()
     {
         _gpuTimestampsEnabled = false;
@@ -204,7 +224,13 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             new RenderProfileTiming(_build, _acquire, _record, _submitAndPresent, _readback)
             {
                 FenceWait = _fenceWait,
-                LayoutAndShapingCpu = _layoutAndShapingCpu
+                LayoutAndShapingCpu = _layoutAndShapingCpu,
+                Submission = new RenderSubmissionProfileTiming(
+                    _commandBufferEnd,
+                    _submitPreparation,
+                    _synchronizationSetup,
+                    _queueSubmit,
+                    _queuePresent)
             },
             Array.AsReadOnly(passes),
             new RenderProfileCounters(passes.Length, rasterCount, computeCount, transferCount, resourceCount)

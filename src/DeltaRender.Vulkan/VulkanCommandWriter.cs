@@ -178,8 +178,6 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
 
     internal unsafe void BeginRenderPass(RenderPass renderPass, Framebuffer framebuffer, Extent2D extent, ClearValue* clearValues, uint clearValueCount)
     {
-        _hasViewport = false;
-        _hasScissor = false;
         var begin = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo,

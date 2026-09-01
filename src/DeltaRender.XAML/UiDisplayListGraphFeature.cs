@@ -17,13 +17,14 @@ namespace Delta.Render.XAML;
 /// </summary>
 public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 {
+    private const int VisualUploadMergeGapBytes = 64;
     private readonly IRenderFrameSession? _session;
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
     private readonly IGraphicsShaderProgram? _solidVisualProgram;
     private readonly IGraphicsShaderProgram? _roundedSliceVisualProgram;
     private readonly UiDisplayListResourceRegistry _registry;
     private readonly TextRenderFeature? _textFeature;
-    private readonly UiVisualUploadPass _visualUploadPass;
+    private readonly UiTextVisualUploadPass _textVisualUploadPass;
     private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
@@ -58,6 +59,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private int _textCount;
     private int _orderCount;
     private int[] _visualInstanceOffsets = [];
+    private bool[] _visualPayloadDirtyByIndex = [];
+    private BufferRange[] _visualUploadRanges = [];
+    private int _visualUploadRangeCount;
     private int _visualInstanceByteCount;
     private int _uploadedVisualInstanceByteCount;
     private ulong _visualInstanceBufferCapacity;
@@ -80,6 +84,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint _preparedVisualPushConstantOffset;
     private bool _hasPreparedVisualDescription;
     private bool _visualCommandsPrepared;
+    private bool _reuseVisualInstanceLayout;
     private int _validationEpoch;
     private bool _hasFrame;
     private bool _disposed;
@@ -134,7 +139,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _viewport = viewport;
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
-        _visualUploadPass = new UiVisualUploadPass(this);
+        _textVisualUploadPass = new UiTextVisualUploadPass(this);
         _clipResolver = new UiClipResolver(viewport, _diagnostics);
         if (session is not null)
         {
@@ -206,7 +211,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var started = profiler is null ? 0 : Stopwatch.GetTimestamp();
         _diagnostics.Clear();
         _textFeature?.Clear();
-        ClearFrameStorage();
+        var reuseVisualInstanceLayout = CanReuseVisualInstanceLayout(displayList);
+        ClearFrameStorage(reuseVisualInstanceLayout);
 
         EnsureCapacity(ref _visuals, displayList.Visuals.Length);
         EnsureCapacity(ref _clips, displayList.Clips.Length);
@@ -228,6 +234,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualImageTextures, displayList.Order.Length);
         EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
 
         displayList.Visuals.CopyTo(_visuals);
         displayList.Clips.CopyTo(_clips);
@@ -386,7 +393,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     previousWasText = true;
                 }
 
-                textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph);
+                textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph, registerUploadPass: false);
             }
         }
 
@@ -413,14 +420,31 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return;
         }
 
+        var visualUploadPending = false;
         if (_visualInstanceByteCount > 0)
         {
             EnsureVisualInstanceBuffer(checked((ulong)_visualInstanceByteCount));
             _visualInstanceGraphHandle = graph.ImportBuffer(_visualInstanceBuffer);
-            if (_visualInstancePayloadDirty)
+            if (_visualInstancePayloadDirty && _visualUploadRangeCount == 0)
             {
-                var upload = graph.AddTransferPass("DeltaRender.XAML.VisualUpload", _visualUploadPass);
+                SetFullVisualUploadRange();
+            }
+
+            visualUploadPending = _visualInstancePayloadDirty;
+        }
+
+        var textUploadPending = textPrepared && _textFeature?.CompositeUploadPending == true;
+        if (visualUploadPending || textUploadPending)
+        {
+            var upload = graph.AddTransferPass("DeltaRender.XAML.TextVisualUpload", _textVisualUploadPass);
+            if (visualUploadPending)
+            {
                 graph.UseBuffer(upload, _visualInstanceGraphHandle, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+            }
+
+            if (textUploadPending)
+            {
+                _textFeature!.ConfigureCompositeUploadPass(graph, upload);
             }
         }
 
@@ -640,6 +664,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return true;
         }
 
+        if (_reuseVisualInstanceLayout)
+        {
+            return PrepareReusedVisualInstances();
+        }
+
         _flatVisualInstanceBuffer = HasUniformVisualInstanceLayout();
         ulong byteCursor = 0;
         var previousOrderIndex = -1;
@@ -665,9 +694,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var end = checked(offset + maxInstanceBytes);
             EnsureCapacity(ref _visualInstanceBytes, end);
             var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
+            var clip = _commandClips.RefAt(orderIndex);
             var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
                 in visual,
+                in clip,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -683,11 +714,81 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         _visualInstanceByteCount = checked((int)byteCursor);
-        _visualInstancePayloadDirty = _uploadedVisualInstanceByteCount != _visualInstanceByteCount ||
-            !_visualInstanceBytes.AsSpan(0, _visualInstanceByteCount).SequenceEqual(
-                _uploadedVisualInstanceBytes.AsSpan(0, Math.Min(_uploadedVisualInstanceByteCount, _visualInstanceByteCount)));
+        _visualInstancePayloadDirty = HasVisualInstancePayloadChanged();
         _visualInstancesPrepared = true;
         return true;
+    }
+
+    private bool PrepareReusedVisualInstances()
+    {
+        _visualUploadRangeCount = 0;
+        for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
+        {
+            var draw = _order.RefAt(orderIndex);
+            if (draw.Kind != UiDrawKind.Visual ||
+                _commandClips.RefAt(orderIndex).IsEmpty ||
+                _visualPrograms.RefAt(orderIndex) is null ||
+                !_visualPayloadDirtyByIndex.RefAt(draw.Index))
+            {
+                continue;
+            }
+
+            var stride = _visualInstanceStrides.RefAt(orderIndex);
+            var instanceCount = _visualInstanceCounts.RefAt(orderIndex);
+            var offset = _visualInstanceOffsets.RefAt(orderIndex);
+            var instanceBytes = checked((int)(stride * (uint)instanceCount));
+            var visual = _visuals.RefAt(draw.Index);
+            var clip = _commandClips.RefAt(orderIndex);
+            var written = UiVisualShaderContract.PackInstances(
+                _visualShaderKinds.RefAt(orderIndex),
+                in visual,
+                in clip,
+                stride,
+                _visualInstanceBytes.AsSpan(offset, instanceBytes));
+            if (written != instanceBytes)
+            {
+                _reuseVisualInstanceLayout = false;
+                _visualInstancesPrepared = false;
+                return PrepareVisualInstances();
+            }
+
+            AddVisualUploadRange(offset, written);
+        }
+
+        _visualInstancePayloadDirty = _visualUploadRangeCount != 0 ||
+                                      _visualInstanceByteCount != _uploadedVisualInstanceByteCount;
+        _visualInstancesPrepared = true;
+        return true;
+    }
+
+    private bool HasVisualInstancePayloadChanged()
+    {
+        if (_visualInstanceByteCount != _uploadedVisualInstanceByteCount)
+        {
+            SetFullVisualUploadRange();
+            return true;
+        }
+
+        for (var orderIndex = 0; orderIndex < _orderCount; orderIndex++)
+        {
+            var instanceCount = _visualInstanceCounts.RefAt(orderIndex);
+            if (instanceCount == 0)
+            {
+                continue;
+            }
+
+            var offset = _visualInstanceOffsets.RefAt(orderIndex);
+            var length = checked((int)(_visualInstanceStrides.RefAt(orderIndex) * (uint)instanceCount));
+            if (!_visualInstanceBytes.AsSpan(offset, length).SequenceEqual(
+                    _uploadedVisualInstanceBytes.AsSpan(offset, length)))
+            {
+                SetFullVisualUploadRange();
+                return true;
+            }
+        }
+
+        _visualUploadRangeCount = 0;
+        return false;
     }
 
     private bool HasUniformVisualInstanceLayout()
@@ -762,17 +863,80 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private void CommitVisualInstanceSnapshot()
     {
         EnsureCapacity(ref _uploadedVisualInstanceBytes, _visualInstanceByteCount);
-        _visualInstanceBytes.AsSpan(0, _visualInstanceByteCount).CopyTo(_uploadedVisualInstanceBytes);
+        for (var index = 0; index < _visualUploadRangeCount; index++)
+        {
+            var range = _visualUploadRanges[index];
+            _visualInstanceBytes.AsSpan(
+                checked((int)range.Offset),
+                checked((int)range.SizeInBytes)).CopyTo(_uploadedVisualInstanceBytes.AsSpan(
+                    checked((int)range.Offset),
+                    checked((int)range.SizeInBytes)));
+        }
+
         _uploadedVisualInstanceByteCount = _visualInstanceByteCount;
         _visualInstancePayloadDirty = false;
     }
 
     internal void RecordVisualUpload(ITransferCommandContext commands)
     {
-        commands.UploadBuffer(
-            _visualInstanceGraphHandle,
-            _visualInstanceBytes.AsSpan(0, _visualInstanceByteCount));
+        for (var index = 0; index < _visualUploadRangeCount; index++)
+        {
+            var range = _visualUploadRanges[index];
+            commands.UploadBuffer(
+                _visualInstanceGraphHandle,
+                _visualInstanceBytes.AsSpan(
+                    checked((int)range.Offset),
+                    checked((int)range.SizeInBytes)),
+                range.Offset);
+        }
+
         CommitVisualInstanceSnapshot();
+    }
+
+    internal void RecordTextVisualUpload(ITransferCommandContext commands)
+    {
+        if (_textFeature?.CompositeUploadPending == true)
+        {
+            _textFeature.RecordCompositeUpload(commands);
+        }
+
+        if (_visualInstanceByteCount > 0 && _visualInstancePayloadDirty)
+        {
+            RecordVisualUpload(commands);
+        }
+    }
+
+    private void SetFullVisualUploadRange()
+    {
+        _visualUploadRangeCount = 0;
+        if (_visualInstanceByteCount != 0)
+        {
+            AddVisualUploadRange(0, _visualInstanceByteCount);
+        }
+    }
+
+    private void AddVisualUploadRange(int offset, int length)
+    {
+        if (length <= 0)
+        {
+            return;
+        }
+
+        var start = checked((ulong)offset);
+        var end = checked(start + (ulong)length);
+        if (_visualUploadRangeCount != 0)
+        {
+            ref var previous = ref _visualUploadRanges.RefAt(_visualUploadRangeCount - 1);
+            var previousEnd = checked(previous.Offset + previous.SizeInBytes);
+            if (start <= checked(previousEnd + (ulong)VisualUploadMergeGapBytes))
+            {
+                previous = new BufferRange(previous.Offset, checked(Math.Max(previousEnd, end) - previous.Offset));
+                return;
+            }
+        }
+
+        EnsureCapacity(ref _visualUploadRanges, checked(_visualUploadRangeCount + 1));
+        _visualUploadRanges.RefAt(_visualUploadRangeCount++) = new BufferRange(start, checked(end - start));
     }
 
     private static ulong Align(ulong value, ulong alignment)
@@ -800,7 +964,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             checked((int)_visualPushConstantSizes.RefAt(firstOrderIndex))),
             _visualFramePushConstantOffsets.RefAt(firstOrderIndex));
         var stride = _visualInstanceStrides.RefAt(firstOrderIndex);
-        var segmentEnd = checked(firstOrderIndex + visualCount);
 
         if (_flatVisualInstanceBuffer)
         {
@@ -815,6 +978,26 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 checked((ulong)stride * segmentInstanceCount));
         }
 
+        if (UiVisualShaderContract.UsesShaderClip(_visualShaderKinds.RefAt(firstOrderIndex)))
+        {
+            if (segmentInstanceCount == 0)
+            {
+                return;
+            }
+
+            commands.SetScissor(new PixelRect(
+                0,
+                0,
+                checked((int)_viewport.Width),
+                checked((int)_viewport.Height)));
+            var firstInstance = _flatVisualInstanceBuffer
+                ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex) / stride))
+                : 0;
+            commands.Draw(6, checked((uint)segmentInstanceCount), 0, firstInstance);
+            return;
+        }
+
+        var segmentEnd = checked(firstOrderIndex + visualCount);
         var drawStart = firstOrderIndex;
         while (drawStart < segmentEnd)
         {
@@ -1025,26 +1208,76 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         return _validationEpoch;
     }
 
-    private void ClearFrameStorage()
+    private bool CanReuseVisualInstanceLayout(UiDisplayList displayList)
     {
-        Array.Clear(_visuals, 0, _visualCount);
-        Array.Clear(_clips, 0, _clipCount);
-        Array.Clear(_texts, 0, _textCount);
-        Array.Clear(_order, 0, _orderCount);
-        Array.Clear(_visualPrograms, 0, _orderCount);
+        if (!_hasFrame || !_visualInstancesPrepared || !_visualCommandsPrepared ||
+            _visualCount != displayList.Visuals.Length ||
+            _clipCount != displayList.Clips.Length ||
+            _orderCount != displayList.Order.Length ||
+            !displayList.Clips.SequenceEqual(_clips.AsSpan(0, _clipCount)) ||
+            !displayList.Order.SequenceEqual(_order.AsSpan(0, _orderCount)))
+        {
+            return false;
+        }
+
+        EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
+        for (var index = 0; index < displayList.Visuals.Length; index++)
+        {
+            var previous = _visuals.RefAt(index);
+            var current = displayList.Visuals[index];
+            if (!HasStableVisualInstanceLayout(in previous, in current))
+            {
+                return false;
+            }
+
+            _visualPayloadDirtyByIndex.RefAt(index) = !previous.Equals(current);
+        }
+
+        return true;
+    }
+
+    private static bool HasStableVisualInstanceLayout(in UiVisualDraw previous, in UiVisualDraw current)
+    {
+        if (current.Kind is UiVisualKind.Image or UiVisualKind.Custom)
+        {
+            return previous.Equals(current);
+        }
+
+        return previous.Kind == current.Kind &&
+               previous.VisualType.Equals(current.VisualType) &&
+               previous.Bounds.Equals(current.Bounds) &&
+               previous.Clip.Equals(current.Clip) &&
+               previous.Resource.Equals(current.Resource) &&
+               previous.Paint.CornerRadii.Equals(current.Paint.CornerRadii) &&
+               previous.Paint.StrokeWidth == current.Paint.StrokeWidth;
+    }
+
+    private void ClearFrameStorage(bool preserveVisualInstanceLayout = false)
+    {
+        if (!preserveVisualInstanceLayout)
+        {
+            Array.Clear(_visuals, 0, _visualCount);
+            Array.Clear(_clips, 0, _clipCount);
+            Array.Clear(_texts, 0, _textCount);
+            Array.Clear(_order, 0, _orderCount);
+            Array.Clear(_visualPrograms, 0, _orderCount);
+            _visualInstanceByteCount = 0;
+            _flatVisualInstanceBuffer = false;
+            _hasPackedVisualFrame = false;
+            _packedVisualFrameKind = default;
+            _packedVisualFrameSize = 0;
+            _packedVisualFrameOffset = 0;
+        }
+
         _visualCount = 0;
         _clipCount = 0;
         _textCount = 0;
         _orderCount = 0;
-        _visualInstanceByteCount = 0;
         _visualInstanceGraphHandle = default;
         _visualInstancesPrepared = false;
-        _flatVisualInstanceBuffer = false;
-        _hasPackedVisualFrame = false;
-        _packedVisualFrameKind = default;
-        _packedVisualFrameSize = 0;
-        _packedVisualFrameOffset = 0;
-        _visualCommandsPrepared = false;
+        _visualCommandsPrepared = preserveVisualInstanceLayout;
+        _reuseVisualInstanceLayout = preserveVisualInstanceLayout;
+        _visualUploadRangeCount = 0;
         _hasFrame = false;
         _clipResolver.Clear();
     }

@@ -195,6 +195,47 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void ChangedVisualUploadsOnlyItsExistingInstanceRange()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var firstVisual = Solid(1);
+        var changedVisual = firstVisual with
+        {
+            Paint = UiVisualPaint.Solid(new float4(0.2f, 0.3f, 0.4f, 1))
+        };
+        var order = new[]
+        {
+            new UiDrawRef(UiDrawKind.Visual, 0),
+            new UiDrawRef(UiDrawKind.Visual, 1),
+        };
+
+        Assert.True(feature.Consume(new UiDisplayList(
+            new[] { firstVisual, firstVisual },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            order)), string.Join(" | ", feature.Diagnostics));
+        var firstGraph = new RecordingGraphBuilder();
+        feature.AddPasses(firstGraph, 1);
+        firstGraph.RecordTransfer();
+
+        Assert.True(feature.Consume(new UiDisplayList(
+            new[] { firstVisual, changedVisual },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            order)), string.Join(" | ", feature.Diagnostics));
+        var changedGraph = new RecordingGraphBuilder();
+        feature.AddPasses(changedGraph, 2);
+        var upload = changedGraph.RecordTransfer();
+
+        Assert.Equal(1, upload.UploadBufferCount);
+        Assert.Equal(32, upload.UploadedByteCount);
+        Assert.Single(upload.UploadOffsets);
+        Assert.Equal(32UL, upload.UploadOffsets[0]);
+    }
+
+    [Fact]
     public void RoundedSliceVisualUsesNineInstancesInOneDraw()
     {
         var program = RoundedRectangleSliceGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
@@ -304,6 +345,42 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void ClipAwareVisualsWithDifferentClipsUseOneInstancedDraw()
+    {
+        var program = ClipAwareSolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var clips = new[]
+        {
+            new UiClipRegion(new float4(0, 0, 40, 40), UiClipId.None),
+            new UiClipRegion(new float4(40, 0, 40, 40), UiClipId.None),
+        };
+        var visuals = new[]
+        {
+            Solid(1, new UiClipId(0)),
+            Solid(2, new UiClipId(1)),
+        };
+        var order = new[]
+        {
+            new UiDrawRef(UiDrawKind.Visual, 0),
+            new UiDrawRef(UiDrawKind.Visual, 1),
+        };
+
+        Assert.True(feature.Consume(new UiDisplayList(visuals, clips, Array.Empty<UiTextDraw>(), order)), string.Join(" | ", feature.Diagnostics));
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Equal(1, commands.DrawCount);
+        Assert.Single(commands.Scissors);
+        Assert.Equal(new PixelRect(0, 0, 100, 80), commands.Scissors[0]);
+        Assert.Single(commands.InstanceCounts);
+        Assert.Equal(2u, commands.InstanceCounts[0]);
+    }
+
+    [Fact]
     public void TextOnlyDisplayListAddsTextRasterPassWithoutVisualInstances()
     {
         using var textService = new SixLaborsTextService();
@@ -340,8 +417,52 @@ public sealed class UiDisplayListGraphFeatureTests
         feature.AddPasses(graph, 1);
 
         Assert.NotEmpty(graph.RasterPasses);
+        Assert.Equal(1, graph.TransferPassCount);
         Assert.Equal(1, feature.BorrowOrder().Length);
         Assert.Equal(new UiDrawRef(UiDrawKind.Text, 0), feature.BorrowOrder()[0]);
+    }
+
+    [Fact]
+    public void MixedVisualAndTextUseOneTransferPass()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            new UiTextRunId(1, 1),
+            1,
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)),
+            UiClipId.None);
+        Assert.True(feature.Consume(new UiDisplayList(
+            new[] { Solid(1) },
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[]
+            {
+                new UiDrawRef(UiDrawKind.Visual, 0),
+                new UiDrawRef(UiDrawKind.Text, 0),
+            })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = graph.RecordTransfer();
+
+        Assert.Equal(1, graph.TransferPassCount);
+        Assert.Equal(2, commands.UploadBufferCount);
+        Assert.True(commands.UploadTextureCount > 0);
     }
 
     [Fact]
@@ -689,9 +810,11 @@ public sealed class UiDisplayListGraphFeatureTests
     private sealed class RecordingGraphBuilder : IRenderGraphBuilder
     {
         private uint _nextHandle = 1;
-        private ITransferPass? _transferPass;
+        private readonly List<ITransferPass> _transferPasses = [];
 
         public List<IRasterPass> RasterPasses { get; } = [];
+
+        public int TransferPassCount => _transferPasses.Count;
 
         public RenderGraphTextureHandle ImportTarget(RenderTargetHandle target) => new(_nextHandle++);
 
@@ -714,7 +837,7 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public RenderGraphPassHandle AddTransferPass(string name, ITransferPass pass)
         {
-            _transferPass = pass;
+            _transferPasses.Add(pass);
             return new RenderGraphPassHandle(_nextHandle++);
         }
 
@@ -751,7 +874,11 @@ public sealed class UiDisplayListGraphFeatureTests
         public RecordingTransferCommands RecordTransfer()
         {
             var commands = new RecordingTransferCommands();
-            _transferPass?.Record(commands);
+            foreach (var pass in _transferPasses)
+            {
+                pass.Record(commands);
+            }
+
             return commands;
         }
     }
@@ -759,6 +886,12 @@ public sealed class UiDisplayListGraphFeatureTests
     private sealed class RecordingTransferCommands : ITransferCommandContext
     {
         public int UploadBufferCount { get; private set; }
+
+        public int UploadTextureCount { get; private set; }
+
+        public int UploadedByteCount { get; private set; }
+
+        public List<ulong> UploadOffsets { get; } = [];
 
         public void CopyBuffer(
             RenderGraphBufferHandle source,
@@ -780,6 +913,8 @@ public sealed class UiDisplayListGraphFeatureTests
         public void UploadBuffer(RenderGraphBufferHandle destination, ReadOnlySpan<byte> data, ulong destinationOffset = 0)
         {
             UploadBufferCount++;
+            UploadedByteCount += data.Length;
+            UploadOffsets.Add(destinationOffset);
         }
 
         public void UploadTexture(
@@ -788,6 +923,7 @@ public sealed class UiDisplayListGraphFeatureTests
             ReadOnlySpan<byte> data,
             uint sourceRowPitch)
         {
+            UploadTextureCount++;
         }
     }
 

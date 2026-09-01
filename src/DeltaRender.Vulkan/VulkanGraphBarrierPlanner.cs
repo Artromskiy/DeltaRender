@@ -37,12 +37,14 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
                 sourceStages |= NormalizeStage(previous.Stages);
                 destinationStages |= NormalizeStage(next.Stages);
             }
+
         }
 
         if (_buffers.Count != 0 || _images.Count != 0)
         {
             graph.CommandWriter.PipelineBarrier(sourceStages, destinationStages, CollectionsMarshal.AsSpan(_buffers), CollectionsMarshal.AsSpan(_images));
         }
+
     }
 
     internal void EmitRasterSegmentEntry(int firstRasterPosition, VulkanRenderGraph.ResourceState[] states)
@@ -82,6 +84,7 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
                     Offset = 0,
                     Size = allocation.AllocationSize
                 };
+
                 graph.CommandWriter.PipelineBarrier(
                     NormalizeStage(previous.Stages),
                     NormalizeStage(next.Stages),
@@ -117,4 +120,5 @@ internal sealed unsafe class VulkanGraphBarrierPlanner(VulkanRenderGraph graph)
 
         return false;
     }
+
 }

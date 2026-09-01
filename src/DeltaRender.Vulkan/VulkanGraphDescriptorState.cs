@@ -17,10 +17,12 @@ internal sealed unsafe class VulkanGraphDescriptorState
     private readonly DescriptorPool _pool;
     private readonly DescriptorSet[] _descriptorSets;
     private readonly VulkanGraphBinding[] _bindings;
-    private readonly bool[] _bound;
+    private readonly bool[]? _bound;
+    private readonly ulong _requiredMask;
     private readonly bool[] _descriptorCacheValid;
     private readonly DescriptorBufferInfo[] _cachedBuffers;
     private readonly DescriptorImageInfo[] _cachedImages;
+    private ulong _boundMask;
     private bool _disposed;
 
     private VulkanGraphDescriptorState(
@@ -33,7 +35,12 @@ internal sealed unsafe class VulkanGraphDescriptorState
         _pool = pool;
         _descriptorSets = descriptorSets;
         _bindings = bindings;
-        _bound = new bool[bindings.Length];
+        _bound = bindings.Length > sizeof(ulong) * 8 ? new bool[bindings.Length] : null;
+        _requiredMask = bindings.Length == sizeof(ulong) * 8
+            ? ulong.MaxValue
+            : bindings.Length == 0
+                ? 0
+                : (1UL << bindings.Length) - 1;
         _descriptorCacheValid = new bool[bindings.Length];
         _cachedBuffers = new DescriptorBufferInfo[bindings.Length];
         _cachedImages = new DescriptorImageInfo[bindings.Length];
@@ -100,7 +107,14 @@ internal sealed unsafe class VulkanGraphDescriptorState
         }
     }
 
-    internal void BeginBindings() => Array.Clear(_bound);
+    internal void BeginBindings()
+    {
+        _boundMask = 0;
+        if (_bound is not null)
+        {
+            Array.Clear(_bound);
+        }
+    }
 
     internal void BindBuffer(
         VulkanRenderGraph graph,
@@ -160,12 +174,16 @@ internal sealed unsafe class VulkanGraphDescriptorState
         PipelineLayout layout,
         Pipeline pipeline)
     {
-        for (var index = 0; index < _bound.Length; index++)
+        if (_bound is not null || _boundMask != _requiredMask)
         {
-            if (!_bound.RefAt(index))
+            for (var index = 0; index < _bindings.Length; index++)
             {
-                throw new InvalidOperationException($"Shader binding set {_bindings.RefAt(index).Binding.Set}, binding {_bindings.RefAt(index).Binding.Binding} was not provided.");
+                if (!IsBound(index))
+                {
+                    throw new InvalidOperationException($"Shader binding set {_bindings.RefAt(index).Binding.Set}, binding {_bindings.RefAt(index).Binding.Binding} was not provided.");
+                }
             }
+
         }
 
         graph.CommandWriter.BindPipeline(bindPoint, pipeline);
@@ -173,6 +191,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
         {
             graph.CommandWriter.BindDescriptorSets(bindPoint, layout, _descriptorSets);
         }
+
     }
 
     internal void Dispose(VulkanRenderSession session)
@@ -201,7 +220,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
                 var cached = _cachedBuffers.RefAt(index);
                 if (cached.Buffer.Handle == bufferInfo->Buffer.Handle && cached.Offset == bufferInfo->Offset && cached.Range == bufferInfo->Range)
                 {
-                    _bound.RefAt(index) = true;
+                    MarkBound(index);
                     return;
                 }
             }
@@ -210,7 +229,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
                 var cached = _cachedImages.RefAt(index);
                 if (cached.Sampler.Handle == imageInfo->Sampler.Handle && cached.ImageView.Handle == imageInfo->ImageView.Handle && cached.ImageLayout == imageInfo->ImageLayout)
                 {
-                    _bound.RefAt(index) = true;
+                    MarkBound(index);
                     return;
                 }
             }
@@ -237,7 +256,22 @@ internal sealed unsafe class VulkanGraphDescriptorState
         }
 
         _descriptorCacheValid.RefAt(index) = true;
-        _bound.RefAt(index) = true;
+        MarkBound(index);
+    }
+
+    private bool IsBound(int index)
+        => _bound is null ? (_boundMask & (1UL << index)) != 0 : _bound.RefAt(index);
+
+    private void MarkBound(int index)
+    {
+        if (_bound is null)
+        {
+            _boundMask |= 1UL << index;
+        }
+        else
+        {
+            _bound.RefAt(index) = true;
+        }
     }
 
     private int FindBinding(ShaderBinding binding)

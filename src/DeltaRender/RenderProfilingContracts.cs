@@ -48,6 +48,26 @@ public enum RenderProfilePassKind : byte
     Transfer,
 }
 
+/// <summary>
+/// CPU timings for the command submission boundary of one frame. Values for
+/// command-buffer end, submit preparation, synchronization setup and queue
+/// calls are accumulated across all queue segments in the frame.
+/// </summary>
+public readonly record struct RenderSubmissionProfileTiming(
+    ProfileDuration CommandBufferEnd,
+    ProfileDuration SubmitPreparation,
+    ProfileDuration SynchronizationSetup,
+    ProfileDuration QueueSubmit,
+    ProfileDuration QueuePresent)
+{
+    /// <summary>
+    /// QueueSubmit and QueuePresent include the complete native call and its
+    /// return to managed code; native return is not a separate additive value.
+    /// QueuePresent is zero for headless sessions.
+    /// </summary>
+    public bool IncludesNativeCallReturn => true;
+}
+
 public readonly record struct RenderProfileTiming(
     ProfileDuration Build,
     ProfileDuration Acquire,
@@ -63,6 +83,9 @@ public readonly record struct RenderProfileTiming(
     /// This excludes upstream work that does not pass through a reporting adapter.
     /// </summary>
     public ProfileDuration LayoutAndShapingCpu { get; init; }
+
+    /// <summary>Detailed CPU timings for command submission and presentation.</summary>
+    public RenderSubmissionProfileTiming Submission { get; init; }
 }
 
 public readonly record struct RenderProfileCounters(

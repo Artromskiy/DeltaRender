@@ -867,7 +867,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             return;
         }
 
-        VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer(queue segment)");
+        EndGraphCommandBuffer("EndCommandBuffer(queue segment)");
         var signal = GetQueueTransitionSemaphore(_queueSignalCount++);
         SubmitActiveCommand(_pendingQueueWait, signal, default, "QueueSubmit(queue segment)");
         _pendingQueueWait = signal;
@@ -887,9 +887,20 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
         try
         {
-            VulkanCall.Ensure(Api.ResetFences(Device, 1, _frameFence), "ResetFence");
-            VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), "EndCommandBuffer");
-            var finalSignal = _windowed ? _renderComplete : default;
+            var profiler = _profiler;
+            long synchronizationStarted = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
+            VulkanSemaphore finalSignal = default;
+            try
+            {
+                VulkanCall.Ensure(Api.ResetFences(Device, 1, _frameFence), "ResetFence");
+                finalSignal = _windowed ? _renderComplete : default;
+            }
+            finally
+            {
+                profiler?.EndSynchronizationSetup(synchronizationStarted);
+            }
+
+            EndGraphCommandBuffer("EndCommandBuffer");
             SubmitActiveCommand(_pendingQueueWait, finalSignal, _frameFence, "QueueSubmit");
             _frameResources[CurrentFrameSlot].InFlight = true;
             if (_windowed)
@@ -899,7 +910,16 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 uint imageIndex = _activeImage;
                 var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, WaitSemaphoreCount = 1, PWaitSemaphores = &renderComplete, SwapchainCount = 1, PSwapchains = &swapchain, PImageIndices = &imageIndex };
                 var swapchainExtension = _renderer.GetKhrSwapchain();
-                var result = swapchainExtension.QueuePresent(_presentQueue, present);
+                long queuePresentStarted = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
+                Result result;
+                try
+                {
+                    result = swapchainExtension.QueuePresent(_presentQueue, present);
+                }
+                finally
+                {
+                    profiler?.EndQueuePresent(queuePresentStarted);
+                }
                 if (result == Result.ErrorDeviceLost)
                 {
                     throw new VulkanOperationException(result, "QueuePresent");
@@ -966,6 +986,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private unsafe void SubmitActiveCommand(VulkanSemaphore wait, VulkanSemaphore signal, Fence fence, string operation)
     {
+        var profiler = _profiler;
+        long preparationStarted = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         var waitStage = PipelineStageFlags.AllCommandsBit;
         var commandBuffer = _commandBuffer;
         var waitSemaphore = wait;
@@ -981,7 +1003,30 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             SignalSemaphoreCount = signal.Handle == default ? 0u : 1u,
             PSignalSemaphores = signal.Handle == default ? null : &signalSemaphore,
         };
-        VulkanCall.Ensure(Api.QueueSubmit(QueueFor(_activeQueueRole), 1, &submit, fence), operation);
+        profiler?.EndSubmitPreparation(preparationStarted);
+        long queueSubmitStarted = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
+        try
+        {
+            VulkanCall.Ensure(Api.QueueSubmit(QueueFor(_activeQueueRole), 1, &submit, fence), operation);
+        }
+        finally
+        {
+            profiler?.EndQueueSubmit(queueSubmitStarted);
+        }
+    }
+
+    private void EndGraphCommandBuffer(string operation)
+    {
+        var profiler = _profiler;
+        long started = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
+        try
+        {
+            VulkanCall.Ensure(Api.EndCommandBuffer(_commandBuffer), operation);
+        }
+        finally
+        {
+            profiler?.EndCommandBuffer(started);
+        }
     }
 
     private Queue QueueFor(VulkanQueueRole role) => role switch

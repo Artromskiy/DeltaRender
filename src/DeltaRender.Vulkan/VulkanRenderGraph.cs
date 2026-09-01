@@ -10,7 +10,8 @@ namespace Delta.Render.Vulkan;
 
 internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {
-    private const bool EnableTopologyCache = false;
+    private static readonly bool EnableTopologyCache =
+        string.Equals(Environment.GetEnvironmentVariable("DELTA_RENDER_TOPOLOGY_CACHE"), "1", StringComparison.Ordinal);
     private readonly VulkanRenderSession _session;
     private readonly List<GraphResource> _resources = [];
     private readonly List<GraphResource> _resourcePool = [];
@@ -132,6 +133,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
         catch (VulkanOperationException exception)
         {
+            if (string.Equals(Environment.GetEnvironmentVariable("DELTA_RENDER_DEBUG"), "1", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(exception);
+            }
+
             profiler?.Complete(ClassifyFailure(exception), _resources.Count);
             return Failed(exception);
         }
@@ -262,6 +268,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
                     {
                         VulkanGraphBarrierPlanner.UpdateStates(pass, states);
                     }
+
                 }
                 finally
                 {
@@ -309,6 +316,11 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
         catch (VulkanOperationException exception)
         {
+            if (string.Equals(Environment.GetEnvironmentVariable("DELTA_RENDER_DEBUG"), "1", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(exception);
+            }
+
             _session.AbortGraphFrame();
             profiler?.EndRecord(recordStart);
             profiler?.Complete(ClassifyFailure(exception), _resources.Count);
@@ -418,14 +430,6 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         return true;
     }
 
-    private void CommitTopology(int tokenCount, int orderCount)
-    {
-        (_topologyTokens, _candidateTopologyTokens) = (_candidateTopologyTokens, _topologyTokens);
-        _topologyTokenCount = tokenCount;
-        _compiledOrderCount = orderCount;
-        _hasCompiledTopology = true;
-    }
-
     private int CountUses()
     {
         var count = 0;
@@ -435,6 +439,14 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         return count;
+    }
+
+    private void CommitTopology(int tokenCount, int orderCount)
+    {
+        (_topologyTokens, _candidateTopologyTokens) = (_candidateTopologyTokens, _topologyTokens);
+        _topologyTokenCount = tokenCount;
+        _compiledOrderCount = orderCount;
+        _hasCompiledTopology = true;
     }
 
     private void EnsureTopologyCapacity(int required)

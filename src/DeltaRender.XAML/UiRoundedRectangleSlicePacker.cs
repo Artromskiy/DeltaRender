@@ -1,4 +1,5 @@
 using Delta.Maths;
+using Delta.Render.RenderGraph;
 using Delta.Shader.UI;
 using Delta.XAML.Contract;
 
@@ -38,6 +39,59 @@ internal static class UiRoundedRectangleSlicePacker
         if (written != requiredBytes)
         {
             throw new InvalidOperationException($"The generated rounded rectangle slice packer wrote {written} bytes; expected {requiredBytes}.");
+        }
+
+        return written;
+    }
+
+    internal static int PackClipAware(
+        in UiVisualDraw visual,
+        uint instanceStride,
+        in PixelRect clip,
+        Span<byte> destination)
+    {
+        var stride = checked((int)instanceStride);
+        var rectangle = new RoundedRectangleParameters(
+            visual.Bounds,
+            visual.Paint.FillColor,
+            visual.Paint.StrokeColor,
+            visual.Paint.CornerRadii,
+            visual.Paint.StrokeWidth);
+        Span<RoundedRectangleSliceParameters> slices = stackalloc RoundedRectangleSliceParameters[9];
+        var sliceCount = RoundedRectangleSliceBuilder.Build(in rectangle, slices);
+        var reducedSliceCount = TryBuildSevenSlices(visual.Bounds, visual.Paint.CornerRadii, slices, sliceCount);
+        if (reducedSliceCount != 0)
+        {
+            sliceCount = reducedSliceCount;
+        }
+
+        var requiredBytes = checked(sliceCount * stride);
+        if (destination.Length < requiredBytes)
+        {
+            throw new ArgumentException("The destination is too small for the generated clip-aware rounded rectangle slices.", nameof(destination));
+        }
+
+        Span<ClipAwareRoundedRectangleSliceParameters> clipAwareSlices = stackalloc ClipAwareRoundedRectangleSliceParameters[9];
+        var clipRect = new float4(clip.X, clip.Y, clip.Width, clip.Height);
+        for (var index = 0; index < sliceCount; index++)
+        {
+            var slice = slices[index];
+            clipAwareSlices[index] = new ClipAwareRoundedRectangleSliceParameters(
+                slice.FillColor,
+                slice.BorderColor,
+                slice.CornerRadii,
+                slice.SegmentRect,
+                slice.CornerData,
+                slice.BorderWidth,
+                clipRect);
+        }
+
+        var written = ClipAwareRoundedRectangleSliceGraphicsShaderProgram.PackClipAwareRoundedRectangleSliceVertexInstancesElements(
+            clipAwareSlices[..sliceCount],
+            destination[..requiredBytes]);
+        if (written != requiredBytes)
+        {
+            throw new InvalidOperationException($"The generated clip-aware rounded rectangle slice packer wrote {written} bytes; expected {requiredBytes}.");
         }
 
         return written;

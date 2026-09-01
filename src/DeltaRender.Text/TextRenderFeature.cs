@@ -260,6 +260,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     }
 
     internal bool PrepareComposite(IRenderGraphBuilder graph)
+        => PrepareComposite(graph, registerUploadPass: true);
+
+    internal bool PrepareComposite(IRenderGraphBuilder graph, bool registerUploadPass)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(graph);
@@ -295,21 +298,29 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             }
         }
 
-        if (_instancePayloadDirty || _uploadPageCount > 0)
+        if (registerUploadPass && (_instancePayloadDirty || _uploadPageCount > 0))
         {
             var upload = graph.AddTransferPass("DeltaRender.Text.Upload", _uploadPass);
-            if (_instancePayloadDirty)
-            {
-                graph.UseBuffer(upload, instances, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
-            }
-
-            for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
-            {
-                graph.UseTexture(upload, _pageGraphHandles.RefAt(_uploadPageIndices.RefAt(uploadIndex)), RenderResourceAccess.Write, RenderPipelineStages.Transfer);
-            }
+            ConfigureCompositeUploadPass(graph, upload);
         }
 
         return true;
+    }
+
+    internal bool CompositeUploadPending => _instancePayloadDirty || _uploadPageCount > 0;
+
+    internal void ConfigureCompositeUploadPass(IRenderGraphBuilder graph, RenderGraphPassHandle pass)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        if (_instancePayloadDirty)
+        {
+            graph.UseBuffer(pass, _instanceGraphHandle, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+        }
+
+        for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
+        {
+            graph.UseTexture(pass, _pageGraphHandles.RefAt(_uploadPageIndices.RefAt(uploadIndex)), RenderResourceAccess.Write, RenderPipelineStages.Transfer);
+        }
     }
 
     internal void ConfigureCompositePass(IRenderGraphBuilder graph, RenderGraphPassHandle pass)
@@ -396,6 +407,48 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
     }
 
+    internal void RecordCompositeUpload(ITransferCommandContext commands)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        try
+        {
+            for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
+            {
+                var pageIndex = _uploadPageIndices.RefAt(uploadIndex);
+                commands.UploadTexture(
+                    _pageGraphHandles.RefAt(pageIndex),
+                    new PixelRect(0, 0, checked((int)_atlas.Width), checked((int)_atlas.Height)),
+                    _atlas.GetPixels(pageIndex),
+                    checked(_atlas.Width * (uint)_atlas.BytesPerPixel));
+            }
+
+            if (_instancePayloadDirty)
+            {
+                var byteCount = checked((int)((ulong)_instanceCount * _instanceStride));
+                var bytes = _instanceBytes.AsSpan(0, byteCount);
+                commands.UploadBuffer(_instanceGraphHandle, bytes);
+                bytes.CopyTo(_uploadedInstanceBytes);
+                _uploadedInstanceByteCount = byteCount;
+                _instancePayloadDirty = false;
+                _instanceBufferNeedsUpload = false;
+            }
+        }
+        catch
+        {
+            for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
+            {
+                _atlas.MarkDirty(_uploadPageIndices.RefAt(uploadIndex));
+            }
+
+            throw;
+        }
+
+        for (var uploadIndex = 0; uploadIndex < _uploadPageCount; uploadIndex++)
+        {
+            _atlas.MarkUploaded(_uploadPageIndices.RefAt(uploadIndex));
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -436,14 +489,16 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             var penY = 0f;
             var runInstanceStart = _instanceCount;
             _localRunBatchCount = 0;
-            if (TryReuseRun(pending, out var cachedRun))
+            var runReused = TryReuseRun(pending, out var cachedRun);
+            if (runReused)
             {
-                EnsureInstanceCapacity(_instanceCount + cachedRun.InstanceCount);
+                var reused = cachedRun!;
+                EnsureInstanceCapacity(_instanceCount + reused.InstanceCount);
                 var destinationOffset = checked((int)((ulong)runInstanceStart * _instanceStride));
-                cachedRun.PackedBytes.AsSpan(0, cachedRun.PackedByteCount)
-                    .CopyTo(_instanceBytes.AsSpan(destinationOffset, cachedRun.PackedByteCount));
-                var cachedFirstBatch = AppendCachedBatches(cachedRun, runInstanceStart, pending.MergeWithPrevious, useStamp);
-                _instanceCount += cachedRun.InstanceCount;
+                reused.PackedBytes.AsSpan(0, reused.PackedByteCount)
+                    .CopyTo(_instanceBytes.AsSpan(destinationOffset, reused.PackedByteCount));
+                var cachedFirstBatch = AppendCachedBatches(reused, runInstanceStart, pending.MergeWithPrevious, useStamp);
+                _instanceCount += reused.InstanceCount;
                 _runBatchStarts.RefAt(runIndex) = cachedFirstBatch < 0 ? 0 : cachedFirstBatch;
                 _runBatchCounts.RefAt(runIndex) = cachedFirstBatch < 0 ? 0 : _batchCount - cachedFirstBatch;
                 continue;
@@ -514,11 +569,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         var byteCount = checked((int)((ulong)_instanceCount * _instanceStride));
-        var bytes = _instanceBytes.AsSpan(0, byteCount);
-
         _instancePayloadDirty = _instanceBufferNeedsUpload ||
-            _uploadedInstanceByteCount != byteCount ||
-            !bytes.SequenceEqual(_uploadedInstanceBytes.AsSpan(0, byteCount));
+            byteCount != _uploadedInstanceByteCount ||
+            !_instanceBytes.AsSpan(0, byteCount).SequenceEqual(_uploadedInstanceBytes.AsSpan(0, byteCount));
     }
 
     private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge, int count = 1)
@@ -749,46 +802,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private sealed class TextUploadPass(TextRenderFeature owner) : ITransferPass
     {
         public void Record(ITransferCommandContext commands)
-        {
-            try
-            {
-                for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
-                {
-                    var pageIndex = owner._uploadPageIndices.RefAt(uploadIndex);
-                    commands.UploadTexture(
-                        owner._pageGraphHandles.RefAt(pageIndex),
-                        new PixelRect(0, 0, checked((int)owner._atlas.Width), checked((int)owner._atlas.Height)),
-                        owner._atlas.GetPixels(pageIndex),
-                        checked(owner._atlas.Width * (uint)owner._atlas.BytesPerPixel));
-                }
-
-                if (owner._instancePayloadDirty)
-                {
-                    var byteCount = checked((int)((ulong)owner._instanceCount * owner._instanceStride));
-                    var bytes = owner._instanceBytes.AsSpan(0, byteCount);
-                    commands.UploadBuffer(owner._instanceGraphHandle, bytes);
-                    bytes.CopyTo(owner._uploadedInstanceBytes);
-                    owner._uploadedInstanceByteCount = byteCount;
-                    owner._instancePayloadDirty = false;
-                    owner._instanceBufferNeedsUpload = false;
-                }
-            }
-            catch
-            {
-                for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
-                {
-                    owner._atlas.MarkDirty(owner._uploadPageIndices.RefAt(uploadIndex));
-                }
-
-                throw;
-            }
-
-            for (var uploadIndex = 0; uploadIndex < owner._uploadPageCount; uploadIndex++)
-            {
-                owner._atlas.MarkUploaded(owner._uploadPageIndices.RefAt(uploadIndex));
-            }
-
-        }
+            => owner.RecordCompositeUpload(commands);
     }
 
     private sealed class TextDrawPass(TextRenderFeature owner) : IRasterPass

@@ -103,6 +103,41 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(2.5f, ReadFloat(packed, 64));
     }
 
+    [Fact]
+    public void GeneratedClipAwareSolidArtifactPacksEffectiveClip()
+    {
+        var program = ClipAwareSolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = new UiVisualDraw(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 20, 30, 40),
+            new float4(0.1f, 0.2f, 0.3f, 0.4f),
+            UiClipId.None,
+            UiResourceId.Empty);
+        var clip = new PixelRect(12, 14, 50, 60);
+
+        Assert.True(UiVisualShaderContract.TryDescribeInstance(
+            program,
+            visual.Kind,
+            out var shaderKind,
+            out var instanceBinding,
+            out var instanceStride,
+            out var pushConstantSize,
+            out _,
+            out var diagnostic), diagnostic);
+        Assert.Equal(UiRectangleShaderKind.ClipAwareSolid, shaderKind);
+        Assert.Equal(new ShaderBinding(0, 0), instanceBinding);
+        Assert.Equal(48u, instanceStride);
+        Assert.Equal(8u, pushConstantSize);
+
+        Span<byte> packed = stackalloc byte[48];
+        Assert.Equal(48, UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, instanceStride, packed));
+        Assert.Equal(12f, ReadFloat(packed, 32));
+        Assert.Equal(14f, ReadFloat(packed, 36));
+        Assert.Equal(50f, ReadFloat(packed, 40));
+        Assert.Equal(60f, ReadFloat(packed, 44));
+    }
+
     private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)
         => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]));
 
