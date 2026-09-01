@@ -1,0 +1,22 @@
+{
+    "dotnet.defaultSolution": "DeltaRender.slnx",
+    "editor.detectIndentation": false,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4,
+    "editor.trimAutoWhitespace": true,
+    "files.encoding": "utf8",
+    "files.eol": "\n",
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    "omnisharp.enableEditorConfigSupport": true,
+    "dotnet.formatting.organizeImportsOnFormat": true,
+    "[csharp]": {
+        "editor.defaultFormatter": "ms-dotnettools.csharp",
+        "editor.detectIndentation": false,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": true,
+        "editor.formatOnType": true
+    }
+}

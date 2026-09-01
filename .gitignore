@@ -16,7 +16,11 @@ coverage.*
 # IDE and user state
 .vs/
 .idea/
-.vscode/
+# Keep only the shared root settings; ignore nested/local VS Code state.
+**/.vscode/
+!/.vscode/
+!/.vscode/settings.json
+!/.vscode/extensions.json
 *.suo
 *.user
 *.userosscache
