@@ -12,7 +12,7 @@ public sealed class UiDisplayListBorrowLifetimeTests
     {
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(16, 16));
 
-        Assert.True(feature.Consume(new UiDisplayList([], [], [], [])), string.Join(" | ", feature.Diagnostics));
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create([], [], [], [])), string.Join(" | ", feature.Diagnostics));
         Assert.Empty(feature.BorrowOrder().ToArray());
 
         feature.Dispose();

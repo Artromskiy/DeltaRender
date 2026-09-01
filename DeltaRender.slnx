@@ -4,7 +4,6 @@
   <Project Path="samples/DeltaRender.HeadlessShaderPlayground/DeltaRender.HeadlessShaderPlayground.csproj" />
   <Project Path="samples/DeltaRender.HeadlessSnake/DeltaRender.HeadlessSnake.csproj" />
   <Project Path="samples/DeltaRender.MeshSample/DeltaRender.MeshSample.csproj" />
-  <Project Path="samples/DeltaRender.ComputerPbr/DeltaRender.ComputerPbr.csproj" />
   <Project Path="samples/DeltaRender.UiVisualCompare/DeltaRender.UiVisualCompare.csproj" />
   <Project Path="src/DeltaRender/DeltaRender.csproj" />
   <Project Path="src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />

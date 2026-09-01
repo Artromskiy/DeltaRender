@@ -33,6 +33,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiClipRegion[] _clips = [];
     private UiTextDraw[] _texts = [];
     private UiDrawRef[] _order = [];
+    private UiElementIdentity[] _identities = [];
     private UiVisualSegmentPass?[] _visualSegmentPasses = [];
     private int _visualSegmentPassCount;
     private UiTextPass?[] _textPasses = [];
@@ -218,6 +219,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _clips, displayList.Clips.Length);
         EnsureCapacity(ref _texts, displayList.Text.Length);
         EnsureCapacity(ref _order, displayList.Order.Length);
+        EnsureCapacity(ref _identities, displayList.Identities.Length);
         EnsureCapacity(ref _commandClips, displayList.Order.Length);
         var validationEpoch = NextValidationEpoch();
         EnsureCapacity(ref _visualSeenEpochs, displayList.Visuals.Length);
@@ -240,6 +242,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         displayList.Clips.CopyTo(_clips);
         displayList.Text.CopyTo(_texts);
         displayList.Order.CopyTo(_order);
+        displayList.Identities.CopyTo(_identities);
         _visualCount = displayList.Visuals.Length;
         _clipCount = displayList.Clips.Length;
         _textCount = displayList.Text.Length;
@@ -379,6 +382,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                     var text = _texts.RefAt(draw.Index);
                     var color = text.Paint.FillColor;
+                    var identity = _identities.RefAt(index);
                     _textRunIndices.RefAt(index) = _textFeature.QueueCompositeRun(
                         text.Text,
                         text.BaselineOrigin.x,
@@ -386,9 +390,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         new Vector4(color.x, color.y, color.z, color.w),
                         _commandClips.RefAt(index),
                         mergeWithPrevious: previousWasText,
-                        producerRunId: text.RunId.Value,
-                        producerRunGeneration: text.RunId.Generation,
-                        producerRunVersion: text.Version);
+                        producerRunId: identity.Value,
+                        producerRunGeneration: identity.Generation,
+                        producerRunVersion: identity.Version);
                     textRunCount++;
                     previousWasText = true;
                 }

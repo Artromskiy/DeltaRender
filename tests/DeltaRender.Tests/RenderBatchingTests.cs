@@ -343,8 +343,6 @@ public sealed class RenderBatchingTests
         var text = new[]
         {
             UiTextDraw.WithPaint(
-                new UiTextRunId(1, 1),
-                1,
                 CreateTestShapedText(),
                 new float2(10, 20),
                 UiTextPaint.Solid(new float4(1, 1, 1, 1)),
@@ -356,7 +354,7 @@ public sealed class RenderBatchingTests
             new UiDrawRef(UiDrawKind.Text, 0),
             new UiDrawRef(UiDrawKind.Visual, 1),
         };
-        var displayList = new UiDisplayList(visuals, clips, text, order);
+        var displayList = UiDisplayListTestFactory.Create(visuals, clips, text, order);
 
         using var session = new FakeSession();
         using var batcher = new RenderBatcher(session, new PixelExtent(64, 64), RenderBatchOrderMode.Ordered);
@@ -512,8 +510,6 @@ public sealed class RenderBatchingTests
             }
 
             text[textIndex] = UiTextDraw.WithPaint(
-                new UiTextRunId((uint)index + 1, 1),
-                1,
                 CreateTestShapedText(),
                 new float2(index % 100 * 8, index / 100 * 6),
                 UiTextPaint.Solid(new float4(1, 1, 1, 1)),
@@ -521,7 +517,7 @@ public sealed class RenderBatchingTests
             order[index] = new UiDrawRef(UiDrawKind.Text, textIndex++);
         }
 
-        return new UiDisplayList(visuals, clips, text, order);
+        return UiDisplayListTestFactory.Create(visuals, clips, text, order);
     }
 
     private sealed class FakeSession : IRenderFrameSession, IDisposable

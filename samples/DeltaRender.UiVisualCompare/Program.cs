@@ -76,7 +76,8 @@ internal static class Program
             [visual],
             [],
             [],
-            [new UiDrawRef(UiDrawKind.Visual, 0)]);
+            [new UiDrawRef(UiDrawKind.Visual, 0)],
+            [new UiElementIdentity(1, 1, 1)]);
         if (!feature.Consume(displayList))
         {
             throw new InvalidOperationException($"{name} was rejected: {string.Join(" | ", feature.Diagnostics)}");

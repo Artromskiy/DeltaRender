@@ -44,7 +44,7 @@ public sealed class UiDisplayListGraphFeatureTests
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
 
         Assert.True(
-            feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
+            feature.Consume(UiDisplayListTestFactory.Create(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
             string.Join(" | ", feature.Diagnostics));
         Assert.Equal(order, feature.BorrowOrder().ToArray());
     }
@@ -54,7 +54,7 @@ public sealed class UiDisplayListGraphFeatureTests
     {
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
 
-        Assert.False(feature.Consume(new UiDisplayList(
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { Solid(1), Solid(2) },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -77,7 +77,7 @@ public sealed class UiDisplayListGraphFeatureTests
         };
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
 
-        Assert.True(feature.Consume(new UiDisplayList(
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { Solid(1), Solid(2) },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -99,8 +99,6 @@ public sealed class UiDisplayListGraphFeatureTests
         var texts = new[]
         {
             UiTextDraw.WithPaint(
-                new UiTextRunId(1, 1),
-                1,
                 shaped,
                 new float2(4, 5),
                 UiTextPaint.Solid(new float4(0.2f, 0.3f, 0.4f, 1)),
@@ -113,7 +111,7 @@ public sealed class UiDisplayListGraphFeatureTests
         };
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
 
-        Assert.True(feature.Consume(new UiDisplayList(visuals, clips, texts, order)), string.Join(" | ", feature.Diagnostics));
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(visuals, clips, texts, order)), string.Join(" | ", feature.Diagnostics));
         var expectedVisual = visuals[0];
         var expectedClip = clips[0];
         var expectedText = texts[0];
@@ -121,8 +119,6 @@ public sealed class UiDisplayListGraphFeatureTests
         visuals[0] = Solid(9);
         clips[0] = new UiClipRegion(new float4(0, 0, 1, 1), UiClipId.None);
         texts[0] = UiTextDraw.WithPaint(
-            new UiTextRunId(1, 1),
-            2,
             shaped,
             default,
             UiTextPaint.Solid(default),
@@ -152,7 +148,7 @@ public sealed class UiDisplayListGraphFeatureTests
         };
 
         Assert.True(
-            feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
+            feature.Consume(UiDisplayListTestFactory.Create(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
             string.Join(" | ", feature.Diagnostics));
 
         var graph = new RecordingGraphBuilder();
@@ -176,7 +172,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
-        var displayList = new UiDisplayList(
+        var displayList = UiDisplayListTestFactory.Create(
             new[] { Solid(1) },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -211,7 +207,7 @@ public sealed class UiDisplayListGraphFeatureTests
             new UiDrawRef(UiDrawKind.Visual, 1),
         };
 
-        Assert.True(feature.Consume(new UiDisplayList(
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { firstVisual, firstVisual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -220,7 +216,7 @@ public sealed class UiDisplayListGraphFeatureTests
         feature.AddPasses(firstGraph, 1);
         firstGraph.RecordTransfer();
 
-        Assert.True(feature.Consume(new UiDisplayList(
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { firstVisual, changedVisual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -254,7 +250,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiResourceId.Empty);
 
         Assert.True(
-            feature.Consume(new UiDisplayList(
+            feature.Consume(UiDisplayListTestFactory.Create(
                 new[] { visual },
                 Array.Empty<UiClipRegion>(),
                 Array.Empty<UiTextDraw>(),
@@ -292,7 +288,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
 
         Assert.True(
-            feature.Consume(new UiDisplayList(
+            feature.Consume(UiDisplayListTestFactory.Create(
                 new[] { visual },
                 Array.Empty<UiClipRegion>(),
                 Array.Empty<UiTextDraw>(),
@@ -329,7 +325,7 @@ public sealed class UiDisplayListGraphFeatureTests
             new UiDrawRef(UiDrawKind.Visual, 1),
         };
 
-        Assert.True(feature.Consume(new UiDisplayList(visuals, clips, Array.Empty<UiTextDraw>(), order)), string.Join(" | ", feature.Diagnostics));
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(visuals, clips, Array.Empty<UiTextDraw>(), order)), string.Join(" | ", feature.Diagnostics));
         var graph = new RecordingGraphBuilder();
         feature.AddPasses(graph, 1);
         var commands = new RecordingRasterCommands();
@@ -366,7 +362,7 @@ public sealed class UiDisplayListGraphFeatureTests
             new UiDrawRef(UiDrawKind.Visual, 1),
         };
 
-        Assert.True(feature.Consume(new UiDisplayList(visuals, clips, Array.Empty<UiTextDraw>(), order)), string.Join(" | ", feature.Diagnostics));
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(visuals, clips, Array.Empty<UiTextDraw>(), order)), string.Join(" | ", feature.Diagnostics));
         var graph = new RecordingGraphBuilder();
         feature.AddPasses(graph, 1);
         var commands = new RecordingRasterCommands();
@@ -399,14 +395,12 @@ public sealed class UiDisplayListGraphFeatureTests
             textFeature: textFeature);
 
         var text = UiTextDraw.WithPaint(
-            new UiTextRunId(1, 1),
-            1,
-            shaped,
+                shaped,
             new float2(10, 20),
             UiTextPaint.Solid(new float4(1, 1, 1, 1)),
             UiClipId.None);
         Assert.True(
-            feature.Consume(new UiDisplayList(
+            feature.Consume(UiDisplayListTestFactory.Create(
                 Array.Empty<UiVisualDraw>(),
                 Array.Empty<UiClipRegion>(),
                 new[] { text },
@@ -440,13 +434,11 @@ public sealed class UiDisplayListGraphFeatureTests
             new PixelExtent(100, 80),
             textFeature: textFeature);
         var text = UiTextDraw.WithPaint(
-            new UiTextRunId(1, 1),
-            1,
             shaped,
             new float2(10, 20),
             UiTextPaint.Solid(new float4(1, 1, 1, 1)),
             UiClipId.None);
-        Assert.True(feature.Consume(new UiDisplayList(
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { Solid(1) },
             Array.Empty<UiClipRegion>(),
             new[] { text },
@@ -482,14 +474,12 @@ public sealed class UiDisplayListGraphFeatureTests
             SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
             new PixelExtent(100, 80),
             textFeature: textFeature);
-        var displayList = new UiDisplayList(
+        var displayList = UiDisplayListTestFactory.Create(
             Array.Empty<UiVisualDraw>(),
             Array.Empty<UiClipRegion>(),
             new[]
             {
                 UiTextDraw.WithPaint(
-                    new UiTextRunId(1, 1),
-                    1,
                     shaped,
                     new float2(10, 20),
                     UiTextPaint.Solid(new float4(1, 1, 1, 1)),
@@ -528,7 +518,7 @@ public sealed class UiDisplayListGraphFeatureTests
         }
 
         Assert.True(
-            feature.Consume(new UiDisplayList(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
+            feature.Consume(UiDisplayListTestFactory.Create(visuals, Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(), order)),
             string.Join(" | ", feature.Diagnostics));
 
         var graph = new RecordingGraphBuilder();
@@ -551,7 +541,7 @@ public sealed class UiDisplayListGraphFeatureTests
     {
         var firstVisual = Solid(1);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
-        var firstList = new UiDisplayList(
+        var firstList = UiDisplayListTestFactory.Create(
             new[] { firstVisual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -560,7 +550,7 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.True(feature.Consume(firstList), string.Join(" | ", feature.Diagnostics));
         ref var retained = ref MemoryMarshal.GetReference(feature.BorrowVisuals());
         var updatedVisual = Solid(2);
-        var secondList = new UiDisplayList(
+        var secondList = UiDisplayListTestFactory.Create(
             new[] { updatedVisual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -605,7 +595,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var clips = Array.Empty<UiClipRegion>();
         var texts = Array.Empty<UiTextDraw>();
         var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
-        var displayList = new UiDisplayList(visuals, clips, texts, order);
+        var displayList = UiDisplayListTestFactory.Create(visuals, clips, texts, order);
 
         for (var index = 0; index < 4; index++)
         {
@@ -634,7 +624,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(100, 80));
 
-        Assert.True(feature.Consume(new UiDisplayList(visuals, clips, Array.Empty<UiTextDraw>(), order)));
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(visuals, clips, Array.Empty<UiTextDraw>(), order)));
         Assert.Equal(new PixelRect(20, 20, 70, 50), feature.GetEffectiveClip(0));
     }
 
@@ -650,7 +640,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
 
-        Assert.False(feature.Consume(new UiDisplayList(
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { visual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -674,7 +664,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
 
-        Assert.True(feature.Consume(new UiDisplayList(
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { visual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -697,7 +687,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
 
-        Assert.False(feature.Consume(new UiDisplayList(
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { visual },
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
@@ -715,7 +705,7 @@ public sealed class UiDisplayListGraphFeatureTests
         };
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
 
-        Assert.False(feature.Consume(new UiDisplayList(
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
             new[] { Solid(1, new UiClipId(0)) },
             clips,
             Array.Empty<UiTextDraw>(),
