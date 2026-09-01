@@ -46,20 +46,12 @@ dotnet run --project samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj \
 On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
-DeltaShader is the sole shader source and compilation owner. Checks must emit
-fresh outputs into a temporary directory with an explicit tool invocation:
-
-```bash
-shader_out="$(mktemp -d)"
-trap 'rm -rf "$shader_out"' EXIT
-dotnet run --project ../DeltaShader/src/DeltaShader.Tool/DeltaShader.Tool.csproj \
-  -c Release -- build ../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj \
-  --profile vulkan1.2 --spirv 1.5 --glsl 460 \
-  --optimize performance --out "$shader_out"
-```
-
-Do not consume a repository-level catalog or copy generated outputs into
-`DeltaRender/artifacts`. Tool-specific shader validation is documented in
+DeltaShader is the sole shader source and compilation owner. Render projects
+consume the generated program/factory API, final `ShaderArtifact`/`ShaderAbi`
+and typed packers from the producer's private `DeltaShader.Tool` NuGet
+reference. Render does not invoke the shader CLI, parse sidecars or calculate
+ABI layout. Do not copy generated outputs into `DeltaRender/artifacts`.
+Tool-specific shader validation is documented in
 [tools/DeltaRender.UIShaders/README.md](tools/DeltaRender.UIShaders/README.md).
 For the CPU/GPU Maths smoke, generate a fresh temporary catalog with:
 

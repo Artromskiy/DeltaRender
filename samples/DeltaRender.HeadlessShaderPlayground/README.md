@@ -31,3 +31,6 @@ pair and draw count. The producer source is declared with
 `DeltaShader.Tool` and publishes to `tools/DeltaRender.SquareShaders/bin/<Configuration>/net10.0/DeltaShader`.
 The runner only consumes those final artifacts; runtime compilation is
 intentionally not part of the renderer or this playground.
+When the producer is referenced through the `DeltaShader.Tool` package, use its
+generated program/factory API for `ShaderArtifact`, `ShaderAbi` and typed
+packers. Do not reconstruct the ABI from `.shader.json` sidecars.
