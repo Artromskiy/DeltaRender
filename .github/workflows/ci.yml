@@ -80,12 +80,6 @@ jobs:
       - name: Run tests
         working-directory: DeltaRender
         run: dotnet test tests/DeltaRender.Tests/DeltaRender.Tests.csproj -c Release --no-build --no-restore
-      - name: Check generated smoke shader artifacts
-        working-directory: DeltaRender
-        run: ./tools/prepare-smoke-shaders.sh --check
-      - name: Check shader publish rollback
-        working-directory: DeltaRender
-        run: ./tools/test-prepare-smoke-shaders-rollback.sh
       - name: Benchmark discovery smoke
         shell: bash
         working-directory: DeltaRender

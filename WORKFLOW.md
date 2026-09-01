@@ -46,28 +46,30 @@ dotnet run --project samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj \
 On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
-DeltaShader is the sole shader source and compilation owner. The canonical
-publisher keeps all compiled shader outputs in one flat directory:
+DeltaShader is the sole shader source and compilation owner. Checks must emit
+fresh outputs into a temporary directory with an explicit tool invocation:
 
 ```bash
-(cd ../DeltaShader && ./eng/prepare-compiled-shaders.sh)
+shader_out="$(mktemp -d)"
+trap 'rm -rf "$shader_out"' EXIT
+dotnet run --project ../DeltaShader/src/DeltaShader.Tool/DeltaShader.Tool.csproj \
+  -c Release -- build ../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj \
+  --profile vulkan1.2 --spirv 1.5 --glsl 460 \
+  --optimize performance --out "$shader_out"
 ```
 
-Consume outputs from `../DeltaShader/src/DeltaShader/CompiledShaders`; do not
-create a Render-local shader catalog or copy generated outputs into
+Do not consume a repository-level catalog or copy generated outputs into
 `DeltaRender/artifacts`. Tool-specific shader validation is documented in
 [tools/DeltaRender.UIShaders/README.md](tools/DeltaRender.UIShaders/README.md).
-For the CPU/GPU Maths smoke, refresh the same flat catalog with:
+For the CPU/GPU Maths smoke, generate a fresh temporary catalog with:
 
 ```bash
-(cd ../DeltaShader && ./eng/prepare-maths-conformance-artifacts.sh)
+math_out="$(mktemp -d)"
+trap 'rm -rf "$math_out"' EXIT
+(cd ../DeltaShader && ./eng/prepare-maths-conformance-artifacts.sh "$math_out")
 ```
 Run `./eng/check-shader-output-ownership.sh` to reject Render-local generated
 shader binaries and sidecars.
-The normal CI gate runs `./tools/prepare-smoke-shaders.sh --check` after the
-shader validation tools are installed; it generates into a temporary directory
-and reports every drifted checked-in artifact without mutating the tree. The
-bounded rollback check is `./tools/test-prepare-smoke-shaders-rollback.sh`.
 Graph contract tests must cover session/resource ownership, graph-local handle
 invalidation, deterministic pass ordering, read/write hazards, readback
 lifetime and diagnostics without loading Vulkan. Vulkan tests then cover the

@@ -25,14 +25,5 @@
       <Link>MoltenVK_icd.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <None Include="fixtures\compute_double.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\fullscreen-rounded-rectangle.vert.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\fullscreen-rounded-rectangle.frag.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\fullscreen-rounded-rectangle.vert.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\fullscreen-rounded-rectangle.frag.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\ui-panel.vert.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\ui-panel.frag.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\ui-panel.vert.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="shaders\ui-panel.frag.shader.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -7,14 +7,11 @@ covering a centered region of the offscreen target. The generated shader
 manifest remains the ABI authority; this project only adapts its fixture sidecars
 to the canonical Delta.Shader contract.
 
-Generate the square pair from the C# shader producer:
+Build the headless project to build the C# shader producer and publish the pair
+automatically:
 
 ```bash
-dotnet build tools/DeltaRender.SquareShaders/DeltaRender.SquareShaders.csproj -c Release
-dotnet run --project /Users/rum/GitProjects/TheFurnace/DeltaShader/src/DeltaShader.Tool/DeltaShader.Tool.csproj \
-  -c Release --no-build --no-restore -- build tools/DeltaRender.SquareShaders/DeltaRender.SquareShaders.csproj \
-  --backend spirv --profile vulkan1.2 --spirv 1.5 --glsl 460 \
-  --out ../DeltaShader/src/DeltaShader/CompiledShaders
+dotnet build samples/DeltaRender.HeadlessShaderPlayground/DeltaRender.HeadlessShaderPlayground.csproj -c Release
 ```
 
 Run from the DeltaRender directory:
@@ -29,6 +26,8 @@ The final offscreen frame is written to
 `--output /path/to/frame.ppm`.
 
 Use `--vertex`, `--fragment` and `--vertices` to select another generated SPIR-V
-pair and draw count. The producer must generate and validate the files before
-launch; runtime compilation is intentionally not part of the renderer or this
-playground.
+pair and draw count. The producer source is declared with
+`<DeltaShaderSource Include="Shaders/**/*.cs" />`; its build target invokes
+`DeltaShader.Tool` and publishes to `tools/DeltaRender.SquareShaders/bin/<Configuration>/net10.0/DeltaShader`.
+The runner only consumes those final artifacts; runtime compilation is
+intentionally not part of the renderer or this playground.

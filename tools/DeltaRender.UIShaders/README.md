@@ -6,13 +6,7 @@ the smoke sample. DeltaShader generates the GLSL and paired
 SPIR-V and the generated resolved `ShaderAbi`; it does not compile source or
 parse a producer manifest.
 
-Refresh the checked-in smoke files with:
-
-```bash
-./tools/prepare-smoke-shaders.sh
-```
-
-The preparation script builds the producer tools, emits Vulkan 1.2 / SPIR-V
-1.5 output with GLSL 460 inspection sidecars, validates the output and updates
-only the expected shader files. This source project is not the UI layout or
-renderer submission boundary.
+Build this project through its normal project build. The `DeltaShader.Tool`
+build integration discovers the producer source and emits outputs in the
+producer build directory; no consumer-side shader copy is maintained here.
+This source project is not the UI layout or renderer submission boundary.

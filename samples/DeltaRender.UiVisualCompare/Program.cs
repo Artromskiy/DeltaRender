@@ -24,11 +24,15 @@ internal static class Program
             string shaderRoot = Path.GetFullPath(GetOption(
                 args,
                 "--shader-root",
-                Path.Combine("..", "DeltaShader", "src", "DeltaShader", "CompiledShaders", "Consumers", "DeltaXAML", "samples", "RoundedRectangle.Render", "shaders")));
+                string.Empty));
             string sliceRoot = Path.GetFullPath(GetOption(
                 args,
                 "--slice-root",
-                Path.Combine("..", "DeltaShader", "artifacts", "rounded-rectangle-slice")));
+                string.Empty));
+            if (string.IsNullOrWhiteSpace(shaderRoot) || string.IsNullOrWhiteSpace(sliceRoot))
+            {
+                throw new ArgumentException("--shader-root and --slice-root must point to fresh producer output directories.");
+            }
             int frames = ParsePositiveInt(args, "--frames", DefaultFrames);
             var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var rendererScope = renderer.ConfigureAwait(false);

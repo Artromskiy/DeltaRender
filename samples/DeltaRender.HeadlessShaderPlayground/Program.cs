@@ -87,23 +87,21 @@ internal static class Program
 
     private static string ResolveDefaultShaderDirectory()
     {
-        string local = Path.Combine("artifacts", "headless-shader-playground", "shaders");
-        if (File.Exists(Path.Combine(local, "SquareVertex.vert.spv")))
+        string[] producerDirectories =
+        [
+            Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Release", "net10.0", "DeltaShader"),
+            Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Debug", "net10.0", "DeltaShader")
+        ];
+        for (int index = 0; index < producerDirectories.Length; index++)
         {
-            return local;
+            string producerDirectory = producerDirectories[index];
+            if (File.Exists(Path.Combine(producerDirectory, "SquareVertex.vert.spv")))
+            {
+                return producerDirectory;
+            }
         }
 
-        return Path.Combine(
-            "..",
-            "DeltaShader",
-            "src",
-            "DeltaShader",
-            "CompiledShaders",
-            "Consumers",
-            "DeltaRender",
-            "samples",
-            "DeltaRender.HeadlessShaderPlayground",
-            "shaders");
+        return producerDirectories[0];
     }
 
     private static float ParseFloat(string[] args, string option, float fallback)

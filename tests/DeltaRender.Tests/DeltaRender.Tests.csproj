@@ -30,21 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="fixtures\compute_double.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="fixtures\compute_multi.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="fixtures\compute_multi_sets.spv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\delta-text-atlas\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../DeltaText/tests/DeltaText.Tests/Fixtures/NotoSans-Regular.ttf" Link="fixtures/NotoSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.vert.spv" Link="fixtures\fullscreen-rounded-rectangle.vert.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.frag.spv" Link="fixtures\fullscreen-rounded-rectangle.frag.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.vert.shader.json" Link="fixtures\graphics\fullscreen-rounded-rectangle.vert.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.frag.shader.json" Link="fixtures\graphics\fullscreen-rounded-rectangle.frag.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.vert.spv" Link="fixtures\graphics\fullscreen-rounded-rectangle.vert.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\fullscreen-rounded-rectangle.frag.spv" Link="fixtures\graphics\fullscreen-rounded-rectangle.frag.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\ui-panel.vert.shader.json" Link="fixtures\graphics\ui-panel.vert.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\ui-panel.frag.shader.json" Link="fixtures\graphics\ui-panel.frag.shader.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\ui-panel.vert.spv" Link="fixtures\graphics\ui-panel.vert.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\ui-panel.frag.spv" Link="fixtures\graphics\ui-panel.frag.spv" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\samples\DeltaRender.Smoke\shaders\ui-panel.vert.glsl" Link="fixtures\ui-panel.vert.glsl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

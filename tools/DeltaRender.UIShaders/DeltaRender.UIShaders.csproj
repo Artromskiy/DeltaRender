@@ -4,7 +4,12 @@
     <RootNamespace>Delta.Render.UIShaders</RootNamespace>
     <AssemblyName>DeltaRender.UIShaders</AssemblyName>
     <IsPackable>false</IsPackable>
+    <DeltaShaderEnabled>true</DeltaShaderEnabled>
   </PropertyGroup>
+
+  <ItemGroup>
+    <DeltaShaderSource Include="Shaders/**/*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
@@ -16,5 +21,6 @@
     <ProjectReference Include="../../../DeltaMaths/src/DeltaMaths/DeltaMaths.csproj">
       <SetTargetFramework>TargetFramework=netstandard2.1</SetTargetFramework>
     </ProjectReference>
+    <PackageReference Include="DeltaShader.Tool" PrivateAssets="all" />
   </ItemGroup>
 </Project>
