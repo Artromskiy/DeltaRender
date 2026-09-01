@@ -28,6 +28,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
+    private float _dpiScale = 1f;
 
     private UiVisualDraw[] _visuals = [];
     private UiClipRegion[] _clips = [];
@@ -212,7 +213,16 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var started = profiler is null ? 0 : Stopwatch.GetTimestamp();
         _diagnostics.Clear();
         _textFeature?.Clear();
-        var reuseVisualInstanceLayout = CanReuseVisualInstanceLayout(displayList);
+        if (!float.IsFinite(displayList.DpiScale) || displayList.DpiScale <= 0)
+        {
+            _hasFrame = false;
+            AddDiagnostic("The display-list DPI scale must be finite and positive.");
+            return false;
+        }
+
+        var dpiScaleChanged = _dpiScale != displayList.DpiScale;
+        _dpiScale = displayList.DpiScale;
+        var reuseVisualInstanceLayout = !dpiScaleChanged && CanReuseVisualInstanceLayout(displayList);
         ClearFrameStorage(reuseVisualInstanceLayout);
 
         EnsureCapacity(ref _visuals, displayList.Visuals.Length);
@@ -703,6 +713,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualShaderKinds.RefAt(orderIndex),
                 in visual,
                 in clip,
+                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -747,6 +758,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualShaderKinds.RefAt(orderIndex),
                 in visual,
                 in clip,
+                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1095,7 +1107,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         if (!UiDisplayListGeometry.IsFinite(visual.Bounds) || !UiDisplayListGeometry.IsFinite(visual.Paint.FillColor) ||
             !UiDisplayListGeometry.IsFinite(visual.Paint.StrokeColor) || !UiDisplayListGeometry.IsFinite(visual.Paint.CornerRadii) ||
-            !float.IsFinite(visual.Paint.StrokeWidth))
+            !float.IsFinite(visual.Paint.StrokeWidth) ||
+            visual.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] contains non-finite geometry or paint.");
             return false;
@@ -1181,7 +1194,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) || !UiDisplayListGeometry.IsFinite(text.Paint.FillColor) ||
-            !UiDisplayListGeometry.IsFinite(text.Paint.OutlineColor) || !float.IsFinite(text.Paint.OutlineWidth))
+            !UiDisplayListGeometry.IsFinite(text.Paint.OutlineColor) || !float.IsFinite(text.Paint.OutlineWidth) ||
+            text.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid shaped value or paint.");
             return false;

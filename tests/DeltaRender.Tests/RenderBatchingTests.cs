@@ -16,7 +16,7 @@ public sealed class RenderBatchingTests
     {
         using var session = new FakeSession();
         using var batcher = new RenderBatcher(session, new PixelExtent(640, 480), RenderBatchOrderMode.Ordered);
-        var pipeline = RegisterPipeline(batcher);
+        RegisterPipeline(batcher);
         var materialA = batcher.RegisterMaterial([0xA1]);
         var materialB = batcher.RegisterMaterial([0xB2]);
         var clip = new PixelRect(0, 0, 640, 480);
@@ -66,6 +66,60 @@ public sealed class RenderBatchingTests
 
         Assert.False(batcher.TryApply(Item(2, materialA, 1, [0, 0, 0, 0], clip, version: 2), out var staleDiagnostic));
         Assert.Contains("not newer", staleDiagnostic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReapplyingTheSameVersionSkipsPayloadValidationAndUpload()
+    {
+        using var session = new FakeSession();
+        using var batcher = new RenderBatcher(session, new PixelExtent(64, 64), RenderBatchOrderMode.Ordered);
+        var pipeline = RegisterPipeline(batcher);
+        var material = batcher.RegisterMaterial([]);
+        var clip = new PixelRect(0, 0, 64, 64);
+        Apply(batcher, Item(1, material, 0, [7, 8, 9, 10], clip));
+
+        var warm = new RecordingGraphBuilder(session);
+        batcher.AddPasses(warm, 1);
+        warm.RecordAll();
+
+        var unchanged = new RenderBatchItemChange(
+            new RenderBatchItemId(1, 1),
+            new RenderBatchVersion(1),
+            default,
+            default,
+            ReadOnlySpan<byte>.Empty);
+        Assert.True(batcher.TryApply(unchanged, out var diagnostic), diagnostic);
+
+        var second = new RecordingGraphBuilder(session);
+        batcher.AddPasses(second, 2);
+        second.RecordAll();
+
+        Assert.Equal(0, second.TransferPassCount);
+        Assert.Single(second.Draws);
+        Assert.Equal(7, second.Draws[0].InstancePayloads[0][0]);
+    }
+
+    [Fact]
+    public void NewVersionWithEqualPayloadDoesNotCreateDirtyUpload()
+    {
+        using var session = new FakeSession();
+        using var batcher = new RenderBatcher(session, new PixelExtent(64, 64), RenderBatchOrderMode.Ordered);
+        var material = batcher.RegisterMaterial([]);
+        var clip = new PixelRect(0, 0, 64, 64);
+        Apply(batcher, Item(1, material, 0, [7, 8, 9, 10], clip));
+
+        var warm = new RecordingGraphBuilder(session);
+        batcher.AddPasses(warm, 1);
+        warm.RecordAll();
+
+        Apply(batcher, Item(1, material, 0, [7, 8, 9, 10], clip, version: 2));
+
+        var second = new RecordingGraphBuilder(session);
+        batcher.AddPasses(second, 2);
+        second.RecordAll();
+
+        Assert.Equal(0, second.TransferPassCount);
+        Assert.Single(second.Draws);
     }
 
     [Fact]

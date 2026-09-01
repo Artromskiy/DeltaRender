@@ -49,6 +49,16 @@ internal sealed class RenderBatchLayout
             return false;
         }
 
+        // An active item at the same producer version is already resident. The
+        // version is the producer's cache contract, so do not revalidate or
+        // copy a payload that the caller has declared unchanged.
+        if (_itemLookup.TryGetValue(change.Id, out var cachedItemIndex) &&
+            _items.RefAt(cachedItemIndex).Active &&
+            _items.RefAt(cachedItemIndex).Version.Value == change.Version.Value)
+        {
+            return true;
+        }
+
         if (!change.Version.IsValid)
         {
             diagnostic = "Render batch item version must be non-zero.";

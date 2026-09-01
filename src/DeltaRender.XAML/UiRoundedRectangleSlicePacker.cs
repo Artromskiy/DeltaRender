@@ -9,6 +9,7 @@ internal static class UiRoundedRectangleSlicePacker
 {
     internal static int Pack(
         in UiVisualDraw visual,
+        float dpiScale,
         uint instanceStride,
         Span<byte> destination)
     {
@@ -18,7 +19,7 @@ internal static class UiRoundedRectangleSlicePacker
             visual.Paint.FillColor,
             visual.Paint.StrokeColor,
             visual.Paint.CornerRadii,
-            visual.Paint.StrokeWidth);
+            ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale));
         Span<RoundedRectangleSliceParameters> slices = stackalloc RoundedRectangleSliceParameters[9];
         var sliceCount = RoundedRectangleSliceBuilder.Build(in rectangle, slices);
         var reducedSliceCount = TryBuildSevenSlices(visual.Bounds, visual.Paint.CornerRadii, slices, sliceCount);
@@ -46,6 +47,7 @@ internal static class UiRoundedRectangleSlicePacker
 
     internal static int PackClipAware(
         in UiVisualDraw visual,
+        float dpiScale,
         uint instanceStride,
         in PixelRect clip,
         Span<byte> destination)
@@ -56,7 +58,7 @@ internal static class UiRoundedRectangleSlicePacker
             visual.Paint.FillColor,
             visual.Paint.StrokeColor,
             visual.Paint.CornerRadii,
-            visual.Paint.StrokeWidth);
+            ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale));
         Span<RoundedRectangleSliceParameters> slices = stackalloc RoundedRectangleSliceParameters[9];
         var sliceCount = RoundedRectangleSliceBuilder.Build(in rectangle, slices);
         var reducedSliceCount = TryBuildSevenSlices(visual.Bounds, visual.Paint.CornerRadii, slices, sliceCount);
@@ -173,4 +175,12 @@ internal static class UiRoundedRectangleSlicePacker
             segmentRect,
             source.CornerData,
             source.BorderWidth);
+
+    private static float ResolvePaintMetric(float value, PaintUnits units, float dpiScale)
+        => units switch
+        {
+            PaintUnits.Logical => value * dpiScale,
+            PaintUnits.Device => value,
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
+        };
 }
