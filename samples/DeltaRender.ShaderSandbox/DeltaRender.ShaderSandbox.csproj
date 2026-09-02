@@ -26,6 +26,6 @@
     <PackageReference Include="DeltaMaths" />
 
     <!-- Compile the canonical DeltaShader test fixture; no DeltaShader test assembly is a runtime dependency. -->
-    <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />
+    <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/Shaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />
   </ItemGroup>
 </Project>
