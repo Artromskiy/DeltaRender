@@ -4,6 +4,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 failed=0
 
+if command -v rg >/dev/null 2>&1; then
+    search_literal() { rg --fixed-strings --quiet "$1" "$2"; }
+    search_csproj() { rg -n --glob '*.csproj' "$1" "$repo_root" || true; }
+else
+    search_literal() { grep -Fq "$1" "$2"; }
+    search_csproj() { grep -REn --include='*.csproj' "$1" "$repo_root" || true; }
+fi
+
 fail() {
     printf 'package-boundaries: %s\n' "$1" >&2
     failed=1
@@ -14,7 +22,7 @@ require_literal() {
     local value="$2"
     local description="$3"
 
-    if ! rg --fixed-strings --quiet "$value" "$repo_root/$file"; then
+    if ! search_literal "$value" "$repo_root/$file"; then
         fail "$description: $file"
     fi
 }
@@ -84,7 +92,7 @@ require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
     'DeltaRender.XAML must retain its source-only shader producer edge'
 
 source_package_refs="$(
-    rg -n --glob '*.csproj' \
+    search_csproj \
         '<ProjectReference Include="[^"]*(DeltaRender[/\\]DeltaRender\.csproj|DeltaRender\.Vulkan[/\\]DeltaRender\.Vulkan\.csproj|DeltaRender\.Platform\.SDL3[/\\]DeltaRender\.Platform\.SDL3\.csproj)' \
         "$repo_root" || true
 )"
@@ -94,7 +102,7 @@ if [[ -n "$source_package_refs" ]]; then
 fi
 
 pinned_package_refs="$(
-    rg -n --glob '*.csproj' \
+    search_csproj \
         '<PackageReference Include="DeltaRender(\.Vulkan|\.Platform\.SDL3)?"[^>]*Version="[^"]+"' \
         "$repo_root" || true
 )"
