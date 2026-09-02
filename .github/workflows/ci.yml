@@ -62,6 +62,9 @@ jobs:
         with:
           repository: Artromskiy/DeltaMaths
           path: DeltaMaths
+      - name: Check package boundaries
+        working-directory: DeltaRender
+        run: ./eng/check-package-boundaries.sh
       - name: Install .NET 10
         uses: actions/setup-dotnet@v6
         with:

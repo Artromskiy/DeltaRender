@@ -29,6 +29,16 @@ samples/ contains runnable examples; probes/ contains bounded
 headless/compiler/contract checks. Empty mandatory domains stay tracked with
 .gitkeep.
 
+Package and adapter boundaries can be checked without restore or build:
+
+```bash
+./eng/check-package-boundaries.sh
+```
+
+The gate keeps the three published packages version-aligned, rejects source
+references and exact pins for those packages, and keeps the source-only text
+and XAML adapters non-packable with explicit producer edges.
+
 The contract checkpoint can be checked independently while the Vulkan and
 consumer migration in `docs/MIGRATION.md` is in progress:
 

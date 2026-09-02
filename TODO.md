@@ -56,6 +56,11 @@ resource lifetime are decided in one place.
   graph passes for its bounded text slice.
 - [x] DeltaRender.XAML consumes the text feature through a neutral adapter
   without adding another frame packet or input-polling owner.
+- [x] CI runs `eng/check-package-boundaries.sh` before restore/build. The gate
+  keeps the three published Render packages aligned and floating, rejects
+  source consumption of those assemblies, and preserves `DeltaRender.Text` and
+  `DeltaRender.XAML` as non-packable source adapters with explicit producer
+  edges.
 
 ### P1 - DeltaRender.XAML UI display-list adapter
 
