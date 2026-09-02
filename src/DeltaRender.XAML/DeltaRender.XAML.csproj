@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DeltaRender\DeltaRender.csproj" />
+    <PackageReference Include="DeltaRender" />
     <ProjectReference Include="..\DeltaRender.Text\DeltaRender.Text.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />

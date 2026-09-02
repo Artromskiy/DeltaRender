@@ -38,8 +38,9 @@ implementation layers over the renderer-neutral `DeltaRender` contract.
 adapters, not public NuGet packages. They consume the source-only generated
 `DeltaShader.Text` and `DeltaShader.UI` assemblies respectively, so publishing
 either adapter before those producer assemblies have runtime packages would
-create an incomplete dependency graph. Cross-repository samples that exercise
-these adapters intentionally retain source `ProjectReference` entries.
+create an incomplete dependency graph. Cross-repository samples consume the
+published base renderer packages and retain source `ProjectReference` entries
+only for these adapters and their source-only shader producers.
 
 ## Navigation
 
