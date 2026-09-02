@@ -5,6 +5,10 @@ on:
 
 permissions:
   contents: read
+  packages: read
+
+env:
+  NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   metrics:
@@ -19,6 +23,7 @@ jobs:
           dotnet-version: |
             8.x
             10.x
+          source-url: https://nuget.pkg.github.com/Artromskiy/index.json
       - name: Restore
         run: dotnet restore DeltaRender.slnx
       - name: Verify formatting

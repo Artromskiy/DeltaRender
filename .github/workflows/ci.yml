@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: delta-render-ci-${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +41,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   validate:
@@ -64,6 +66,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+          source-url: https://nuget.pkg.github.com/Artromskiy/index.json
       - name: Cache NuGet packages
         uses: actions/cache@v6
         with:
@@ -100,6 +103,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+          source-url: https://nuget.pkg.github.com/Artromskiy/index.json
       - name: Run registered benchmarks
         shell: bash
         run: |
