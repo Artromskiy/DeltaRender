@@ -4,10 +4,26 @@
     <RootNamespace>Delta.Render.Vulkan</RootNamespace>
     <AssemblyName>DeltaRender.Vulkan</AssemblyName>
     <PackageId>DeltaRender.Vulkan</PackageId>
+    <Version>0.0.12</Version>
+    <IsPackable>true</IsPackable>
+    <Authors>Artromskiy</Authors>
+    <Description>Vulkan implementation of the DeltaRender RenderGraph contract.</Description>
+    <PackageTags>rendering;vulkan;render-graph</PackageTags>
+    <RepositoryUrl>https://github.com/Artromskiy/DeltaRender</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Silk.NET 2.23.0 generated Vulkan overloads are ABI-compatible by value; C# 13 ref-safety hints are not applicable here. -->
     <NoWarn>$(NoWarn);CS9192;CS9193;CS9195</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../docs/README.md"
+          Pack="true"
+          PackagePath="README.md"
+          Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />

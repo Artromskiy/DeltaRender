@@ -4,7 +4,22 @@
     <RootNamespace>Delta.Render</RootNamespace>
     <AssemblyName>DeltaRender</AssemblyName>
     <PackageId>DeltaRender</PackageId>
+    <Version>0.0.12</Version>
+    <IsPackable>true</IsPackable>
+    <Authors>Artromskiy</Authors>
+    <Description>Renderer-neutral Vulkan RenderGraph contracts for DeltaRender.</Description>
+    <PackageTags>rendering;vulkan;render-graph;contracts</PackageTags>
+    <RepositoryUrl>https://github.com/Artromskiy/DeltaRender</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../docs/README.md"
+          Pack="true"
+          PackagePath="README.md"
+          Visible="false" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../DeltaDiagnostics/src/Delta.Diagnostics.Contract/Delta.Diagnostics.Contract.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
