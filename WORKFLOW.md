@@ -1,5 +1,18 @@
 # DeltaRender workflow
 
+## Benchmark parameter policy
+
+BenchmarkDotNet attributes may describe benchmark methods, categories and
+lifecycle hooks, but they must not define workload or run parameters. Do not add
+`[Params]`, `[ParamsSource]`, `[Arguments]`, `[ArgumentsSource]` or equivalent
+parameter attributes. Parse every workload/configuration value from application
+command-line arguments (or the invoking script) before BenchmarkDotNet starts,
+and pass the resulting values into the benchmark runner. Keep BDN runner
+switches such as `--filter` and `--job` separate from workload input. Existing
+parameter attributes are migration debt: do not add new uses and replace them
+when that benchmark is next modified.
+
+
 ## Repository layout gate
 
 The repository must follow the shared first-party layout documented in the

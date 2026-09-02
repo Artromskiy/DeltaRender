@@ -22,9 +22,7 @@
     <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
-    <ProjectReference Include="../../../DeltaMaths/src/DeltaMaths/DeltaMaths.csproj">
-      <SetTargetFramework>TargetFramework=netstandard2.1</SetTargetFramework>
-    </ProjectReference>
+    <PackageReference Include="DeltaMaths" Version="0.0.7" />
 
     <!-- Compile the canonical DeltaShader test fixture; no DeltaShader test assembly is a runtime dependency. -->
     <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />
