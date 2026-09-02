@@ -14,8 +14,7 @@ SDL3 surface/window integration. Engine owns event polling and frame policy.
 - [WORKFLOW.md](WORKFLOW.md) — builds, contract tests and native smokes.
 - Read [docs/adr/0001-vulkan-sdl3-moltenvk-stack.md](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md)
   for platform decisions and tool-local READMEs only when changing those tools.
-- Read [../EDITOR_UI_TODO.md](../EDITOR_UI_TODO.md) for shared UI/text gates and
-  [../CONTRACTS.md](../CONTRACTS.md) for canonical contract ownership, and
+- Read [../CONTRACTS.md](../CONTRACTS.md) for canonical contract ownership, and
   [../DeltaShader/AGENTS.md](../DeltaShader/AGENTS.md) before changing artifact
   consumption.
 

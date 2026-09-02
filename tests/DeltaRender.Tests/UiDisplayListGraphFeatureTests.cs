@@ -268,6 +268,39 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void VisualSegmentUsesPremultipliedAlphaForCoverageOutput()
+    {
+        var program = RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(10, 10, 40, 30),
+            new UiVisualPaint(
+                new float4(0.2f, 0.5f, 0.9f, 1),
+                new float4(1, 1, 1, 1),
+                1,
+                new float4(8, 8, 8, 8)),
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[] { new UiDrawRef(UiDrawKind.Visual, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Single(graph.RasterDescriptions);
+        Assert.Equal(RenderBlendMode.PremultipliedAlpha, graph.RasterDescriptions[0].Pipeline.BlendMode);
+    }
+
+    [Fact]
     public void CompatibleVisualsWithDifferentClipsUseOnePassAndPreserveScissorCommands()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
@@ -770,6 +803,8 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public List<IRasterPass> RasterPasses { get; } = [];
 
+        public List<RasterPassDescription> RasterDescriptions { get; } = [];
+
         public int TransferPassCount => _transferPasses.Count;
 
         public RenderGraphTextureHandle ImportTarget(RenderTargetHandle target) => new(_nextHandle++);
@@ -784,6 +819,7 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public RenderGraphPassHandle AddRasterPass(in RasterPassDescription description, IRasterPass pass)
         {
+            RasterDescriptions.Add(description);
             RasterPasses.Add(pass);
             return new RenderGraphPassHandle(_nextHandle++);
         }

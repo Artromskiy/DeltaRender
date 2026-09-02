@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
+using Delta.Shader.Contract;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -220,6 +221,25 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void RasterPipelineCacheSeparatesBlendStateForOneShaderProgram()
+    {
+        IGraphicsShaderProgram program = new CacheShaderProgram();
+        var opaque = new RasterPipelineDescription(program);
+        var premultiplied = new RasterPipelineDescription(
+            program,
+            blendMode: RenderBlendMode.PremultipliedAlpha);
+        var cache = new VulkanPipelineCache<RasterPipelineDescription, int>();
+        var createCalls = 0;
+
+        cache.GetOrCreate(opaque, () => ++createCalls);
+        cache.GetOrCreate(premultiplied, () => ++createCalls);
+
+        Assert.Equal(2, createCalls);
+        Assert.Equal(2, cache.CreateCount);
+        Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
     public void PipelineCacheDoesNotPublishFailedCreation()
     {
         var cache = new VulkanPipelineCache<string, int>();
@@ -322,5 +342,23 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
         }
 
         Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+    }
+
+    private sealed class CacheShaderProgram : IGraphicsShaderProgram
+    {
+        public IShaderArtifact Vertex { get; } = new CacheShaderArtifact(ShaderStage.Vertex);
+
+        public IShaderArtifact Fragment { get; } = new CacheShaderArtifact(ShaderStage.Fragment);
+    }
+
+    private sealed class CacheShaderArtifact(ShaderStage stage) : IShaderArtifact
+    {
+        public ShaderStage Stage => stage;
+
+        public string EntryPoint => "main";
+
+        public ReadOnlySpan<byte> Spirv => ReadOnlySpan<byte>.Empty;
+
+        public ShaderAbi Abi => new(stage);
     }
 }

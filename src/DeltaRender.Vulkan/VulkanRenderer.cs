@@ -468,12 +468,10 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         _ = Api.EnumerateInstanceLayerProperties(&layerCount, properties);
         foreach (var property in properties)
         {
-            fixed (byte* name = property.LayerName)
+            var candidate = Marshal.PtrToStringAnsi((nint)property.LayerName);
+            if (candidate == layerName)
             {
-                if (Marshal.PtrToStringAnsi((nint)name) == layerName)
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
