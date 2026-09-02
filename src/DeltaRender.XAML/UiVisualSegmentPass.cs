@@ -30,7 +30,7 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
             _pipeline = new RasterPipelineDescription(
                 program,
                 cullMode: RasterCullMode.None,
-                blendMode: RenderBlendMode.Alpha);
+                blendMode: RenderBlendMode.PremultipliedAlpha);
             _description = null;
         }
 

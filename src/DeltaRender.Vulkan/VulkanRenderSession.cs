@@ -49,7 +49,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     private int _queueSignalCount;
     private bool _hasSubmittedQueueSegment;
     private readonly VulkanResourceRegistry _resources = new();
-    private readonly VulkanPipelineCache<IGraphicsShaderProgram, VulkanGraphPipeline> _rasterPipelines = new(ReferenceEqualityComparer.Instance);
+    private readonly VulkanPipelineCache<RasterPipelineDescription, VulkanGraphPipeline> _rasterPipelines = new();
     private readonly VulkanPipelineCache<IShaderArtifact, VulkanGraphPipeline> _computePipelines = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanTransientResourcePool<TransientBufferKey, BufferAllocation> _transientBuffers = new();
     private readonly VulkanTransientResourcePool<TransientTextureKey, PersistentTexture> _transientTextures = new();
@@ -780,7 +780,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
     internal VulkanGraphPipeline GetOrCreateRasterPipeline(in RasterPipelineDescription description)
     {
         var copy = description;
-        return _rasterPipelines.GetOrCreate(copy.ShaderProgram, () => VulkanGraphPipeline.CreateRaster(this, copy));
+        return _rasterPipelines.GetOrCreate(copy, () => VulkanGraphPipeline.CreateRaster(this, copy));
     }
 
     private bool IsSameDepthDescription(in DepthStencilAttachmentDescription description)
