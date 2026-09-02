@@ -56,12 +56,12 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Artromskiy/DeltaShader
-          path: ../DeltaShader
+          path: DeltaShader
       - name: Checkout DeltaMaths shader contract
         uses: actions/checkout@v7
         with:
           repository: Artromskiy/DeltaMaths
-          path: ../DeltaMaths
+          path: DeltaMaths
       - name: Check package boundaries
         working-directory: DeltaRender
         run: ./eng/check-package-boundaries.sh
