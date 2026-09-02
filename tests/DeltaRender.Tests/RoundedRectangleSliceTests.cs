@@ -59,7 +59,7 @@ public sealed class RoundedRectangleSliceTests
         Assert.Equal(new ShaderBinding(0, 0), instanceBinding);
 
         Span<byte> packed = stackalloc byte[96 * 9];
-        Assert.Equal(96 * 9, UiVisualShaderContract.PackInstances(shaderKind, in visual, instanceStride, packed));
+        Assert.Equal(96 * 9, UiVisualShaderContract.PackInstances(shaderKind, in visual, 1f, instanceStride, packed));
     }
 
     [Fact]
@@ -81,6 +81,7 @@ public sealed class RoundedRectangleSliceTests
         Assert.Equal(96 * 7, UiVisualShaderContract.PackInstances(
             UiRectangleShaderKind.RoundedSlice,
             in visual,
+            1f,
             96,
             packed));
     }
@@ -124,7 +125,7 @@ public sealed class RoundedRectangleSliceTests
         Assert.Equal(8u, pushConstantSize);
 
         Span<byte> packed = stackalloc byte[112 * 9];
-        var written = UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, instanceStride, packed);
+        var written = UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, 1f, instanceStride, packed);
         Assert.Equal(112 * 9, written);
         for (var index = 0; index < 9; index++)
         {

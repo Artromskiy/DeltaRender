@@ -38,7 +38,7 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(600f, ReadFloat(frame, 4));
 
         Span<byte> packed = stackalloc byte[32];
-        Assert.Equal(32, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Assert.Equal(32, UiVisualShaderContract.PackInstance(shaderKind, in visual, 1f, packed));
         Assert.Equal(10f, ReadFloat(packed, 0));
         Assert.Equal(20f, ReadFloat(packed, 4));
         Assert.Equal(0.4f, ReadFloat(packed, 28));
@@ -93,7 +93,7 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(600f, ReadFloat(frame, 4));
 
         Span<byte> packed = stackalloc byte[80];
-        Assert.Equal(80, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Assert.Equal(80, UiVisualShaderContract.PackInstance(shaderKind, in visual, 1f, packed));
         Assert.Equal(10f, ReadFloat(packed, 0));
         Assert.Equal(20f, ReadFloat(packed, 4));
         Assert.Equal(1f, ReadFloat(packed, 48));
@@ -131,7 +131,7 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(8u, pushConstantSize);
 
         Span<byte> packed = stackalloc byte[48];
-        Assert.Equal(48, UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, instanceStride, packed));
+        Assert.Equal(48, UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, 1f, instanceStride, packed));
         Assert.Equal(12f, ReadFloat(packed, 32));
         Assert.Equal(14f, ReadFloat(packed, 36));
         Assert.Equal(50f, ReadFloat(packed, 40));
