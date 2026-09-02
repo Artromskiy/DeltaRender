@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\DeltaRender\\DeltaRender.csproj" />
+    <PackageReference Include="DeltaRender" />
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Windows" />
     <PackageReference Include="SDL3-CS.Linux" />
