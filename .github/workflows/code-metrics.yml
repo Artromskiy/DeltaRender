@@ -7,9 +7,6 @@ permissions:
   contents: read
   packages: read
 
-env:
-  NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   metrics:
     name: .NET code metrics
@@ -35,8 +32,6 @@ jobs:
           dotnet-version: |
             8.x
             10.x
-      - name: Configure GitHub Packages
-        run: dotnet nuget add source https://nuget.pkg.github.com/Artromskiy/index.json --name github-artromskiy --username Artromskiy --password "$NUGET_AUTH_TOKEN" --store-password-in-clear-text
       - name: Restore
         working-directory: DeltaRender
         run: dotnet restore DeltaRender.slnx
