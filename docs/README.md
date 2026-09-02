@@ -23,12 +23,14 @@ does not compile source, poll input, shape text or own ECS state.
 
 ## Packages
 
-The `0.0.14` release is published as one aligned package set:
+The `0.0.14` release is prepared as one aligned package set. NuGet.org
+publication is still pending; verify that the exact set is available on the
+configured feed before consuming it:
 
 | Package | Required first-party packages |
 |---|---|
-| `DeltaRender` | matching published `DeltaShader.Contract` |
-| `DeltaRender.Vulkan` | `DeltaRender 0.0.14`, matching published `DeltaShader.Contract` |
+| `DeltaRender` | matching `DeltaShader.Contract` |
+| `DeltaRender.Vulkan` | `DeltaRender 0.0.14`, matching `DeltaShader.Contract` |
 | `DeltaRender.Platform.SDL3` | `DeltaRender 0.0.14` |
 
 Use matching DeltaRender package versions. The Vulkan and SDL3 packages are
@@ -39,7 +41,7 @@ adapters, not public NuGet packages. They consume the source-only generated
 `DeltaShader.Text` and `DeltaShader.UI` assemblies respectively, so publishing
 either adapter before those producer assemblies have runtime packages would
 create an incomplete dependency graph. Cross-repository samples consume the
-published base renderer packages and retain source `ProjectReference` entries
+base renderer packages and retain source `ProjectReference` entries
 only for these adapters and their source-only shader producers.
 
 ## Navigation
