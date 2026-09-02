@@ -8,13 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Tests intentionally build source-only shader fixtures, generated shader projects and the non-packable XAML adapter. -->
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Text/DeltaShader.Text.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender\\DeltaRender.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender.Platform.SDL3\\DeltaRender.Platform.SDL3.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender.Vulkan\\DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Platform.SDL3" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
   </ItemGroup>
 

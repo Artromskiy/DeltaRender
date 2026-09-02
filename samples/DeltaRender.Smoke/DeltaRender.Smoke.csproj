@@ -10,11 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Local shader fixture tools remain source-only producers for the smoke artifacts. -->
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender\\DeltaRender.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender.Platform.SDL3\\DeltaRender.Platform.SDL3.csproj" />
-    <ProjectReference Include="..\\..\\src\\DeltaRender.Vulkan\\DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Platform.SDL3" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
     <PackageReference Include="Silk.NET.MoltenVK.Native" GeneratePathProperty="true" />
     <Content Include="$(PkgSilk_NET_MoltenVK_Native)/runtimes/osx/native/libMoltenVK.dylib" Condition=" '$(RuntimeIdentifier)' == 'osx-arm64' Or '$(RuntimeIdentifier)' == 'osx-x64' ">

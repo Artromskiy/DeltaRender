@@ -10,8 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Vulkan" />
+    <!-- The XAML adapter and generated UI shader project are not yet publishable packages. -->
     <ProjectReference Include="../../src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />

@@ -10,9 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="DeltaShader.Contract" />
+    <!-- The generated mesh shader project remains a source-only producer dependency. -->
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Mesh/DeltaShader.Mesh.csproj" />
   </ItemGroup>
 </Project>

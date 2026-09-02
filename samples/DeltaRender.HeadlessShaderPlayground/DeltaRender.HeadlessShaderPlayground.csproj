@@ -10,11 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The local shader fixture tool is source-only and supplies generated sample artifacts. -->
     <ProjectReference Include="../../tools/DeltaRender.SquareShaders/DeltaRender.SquareShaders.csproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
-    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
     <PackageReference Include="DeltaShader.Contract" />
   </ItemGroup>

@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
     <PackageReference Include="DeltaShader.Contract" />
   </ItemGroup>

@@ -10,10 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />
-    <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
+    <PackageReference Include="DeltaRender" />
+    <PackageReference Include="DeltaRender.Platform.SDL3" />
+    <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
+    <!-- Shader fixture tools, authoring API and analyzer remain source references for generated sample artifacts. -->
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
