@@ -17,6 +17,8 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
     <PackageVersion Include="DeltaShader.Tool" Version="*" />
+    <PackageVersion Include="DeltaShader.Compiler" Version="*" />
+    <PackageVersion Include="DeltaShader.Analyzers" Version="*" />
     <PackageVersion Include="Delta.Diagnostics.Contract" Version="*" />
     <PackageVersion Include="DeltaShader.Contract" Version="*" />
     <PackageVersion Include="DeltaText" Version="*" />

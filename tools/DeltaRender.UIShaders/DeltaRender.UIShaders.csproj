@@ -12,13 +12,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Shader authoring and analyzer projects remain source references until their producer packages are published. -->
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
-    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
-    <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
+    <PackageReference Include="DeltaShader.Compiler" PrivateAssets="all" />
+    <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />
     <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaShader.Tool" PrivateAssets="all" />
   </ItemGroup>
