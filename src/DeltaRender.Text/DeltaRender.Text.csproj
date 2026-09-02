@@ -10,6 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\DeltaRender\DeltaRender.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Text/DeltaShader.Text.csproj" />
-    <ProjectReference Include="../../../DeltaText/src/DeltaText/DeltaText.csproj" />
+    <PackageReference Include="DeltaText" Version="*" />
   </ItemGroup>
 </Project>

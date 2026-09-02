@@ -12,7 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
     <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
+    <PackageReference Include="DeltaShader.Contract" Version="*" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Mesh/DeltaShader.Mesh.csproj" />
   </ItemGroup>
 </Project>
