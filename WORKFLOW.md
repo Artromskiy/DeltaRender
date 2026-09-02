@@ -101,14 +101,16 @@ shasum -a 256 "${packages[@]}"
 git diff --check
 ```
 
-Provision `NUGET_API_KEY` outside the repository and shell history. Never put
-the credential in this file, a command literal, a log or an artifact. Push in
-dependency order and keep `--skip-duplicate` so a retry cannot create an
-ambiguous release step.
+The canonical public release destination is NuGet.org. GitHub Packages may be
+configured separately as a private feed for producer dependencies, but it is
+not the release destination for these packages. Provision `NUGET_API_KEY`
+outside the repository and shell history. Never put the credential in this
+file, a command literal, a log or an artifact. Push in dependency order and
+keep `--skip-duplicate` so a retry cannot create an ambiguous release step.
 
 ```bash
 : "${NUGET_API_KEY:?NUGET_API_KEY must be supplied by the release environment}"
-nuget_source='https://nuget.pkg.github.com/Artromskiy/index.json'
+nuget_source='https://api.nuget.org/v3/index.json'
 
 for package in "${packages[@]}"; do
   dotnet nuget push "$package" \
