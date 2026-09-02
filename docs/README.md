@@ -34,6 +34,13 @@ The `0.0.14` release is published as one aligned package set:
 Use matching DeltaRender package versions. The Vulkan and SDL3 packages are
 implementation layers over the renderer-neutral `DeltaRender` contract.
 
+`DeltaRender.Text` and `DeltaRender.XAML` are repository-internal source
+adapters, not public NuGet packages. They consume the source-only generated
+`DeltaShader.Text` and `DeltaShader.UI` assemblies respectively, so publishing
+either adapter before those producer assemblies have runtime packages would
+create an incomplete dependency graph. Cross-repository samples that exercise
+these adapters intentionally retain source `ProjectReference` entries.
+
 ## Navigation
 
 - [CONTRACT.md](CONTRACT.md): authoritative cross-project contract.

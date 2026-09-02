@@ -1,7 +1,8 @@
 # DeltaRender.Text contract
 
-Status: renderer integration contract. This document defines the boundary of
-the `DeltaRender.Text` project; it does not replace or copy the producer-owned
+Status: internal source-adapter integration contract, not a public NuGet API.
+This document defines the boundary of the `DeltaRender.Text` project; it does
+not replace or copy the producer-owned
 [`DeltaText` public contract](../../DeltaText/PUBLIC_CONTRACT.md).
 
 ## Project boundary
