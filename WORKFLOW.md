@@ -43,8 +43,9 @@ and XAML adapters non-packable with explicit producer edges.
 
 Run the package boundary gate first. The `DeltaRender` package must be produced
 before its Vulkan and SDL3 dependents so their restore resolves the same local
-`0.0.14` base package. The current shader dependency is supplied by the
-DeltaShader `0.0.16` staging feed.
+`0.0.14` base package. The shader dependency is supplied by the selected
+DeltaShader producer package feed. Set `DELTASHADER_PACKAGE_DIR` to that feed
+before packing; do not pin a historical staging version here.
 
 ```bash
 set -euo pipefail
@@ -52,13 +53,14 @@ set -euo pipefail
 ./eng/check-package-boundaries.sh
 
 package_dir="$PWD/artifacts/packages/0.0.14"
+shader_package_dir="${DELTASHADER_PACKAGE_DIR:?Set DELTASHADER_PACKAGE_DIR to the selected DeltaShader package feed}"
 mkdir -p "$package_dir"
 
 package_sources=(
   --source "$package_dir"
   --source ../DeltaDiagnostics/artifacts
   --source ../DeltaMaths/artifacts
-  --source ../DeltaShader/artifacts/packages/0.0.16
+  --source "$shader_package_dir"
   --source https://api.nuget.org/v3/index.json
 )
 pack_options=(
@@ -80,7 +82,8 @@ dotnet pack src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
 
 Validate all three archives before publishing. `unzip -t` checks archive
 integrity; the nuspec output must show package version `0.0.14`, the current
-repository commit, `DeltaShader.Contract 0.0.16` for the base/Vulkan packages,
+repository commit, and the resolved matching `DeltaShader.Contract` version for
+the base/Vulkan packages,
 and `DeltaRender 0.0.14` for the Vulkan/SDL3 packages.
 
 ```bash
@@ -175,6 +178,18 @@ invalidation, deterministic pass ordering, read/write hazards, readback
 lifetime and diagnostics without loading Vulkan. Vulkan tests then cover the
 same graph executor in compute-only, offscreen and windowed modes. A skipped
 native test is not a successful GPU path.
+
+### Known macOS test-host limitation
+
+On macOS ARM64 with the current .NET 10 test host, the complete
+`TextRenderFeatureTests` class can terminate the host during the multi-page
+atlas test after preceding text tests, while each test and bounded subsets pass
+individually. The observed crash is a host-level SIGSEGV with no Vulkan or SDL
+frames; it is not evidence of a DeltaRender production defect. Do not disable,
+suppress or mark the test passed. Until the runtime/test-host issue is
+resolved, CI must retain the test and record the interrupted class run as an
+environmental failure, while individual test cases remain runnable for
+diagnostics.
 
 ## Code metrics
 

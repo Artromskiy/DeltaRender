@@ -27,8 +27,8 @@ The `0.0.14` release is published as one aligned package set:
 
 | Package | Required first-party packages |
 |---|---|
-| `DeltaRender` | `DeltaShader.Contract 0.0.16` |
-| `DeltaRender.Vulkan` | `DeltaRender 0.0.14`, `DeltaShader.Contract 0.0.16` |
+| `DeltaRender` | matching published `DeltaShader.Contract` |
+| `DeltaRender.Vulkan` | `DeltaRender 0.0.14`, matching published `DeltaShader.Contract` |
 | `DeltaRender.Platform.SDL3` | `DeltaRender 0.0.14` |
 
 Use matching DeltaRender package versions. The Vulkan and SDL3 packages are
