@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Delta.Render.Text</RootNamespace>
     <AssemblyName>DeltaRender.Text</AssemblyName>
-    <PackageId>DeltaRender.Text</PackageId>
+    <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 

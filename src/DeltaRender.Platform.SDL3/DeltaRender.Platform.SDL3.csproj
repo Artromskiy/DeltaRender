@@ -4,8 +4,24 @@
     <RootNamespace>Delta.Render.Platform.SDL3</RootNamespace>
     <AssemblyName>DeltaRender.Platform.SDL3</AssemblyName>
     <PackageId>DeltaRender.Platform.SDL3</PackageId>
+    <Version>0.0.12</Version>
+    <IsPackable>true</IsPackable>
+    <Authors>Artromskiy</Authors>
+    <Description>SDL3 window and Vulkan surface integration for DeltaRender.</Description>
+    <PackageTags>rendering;vulkan;sdl3;windowing</PackageTags>
+    <RepositoryUrl>https://github.com/Artromskiy/DeltaRender</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../docs/README.md"
+          Pack="true"
+          PackagePath="README.md"
+          Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\\DeltaRender\\DeltaRender.csproj" />
