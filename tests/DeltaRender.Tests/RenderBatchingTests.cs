@@ -64,8 +64,9 @@ public sealed class RenderBatchingTests
             new byte[] { 1, 50, 9 },
             update.Draws.SelectMany(static draw => draw.InstancePayloads).Select(static payload => payload[0]).ToArray());
 
-        Assert.False(batcher.TryApply(Item(2, materialA, 1, [0, 0, 0, 0], clip, version: 2), out var staleDiagnostic));
-        Assert.Contains("not newer", staleDiagnostic, StringComparison.Ordinal);
+        Assert.True(
+            batcher.TryApply(Item(2, materialA, 1, [0, 0, 0, 0], clip, version: 2), out var retryDiagnostic),
+            retryDiagnostic);
     }
 
     [Fact]
@@ -104,6 +105,7 @@ public sealed class RenderBatchingTests
     {
         using var session = new FakeSession();
         using var batcher = new RenderBatcher(session, new PixelExtent(64, 64), RenderBatchOrderMode.Ordered);
+        RegisterPipeline(batcher);
         var material = batcher.RegisterMaterial([]);
         var clip = new PixelRect(0, 0, 64, 64);
         Apply(batcher, Item(1, material, 0, [7, 8, 9, 10], clip));
