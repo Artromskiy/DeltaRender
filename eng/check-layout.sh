@@ -52,7 +52,7 @@ done
 
 while IFS= read -r tracked_directory; do
     case "$tracked_directory" in
-        .github|src|tests|samples|tools|docs|eng|artifacts|assets|Assets)
+        .github|.vscode|src|tests|samples|tools|docs|eng|artifacts|assets|Assets)
             ;;
         *)
             printf 'layout: unexpected tracked top-level directory: %s\n' "$tracked_directory" >&2
