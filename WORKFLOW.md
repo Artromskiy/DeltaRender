@@ -39,6 +39,89 @@ The gate keeps the three published packages version-aligned, rejects source
 references and exact pins for those packages, and keeps the source-only text
 and XAML adapters non-packable with explicit producer edges.
 
+## NuGet release protocol for 0.0.14
+
+Run the package boundary gate first. The `DeltaRender` package must be produced
+before its Vulkan and SDL3 dependents so their restore resolves the same local
+`0.0.14` base package. The current shader dependency is supplied by the
+DeltaShader `0.0.16` staging feed.
+
+```bash
+set -euo pipefail
+
+./eng/check-package-boundaries.sh
+
+package_dir="$PWD/artifacts/packages/0.0.14"
+mkdir -p "$package_dir"
+
+package_sources=(
+  --source "$package_dir"
+  --source ../DeltaDiagnostics/artifacts
+  --source ../DeltaMaths/artifacts
+  --source ../DeltaShader/artifacts/packages/0.0.16
+  --source https://api.nuget.org/v3/index.json
+)
+pack_options=(
+  -c Release
+  -o "$package_dir"
+  --disable-build-servers
+  -m:1
+  /p:UseSharedCompilation=false
+  -v:minimal
+)
+
+dotnet pack src/DeltaRender/DeltaRender.csproj \
+  "${pack_options[@]}" "${package_sources[@]}"
+dotnet pack src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj \
+  "${pack_options[@]}" "${package_sources[@]}"
+dotnet pack src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
+  "${pack_options[@]}" "${package_sources[@]}"
+```
+
+Validate all three archives before publishing. `unzip -t` checks archive
+integrity; the nuspec output must show package version `0.0.14`, the current
+repository commit, `DeltaShader.Contract 0.0.16` for the base/Vulkan packages,
+and `DeltaRender 0.0.14` for the Vulkan/SDL3 packages.
+
+```bash
+packages=(
+  "$package_dir/DeltaRender.0.0.14.nupkg"
+  "$package_dir/DeltaRender.Vulkan.0.0.14.nupkg"
+  "$package_dir/DeltaRender.Platform.SDL3.0.0.14.nupkg"
+)
+
+for package in "${packages[@]}"; do
+  unzip -t "$package"
+  unzip -l "$package"
+  unzip -p "$package" '*.nuspec' | \
+    rg '<id>|<version>|<repository|<dependency'
+done
+
+shasum -a 256 "${packages[@]}"
+git diff --check
+```
+
+Provision `NUGET_API_KEY` outside the repository and shell history. Never put
+the credential in this file, a command literal, a log or an artifact. Push in
+dependency order and keep `--skip-duplicate` so a retry cannot create an
+ambiguous release step.
+
+```bash
+: "${NUGET_API_KEY:?NUGET_API_KEY must be supplied by the release environment}"
+nuget_source='https://nuget.pkg.github.com/Artromskiy/index.json'
+
+for package in "${packages[@]}"; do
+  dotnet nuget push "$package" \
+    --source "$nuget_source" \
+    --api-key "$NUGET_API_KEY" \
+    --skip-duplicate
+done
+```
+
+Do not push adapter assemblies: `DeltaRender.Text` and `DeltaRender.XAML` are
+source-only internal projects until their generated shader producer assemblies
+have publishable runtime packages.
+
 The contract checkpoint can be checked independently while the Vulkan and
 consumer migration in `docs/MIGRATION.md` is in progress:
 
