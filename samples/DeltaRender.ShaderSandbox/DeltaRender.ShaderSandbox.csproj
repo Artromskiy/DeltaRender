@@ -18,11 +18,6 @@
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
-    <PackageReference Include="DeltaShader.Compiler" PrivateAssets="all" />
-    <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />
     <PackageReference Include="DeltaMaths" />
-
-    <!-- Compile the canonical DeltaShader test fixture; no DeltaShader test assembly is a runtime dependency. -->
-    <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/Shaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />
   </ItemGroup>
 </Project>
