@@ -18,7 +18,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
     <PackageVersion Include="DeltaShader.Tool" Version="*" />
     <PackageVersion Include="Delta.Diagnostics.Contract" Version="*" />
-    <PackageVersion Include="DeltaShader.Contract" Version="*" />
+    <PackageVersion Include="DeltaShader.Contract" Version="0.0.15" />
     <PackageVersion Include="DeltaText" Version="*" />
     <PackageVersion Include="DeltaXAML.Contract" Version="*" />
     <PackageVersion Include="DeltaMaths" Version="*" />
