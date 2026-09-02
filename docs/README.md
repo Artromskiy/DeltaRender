@@ -1,60 +1,77 @@
 # DeltaRender
 
-Vulkan-only renderer for game output, editor chrome, viewports and runtime UI.
-SDL3 supplies windows and Vulkan surfaces; MoltenVK is the macOS portability
-layer. Neither is a second renderer backend.
+Vulkan renderer for game output, editor viewports and runtime UI.
 
-## Boundary
+## What it provides
 
-DeltaRender supports one GPU execution path:
+- One RenderGraph path for transfer, compute and raster work.
+- Windowed, offscreen and compute-only sessions.
+- Persistent buffers, textures and samplers with lifetime and generation checks.
+- Transient graph resources and automatic pass ordering and hazard handling.
+- Canonical DeltaShader artifacts with ABI validation and typed producer packers.
+- Optional readback for rendered or computed data.
 
-```text
-IRenderFrameSession
-  -> IRenderGraph.Build(features)
-  -> transfer / compute / raster passes
-  -> IRenderGraph.Execute()
-  -> optional present or explicit readback
+## Quick start
+
+Add the renderer packages to an application:
+
+```xml
+<PackageReference Include="DeltaRender" Version="*" />
+<PackageReference Include="DeltaRender.Vulkan" Version="*" />
 ```
 
-The same session and graph implementation serve windowed, offscreen and
-compute-only work. Final shaders come from `DeltaShader.Contract`; XAML and
-text adapters translate their producer-owned data into graph passes. Render
-does not compile source, poll input, shape text or own ECS state.
+Obtain an `IRenderFrameSession` from the platform integration, create its graph,
+add features, then execute the frame:
 
-## Packages
+```csharp
+IRenderGraph graph = session.CreateRenderGraph();
+graph.Build(frameNumber, features);
+RenderGraphExecutionResult result = graph.Execute();
+```
 
-The `0.0.14` release is prepared as one aligned package set. NuGet.org
-publication is still pending; verify that the exact set is available on the
-configured feed before consuming it:
+The result is a recorded and submitted frame for a windowed session, or an
+offscreen/compute result for a headless session. Explicit readback is available
+when CPU-visible output is required.
 
-| Package | Required first-party packages |
-|---|---|
-| `DeltaRender` | matching `DeltaShader.Contract` |
-| `DeltaRender.Vulkan` | `DeltaRender 0.0.14`, matching `DeltaShader.Contract` |
-| `DeltaRender.Platform.SDL3` | `DeltaRender 0.0.14` |
+## Core concepts
 
-Use matching DeltaRender package versions. The Vulkan and SDL3 packages are
-implementation layers over the renderer-neutral `DeltaRender` contract.
+```text
+session -> graph.Build(features) -> transfer/compute/raster -> graph.Execute()
+```
 
-`DeltaRender.Text` and `DeltaRender.XAML` are repository-internal source
-adapters, not public NuGet packages. They consume the source-only generated
-`DeltaShader.Text` and `DeltaShader.UI` assemblies respectively, so publishing
-either adapter before those producer assemblies have runtime packages would
-create an incomplete dependency graph. Cross-repository samples consume the
-base renderer packages and retain source `ProjectReference` entries
-only for these adapters and their source-only shader producers.
+The session owns persistent resources and the optional presentation target.
+The graph owns temporary graph handles, dependencies and execution. Features
+translate application data into ordinary graph passes without exposing Vulkan
+objects.
 
-## Navigation
+## Capabilities and limits
 
-- [CONTRACT.md](CONTRACT.md): authoritative cross-project contract.
-- [USER_API.md](USER_API.md): graph authoring and resource usage.
-- [INTERNAL.md](INTERNAL.md): Vulkan implementation design.
-- [TEXT_CONTRACT.md](TEXT_CONTRACT.md): DeltaRender.Text renderer integration boundary.
-- [TEXT_INTERNAL.md](TEXT_INTERNAL.md): DeltaRender.Text ownership and implementation details.
-- [RENDER_BATCHING.md](RENDER_BATCHING.md): renderer-owned instance batching,
-  ordering and dirty-upload behavior.
-- [MIGRATION.md](MIGRATION.md): removal of every legacy submission path.
-- [TODO.md](../TODO.md): selected implementation work.
-- [WORKFLOW.md](../WORKFLOW.md): bounded local checks.
-- [Vulkan/SDL3/MoltenVK ADR](adr/0001-vulkan-sdl3-moltenvk-stack.md):
-  platform decision.
+- Supported rendering backend: Vulkan, including MoltenVK on macOS.
+- Supported shader input: final `DeltaShader.Contract` artifacts and their ABI.
+- UI coordinates use a top-left origin; texture UV `(0,0)` is top-left.
+- Depth and stencil attachments are supported when declared by the raster
+  contract and compatible with the target.
+- A session has one target; multi-window coordination belongs to the host.
+- Input polling, text shaping, XAML layout and ECS state are outside the
+  renderer.
+- GPU timing and asynchronous readback depend on device capabilities.
+
+## Public packages and examples
+
+- [`DeltaRender`](../src/DeltaRender/DeltaRender.csproj): renderer-neutral
+  public contract.
+- [`DeltaRender.Vulkan`](../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj):
+  Vulkan implementation.
+- [`DeltaRender.Platform.SDL3`](../src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj):
+  SDL3 window and surface integration.
+- [Headless shader playground](../samples/DeltaRender.HeadlessShaderPlayground/README.md):
+  offscreen shader rendering.
+- [Shader sandbox](../samples/DeltaRender.ShaderSandbox/README.md): windowed
+  shader experiments.
+
+## Further reading
+
+- [User API](USER_API.md)
+- [Renderer contract](CONTRACT.md)
+- [Text integration contract](TEXT_CONTRACT.md)
+- [License](../LICENSE)
