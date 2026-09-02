@@ -13,16 +13,16 @@
     <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
     <ProjectReference Include="../../src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj" />
     <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
-    <PackageReference Include="Delta.Diagnostics.Contract" Version="*" />
+    <PackageReference Include="Delta.Diagnostics.Contract" />
     <ProjectReference Include="../../tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
-    <PackageReference Include="DeltaShader.Contract" Version="*" />
+    <PackageReference Include="DeltaShader.Contract" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
-    <PackageReference Include="DeltaMaths" Version="*" />
+    <PackageReference Include="DeltaMaths" />
 
     <!-- Compile the canonical DeltaShader test fixture; no DeltaShader test assembly is a runtime dependency. -->
     <Compile Include="../../../DeltaShader/tests/DeltaShader.TestShaders/FullscreenUi.cs" Link="DeltaShader.TestShaders/FullscreenUi.cs" />

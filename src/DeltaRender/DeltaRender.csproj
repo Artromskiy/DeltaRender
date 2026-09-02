@@ -21,7 +21,7 @@
           Visible="false" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Delta.Diagnostics.Contract" Version="*" />
-    <PackageReference Include="DeltaShader.Contract" Version="*" />
+    <PackageReference Include="Delta.Diagnostics.Contract" />
+    <PackageReference Include="DeltaShader.Contract" />
   </ItemGroup>
 </Project>

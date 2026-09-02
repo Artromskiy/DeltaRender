@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <NuGetAudit>false</NuGetAudit>
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Silk.NET.Vulkan" Version="2.23.0" />
@@ -16,5 +17,10 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
     <PackageVersion Include="DeltaShader.Tool" Version="*" />
+    <PackageVersion Include="Delta.Diagnostics.Contract" Version="*" />
+    <PackageVersion Include="DeltaShader.Contract" Version="*" />
+    <PackageVersion Include="DeltaText" Version="*" />
+    <PackageVersion Include="DeltaXAML.Contract" Version="*" />
+    <PackageVersion Include="DeltaMaths" Version="*" />
   </ItemGroup>
 </Project>

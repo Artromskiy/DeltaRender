@@ -12,6 +12,6 @@
     <ProjectReference Include="..\DeltaRender\DeltaRender.csproj" />
     <ProjectReference Include="..\DeltaRender.Text\DeltaRender.Text.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
-    <PackageReference Include="DeltaXAML.Contract" Version="*" />
+    <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>
 </Project>

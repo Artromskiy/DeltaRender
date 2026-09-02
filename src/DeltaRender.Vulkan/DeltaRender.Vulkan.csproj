@@ -26,8 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DeltaShader.Contract" Version="*" />
-    <PackageReference Include="Delta.Diagnostics.Contract" Version="*" />
+    <PackageReference Include="DeltaShader.Contract" />
+    <PackageReference Include="Delta.Diagnostics.Contract" />
     <ProjectReference Include="..\\DeltaRender\\DeltaRender.csproj" />
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />

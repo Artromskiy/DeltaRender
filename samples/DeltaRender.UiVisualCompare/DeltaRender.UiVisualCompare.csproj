@@ -13,8 +13,8 @@
     <ProjectReference Include="../../src/DeltaRender/DeltaRender.csproj" />
     <ProjectReference Include="../../src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
     <ProjectReference Include="../../src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
-    <PackageReference Include="Delta.Diagnostics.Contract" Version="*" />
+    <PackageReference Include="Delta.Diagnostics.Contract" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
-    <PackageReference Include="DeltaXAML.Contract" Version="*" />
+    <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>
 </Project>
