@@ -991,7 +991,7 @@ mistaken for a code change.
 ### Snake solid/rounded-slice shader wiring: rejected
 
 The Snake sample was temporarily A/B tested with the generated
-`SolidRectangleGraphicsShaderProgram` and `RoundedRectangleSliceGraphicsShaderProgram`
+`SolidRectangleGraphicsShaderProgram` and `RoundedRectangleGraphicsShaderProgram`
 passed through the existing `UiDisplayListGraphFeature` optional program slots.
 The legacy side used only the existing rounded program. No Render or XAML
 contract was changed, and the sample wiring was restored after measurement.
@@ -1118,7 +1118,7 @@ Decision: rejected; the original cache API and factory calls were restored.
 ### Selective large rounded 9-slice routing: rejected
 
 The Render adapter was temporarily changed to select the generated
-`RoundedRectangleSliceGraphicsShaderProgram` only for rounded visuals at least
+`RoundedRectangleGraphicsShaderProgram` only for rounded visuals at least
 `256x256`; smaller tiles stayed on the existing rounded program and zero-radius
 visuals kept the solid route. The Snake harness temporarily supplied the
 generated solid and slice artifacts through the existing optional program

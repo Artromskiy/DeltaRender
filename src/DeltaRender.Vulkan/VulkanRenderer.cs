@@ -352,8 +352,22 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
             IsValidationEnabled = true;
         }
 
+        var enabledLayers = Array.Empty<string>();
+        if (Options.EnableValidation)
+        {
+            if (IsInstanceLayerPresent("VK_LAYER_KHRONOS_validation"))
+            {
+                enabledLayers = ["VK_LAYER_KHRONOS_validation"];
+            }
+            else
+            {
+                diagnostics.Add(RenderDiagnosticSeverity.Warning, "VK-VALID", "VK_LAYER_KHRONOS_validation is not available; continuing without the validation layer.");
+            }
+        }
+
         var extensionList = requiredExtensions.ToArray();
         var extensionPointers = (byte**)SilkMarshal.StringArrayToPtr(extensionList);
+        var layerPointers = (byte**)SilkMarshal.StringArrayToPtr(enabledLayers);
 
         byte[] appNameBytes = Encoding.UTF8.GetBytes(Options.ApplicationName + '\0');
         byte[] engineNameBytes = Encoding.UTF8.GetBytes(Options.EngineName + '\0');
@@ -380,8 +394,8 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                     PApplicationInfo = &appInfo,
                     EnabledExtensionCount = (uint)extensionList.Length,
                     PpEnabledExtensionNames = extensionPointers,
-                    EnabledLayerCount = 0,
-                    PpEnabledLayerNames = null,
+                    EnabledLayerCount = (uint)enabledLayers.Length,
+                    PpEnabledLayerNames = layerPointers,
                     PNext = null,
                     Flags = portabilityEnumerationEnabled
                         ? InstanceCreateFlags.EnumeratePortabilityBitKhr
@@ -401,6 +415,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         finally
         {
             SilkMarshal.Free((nint)extensionPointers);
+            SilkMarshal.Free((nint)layerPointers);
         }
 
         if (surfaceSource is not null && !Api.TryGetInstanceExtension(Instance, out _khrSurface))
@@ -438,6 +453,31 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-INSTANCE", "Vulkan instance initialized.");
         return true;
+    }
+
+    private unsafe bool IsInstanceLayerPresent(string layerName)
+    {
+        uint layerCount = 0;
+        _ = Api.EnumerateInstanceLayerProperties(&layerCount, null);
+        if (layerCount == 0)
+        {
+            return false;
+        }
+
+        var properties = new LayerProperties[(int)layerCount];
+        _ = Api.EnumerateInstanceLayerProperties(&layerCount, properties);
+        foreach (var property in properties)
+        {
+            fixed (byte* name = property.LayerName)
+            {
+                if (Marshal.PtrToStringAnsi((nint)name) == layerName)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
 

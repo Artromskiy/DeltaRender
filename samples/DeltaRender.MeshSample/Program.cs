@@ -12,7 +12,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var shaderDirectory = GetOption(args, "--shader-dir") ?? Path.Combine("artifacts", "mesh-sample", "shaders");
+        var shaderDirectory = GetOption(args, "--shader-dir") ?? ResolveProducerShaderDirectory();
         var outputPath = GetOption(args, "--output") ?? Path.Combine("artifacts", "mesh-sample", "mesh.ppm");
         var width = ParseUInt(args, "--width", 640);
         var height = ParseUInt(args, "--height", 480);
@@ -22,8 +22,8 @@ internal static class Program
             return 2;
         }
 
-        var vertexPath = Path.Combine(shaderDirectory, "mesh.vert.spv");
-        var fragmentPath = Path.Combine(shaderDirectory, "mesh.frag.spv");
+        var vertexPath = Path.Combine(shaderDirectory, "Mesh.vert.spv");
+        var fragmentPath = Path.Combine(shaderDirectory, "Fragment.frag.spv");
         if (!File.Exists(vertexPath) || !File.Exists(fragmentPath))
         {
             await Console.Error.WriteLineAsync($"Missing mesh shader pair: {vertexPath} and {fragmentPath}").ConfigureAwait(false);
@@ -74,6 +74,21 @@ internal static class Program
     {
         var value = GetOption(args, option);
         return value is not null && uint.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static string ResolveProducerShaderDirectory()
+    {
+        var producerRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../../DeltaShader/src/DeltaShader.Mesh/bin"));
+        foreach (var configuration in new[] { "Release", "Debug" })
+        {
+            var directory = Path.Combine(producerRoot, configuration, "net10.0", "DeltaShader", "DeltaShader.Mesh");
+            if (File.Exists(Path.Combine(directory, "Mesh.vert.spv")) && File.Exists(Path.Combine(directory, "Fragment.frag.spv")))
+            {
+                return directory;
+            }
+        }
+
+        return Path.Combine(producerRoot, "Release", "net10.0", "DeltaShader", "DeltaShader.Mesh");
     }
 
     private static string? GetOption(string[] args, string option)

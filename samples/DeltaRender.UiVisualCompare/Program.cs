@@ -192,9 +192,9 @@ internal static class Program
             ReadShader(root, "SolidRectangleFragment.frag.spv"));
 
     private static IGraphicsShaderProgram LoadSliceProgram(string root)
-        => RoundedRectangleSliceGraphicsShaderProgram.CreateProgram(
-            ReadShader(root, "RoundedRectangleSliceVertex.vert.spv"),
-            ReadShader(root, "RoundedRectangleSliceFragment.frag.spv"));
+        => RoundedRectangleGraphicsShaderProgram.CreateProgram(
+            ReadShader(root, "RoundedRectangleVertex.vert.spv"),
+            ReadShader(root, "RoundedRectangleFragment.frag.spv"));
 
     private static byte[] ReadShader(string root, string name)
     {

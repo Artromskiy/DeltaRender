@@ -10,10 +10,6 @@ internal enum UiRectangleShaderKind : byte
 {
     Solid,
     Rounded,
-    RoundedSlice,
-    ClipAwareSolid,
-    ClipAwareRounded,
-    ClipAwareRoundedSlice,
 }
 
 internal static class UiVisualShaderContract
@@ -22,14 +18,6 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi SolidFragmentAbi = SolidRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedVertexAbi = RoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedFragmentAbi = RoundedRectangleGraphicsShaderProgram.FragmentAbi;
-    private static readonly ShaderAbi RoundedSliceVertexAbi = RoundedRectangleSliceGraphicsShaderProgram.VertexAbi;
-    private static readonly ShaderAbi RoundedSliceFragmentAbi = RoundedRectangleSliceGraphicsShaderProgram.FragmentAbi;
-    private static readonly ShaderAbi ClipAwareSolidVertexAbi = ClipAwareSolidRectangleGraphicsShaderProgram.VertexAbi;
-    private static readonly ShaderAbi ClipAwareSolidFragmentAbi = ClipAwareSolidRectangleGraphicsShaderProgram.FragmentAbi;
-    private static readonly ShaderAbi ClipAwareRoundedVertexAbi = ClipAwareRoundedRectangleGraphicsShaderProgram.VertexAbi;
-    private static readonly ShaderAbi ClipAwareRoundedFragmentAbi = ClipAwareRoundedRectangleGraphicsShaderProgram.FragmentAbi;
-    private static readonly ShaderAbi ClipAwareRoundedSliceVertexAbi = ClipAwareRoundedRectangleSliceGraphicsShaderProgram.VertexAbi;
-    private static readonly ShaderAbi ClipAwareRoundedSliceFragmentAbi = ClipAwareRoundedRectangleSliceGraphicsShaderProgram.FragmentAbi;
 
     internal static int MaxPushConstantSize { get; } = GetMaxPushConstantSize();
 
@@ -37,10 +25,6 @@ internal static class UiVisualShaderContract
     {
         var size = SolidVertexAbi.PushConstants[0].Size;
         size = Math.Max(size, RoundedVertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, RoundedSliceVertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, ClipAwareSolidVertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, ClipAwareRoundedVertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, ClipAwareRoundedSliceVertexAbi.PushConstants[0].Size);
         return checked((int)size);
     }
 
@@ -55,24 +39,6 @@ internal static class UiVisualShaderContract
         shaderKind = default;
         pushConstantSize = 0;
         diagnostic = string.Empty;
-
-        if (TryDescribeClipAware(program, visualKind, out shaderKind, out pushConstantSize))
-        {
-            return true;
-        }
-
-        if ((visualKind == UiVisualKind.RoundedRectangle || visualKind == UiVisualKind.Border) &&
-            program.Vertex is { } sliceVertex &&
-            program.Fragment is { } sliceFragment &&
-            string.Equals(sliceVertex.EntryPoint, "main", StringComparison.Ordinal) &&
-            string.Equals(sliceFragment.EntryPoint, "main", StringComparison.Ordinal) &&
-            SameAbi(sliceVertex.Abi, RoundedSliceVertexAbi) &&
-            SameAbi(sliceFragment.Abi, RoundedSliceFragmentAbi))
-        {
-            shaderKind = UiRectangleShaderKind.RoundedSlice;
-            pushConstantSize = RoundedSliceVertexAbi.PushConstants[0].Size;
-            return true;
-        }
 
         ShaderAbi expectedVertex;
         ShaderAbi expectedFragment;
@@ -225,32 +191,9 @@ internal static class UiVisualShaderContract
         in PixelRect clip,
         float dpiScale,
         Span<byte> destination)
-    {
-        var clipRect = new float4(
-            clip.X * dpiScale,
-            clip.Y * dpiScale,
-            clip.Width * dpiScale,
-            clip.Height * dpiScale);
-        return shaderKind switch
-        {
-            UiRectangleShaderKind.ClipAwareSolid => ClipAwareSolidRectangleGraphicsShaderProgram.PackClipAwareSolidRectangleVertexInstancesElement(
-                new ClipAwareSolidRectangleParameters(Scale(visual.Bounds, dpiScale), visual.Paint.FillColor, clipRect),
-                destination),
-            UiRectangleShaderKind.ClipAwareRounded => ClipAwareRoundedRectangleGraphicsShaderProgram.PackClipAwareRoundedRectangleVertexInstancesElement(
-                new ClipAwareRoundedRectangleParameters(
-                    Scale(visual.Bounds, dpiScale),
-                    visual.Paint.FillColor,
-                    visual.Paint.StrokeColor,
-                    Scale(visual.Paint.CornerRadii, dpiScale),
-                    ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale),
-                    clipRect),
-                destination),
-            _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown clip-aware UI rectangle shader kind."),
-        };
-    }
+        => PackInstance(shaderKind, in visual, dpiScale, destination);
 
-    internal static int MaxInstanceCount(UiRectangleShaderKind shaderKind)
-        => shaderKind is UiRectangleShaderKind.RoundedSlice or UiRectangleShaderKind.ClipAwareRoundedSlice ? 9 : 1;
+    internal static int MaxInstanceCount(UiRectangleShaderKind shaderKind) => 1;
 
     internal static int PackInstances(
         UiRectangleShaderKind shaderKind,
@@ -259,12 +202,7 @@ internal static class UiVisualShaderContract
         uint instanceStride,
         Span<byte> destination)
     {
-        if (shaderKind != UiRectangleShaderKind.RoundedSlice)
-        {
-            return PackInstance(shaderKind, in visual, dpiScale, destination);
-        }
-
-        return UiRoundedRectangleSlicePacker.Pack(in visual, dpiScale, instanceStride, destination);
+        return PackInstance(shaderKind, in visual, dpiScale, destination);
     }
 
     internal static int PackInstances(
@@ -275,17 +213,7 @@ internal static class UiVisualShaderContract
         uint instanceStride,
         Span<byte> destination)
     {
-        if (shaderKind is UiRectangleShaderKind.ClipAwareSolid or UiRectangleShaderKind.ClipAwareRounded)
-        {
-            return PackInstance(shaderKind, in visual, in clip, dpiScale, destination);
-        }
-
-        if (shaderKind == UiRectangleShaderKind.ClipAwareRoundedSlice)
-        {
-            return UiRoundedRectangleSlicePacker.PackClipAware(in visual, dpiScale, instanceStride, in clip, destination);
-        }
-
-        return PackInstances(shaderKind, in visual, dpiScale, instanceStride, destination);
+        return PackInstance(shaderKind, in visual, dpiScale, destination);
     }
 
     private static float ResolvePaintMetric(float value, PaintUnits units, float dpiScale)
@@ -313,63 +241,13 @@ internal static class UiVisualShaderContract
         {
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
-            UiRectangleShaderKind.RoundedSlice => RoundedRectangleSliceGraphicsShaderProgram.PackRoundedRectangleSliceVertexFrame(in frame, destination),
-            UiRectangleShaderKind.ClipAwareSolid => ClipAwareSolidRectangleGraphicsShaderProgram.PackClipAwareSolidRectangleVertexFrame(in frame, destination),
-            UiRectangleShaderKind.ClipAwareRounded => ClipAwareRoundedRectangleGraphicsShaderProgram.PackClipAwareRoundedRectangleVertexFrame(in frame, destination),
-            UiRectangleShaderKind.ClipAwareRoundedSlice => ClipAwareRoundedRectangleSliceGraphicsShaderProgram.PackClipAwareRoundedRectangleSliceVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }
 
-    internal static bool UsesShaderClip(UiRectangleShaderKind shaderKind)
-        => shaderKind is UiRectangleShaderKind.ClipAwareSolid or
-            UiRectangleShaderKind.ClipAwareRounded or
-            UiRectangleShaderKind.ClipAwareRoundedSlice;
+    internal static bool UsesShaderClip(UiRectangleShaderKind shaderKind) => false;
 
-    private static bool TryDescribeClipAware(
-        IGraphicsShaderProgram program,
-        UiVisualKind visualKind,
-        out UiRectangleShaderKind shaderKind,
-        out uint pushConstantSize)
-    {
-        shaderKind = default;
-        pushConstantSize = 0;
-        if (visualKind == UiVisualKind.SolidRectangle && IsProgram(program, ClipAwareSolidVertexAbi, ClipAwareSolidFragmentAbi))
-        {
-            shaderKind = UiRectangleShaderKind.ClipAwareSolid;
-            pushConstantSize = ClipAwareSolidVertexAbi.PushConstants[0].Size;
-            return true;
-        }
 
-        if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
-        {
-            return false;
-        }
-
-        if (IsProgram(program, ClipAwareRoundedSliceVertexAbi, ClipAwareRoundedSliceFragmentAbi))
-        {
-            shaderKind = UiRectangleShaderKind.ClipAwareRoundedSlice;
-            pushConstantSize = ClipAwareRoundedSliceVertexAbi.PushConstants[0].Size;
-            return true;
-        }
-
-        if (IsProgram(program, ClipAwareRoundedVertexAbi, ClipAwareRoundedFragmentAbi))
-        {
-            shaderKind = UiRectangleShaderKind.ClipAwareRounded;
-            pushConstantSize = ClipAwareRoundedVertexAbi.PushConstants[0].Size;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsProgram(IGraphicsShaderProgram program, ShaderAbi vertexAbi, ShaderAbi fragmentAbi)
-        => program.Vertex is { } vertex &&
-           program.Fragment is { } fragment &&
-           string.Equals(vertex.EntryPoint, "main", StringComparison.Ordinal) &&
-           string.Equals(fragment.EntryPoint, "main", StringComparison.Ordinal) &&
-           SameAbi(vertex.Abi, vertexAbi) &&
-           SameAbi(fragment.Abi, fragmentAbi);
 
     private static bool SameAbi(ShaderAbi actual, ShaderAbi expected)
         => actual.Stage == expected.Stage &&

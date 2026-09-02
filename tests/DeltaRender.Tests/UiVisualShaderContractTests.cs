@@ -104,9 +104,9 @@ public sealed class UiVisualShaderContractTests
     }
 
     [Fact]
-    public void GeneratedClipAwareSolidArtifactPacksEffectiveClip()
+    public void SolidArtifactUsesScissorClipBoundary()
     {
-        var program = ClipAwareSolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
         var visual = new UiVisualDraw(
             UiVisualKind.SolidRectangle,
             default,
@@ -125,17 +125,14 @@ public sealed class UiVisualShaderContractTests
             out var pushConstantSize,
             out _,
             out var diagnostic), diagnostic);
-        Assert.Equal(UiRectangleShaderKind.ClipAwareSolid, shaderKind);
+        Assert.Equal(UiRectangleShaderKind.Solid, shaderKind);
         Assert.Equal(new ShaderBinding(0, 0), instanceBinding);
-        Assert.Equal(48u, instanceStride);
+        Assert.Equal(32u, instanceStride);
         Assert.Equal(8u, pushConstantSize);
 
-        Span<byte> packed = stackalloc byte[48];
-        Assert.Equal(48, UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, 1f, instanceStride, packed));
-        Assert.Equal(12f, ReadFloat(packed, 32));
-        Assert.Equal(14f, ReadFloat(packed, 36));
-        Assert.Equal(50f, ReadFloat(packed, 40));
-        Assert.Equal(60f, ReadFloat(packed, 44));
+        Span<byte> packed = stackalloc byte[32];
+        Assert.Equal(32, UiVisualShaderContract.PackInstances(shaderKind, in visual, in clip, 1f, instanceStride, packed));
+        Assert.Equal(0.1f, ReadFloat(packed, 16));
     }
 
     private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)

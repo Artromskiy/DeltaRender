@@ -17,6 +17,15 @@ RenderGraphExecutionResult result = graph.Execute();
 The session may be compute-only, headless graphics or windowed. Only a
 presentable session acquires and presents a window target.
 
+## Vulkan validation
+
+`VulkanRendererOptions.EnableValidation` enables validation diagnostics when
+the runtime exposes `VK_LAYER_KHRONOS_validation` and the debug-utils
+extension. The renderer checks both capabilities before creating the Vulkan
+instance. If the layer is not installed, initialization continues without it
+and reports a diagnostic warning; applications must not assume that validation
+is available on every machine.
+
 Features add ordinary transfer, compute or raster passes. A feature owns its
 producer-side state and implements the pass recording; the graph owns ordering,
 resource hazards and execution.

@@ -13,6 +13,13 @@ Opaque handles are resolved only inside the session. Vulkan and SDL/MoltenVK
 objects never cross the renderer boundary. Resource release is generation
 checked and idempotent; failed construction rolls back in reverse order.
 
+When `VulkanRendererOptions.EnableValidation` is true, instance creation
+probes for `VK_LAYER_KHRONOS_validation` and the debug-utils extension. The
+validation layer name is passed only through the instance-create call; its
+temporary native pointer storage is released immediately after that call. A
+missing layer or extension disables validation diagnostics with a warning and
+does not make renderer initialization fail.
+
 ## Graph execution
 
 `VulkanRenderGraph` reuses frame-local storage for passes, resource uses,
