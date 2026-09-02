@@ -61,7 +61,6 @@ provide application data and pass recording without exposing Vulkan objects.
 - [`DeltaRender.Platform.SDL3`](src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj):
   SDL3 window and surface integration.
 - [Headless shader playground](samples/DeltaRender.HeadlessShaderPlayground/README.md).
-- [Windowed shader sandbox](samples/DeltaRender.ShaderSandbox/README.md).
 
 ## Further reading
 
