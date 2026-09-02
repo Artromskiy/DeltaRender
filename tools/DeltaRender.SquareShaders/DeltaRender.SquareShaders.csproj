@@ -20,7 +20,7 @@
     <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
-    <PackageReference Include="DeltaMaths" Version="0.0.7" />
+    <PackageReference Include="DeltaMaths" Version="*" />
     <PackageReference Include="DeltaShader.Tool" PrivateAssets="all" />
   </ItemGroup>
 </Project>
