@@ -39,11 +39,11 @@ The gate keeps the three published packages version-aligned, rejects source
 references and exact pins for those packages, and keeps the source-only text
 and XAML adapters non-packable with explicit producer edges.
 
-## NuGet release protocol for 0.0.14
+## NuGet release protocol for 0.0.15
 
 Run the package boundary gate first. The `DeltaRender` package must be produced
 before its Vulkan and SDL3 dependents so their restore resolves the same local
-`0.0.14` base package. The shader dependency is supplied by the selected
+`0.0.15` base package. The shader dependency is supplied by the selected
 DeltaShader producer package feed. Set `DELTASHADER_PACKAGE_DIR` to that feed
 before packing; do not pin a historical staging version here.
 
@@ -52,14 +52,14 @@ set -euo pipefail
 
 ./eng/check-package-boundaries.sh
 
-package_dir="$PWD/artifacts/packages/0.0.14"
+package_dir="$PWD/artifacts/packages/0.0.15"
 shader_package_dir="${DELTASHADER_PACKAGE_DIR:?Set DELTASHADER_PACKAGE_DIR to the selected DeltaShader package feed}"
 mkdir -p "$package_dir"
 
 package_sources=(
   --source "$package_dir"
-  --source ../DeltaDiagnostics/artifacts
-  --source ../DeltaMaths/artifacts
+  --source "$PWD/../DeltaDiagnostics/artifacts"
+  --source "$PWD/../DeltaMaths/artifacts"
   --source "$shader_package_dir"
   --source https://api.nuget.org/v3/index.json
 )
@@ -69,7 +69,7 @@ pack_options=(
   --disable-build-servers
   -m:1
   /p:UseSharedCompilation=false
-  -v:minimal
+    -v:minimal
 )
 
 dotnet pack src/DeltaRender/DeltaRender.csproj \
@@ -81,16 +81,16 @@ dotnet pack src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
 ```
 
 Validate all three archives before publishing. `unzip -t` checks archive
-integrity; the nuspec output must show package version `0.0.14`, the current
+integrity; the nuspec output must show package version `0.0.15`, the current
 repository commit, and the resolved matching `DeltaShader.Contract` version for
 the base/Vulkan packages,
-and `DeltaRender 0.0.14` for the Vulkan/SDL3 packages.
+and `DeltaRender 0.0.15` for the Vulkan/SDL3 packages.
 
 ```bash
 packages=(
-  "$package_dir/DeltaRender.0.0.14.nupkg"
-  "$package_dir/DeltaRender.Vulkan.0.0.14.nupkg"
-  "$package_dir/DeltaRender.Platform.SDL3.0.0.14.nupkg"
+  "$package_dir/DeltaRender.0.0.15.nupkg"
+  "$package_dir/DeltaRender.Vulkan.0.0.15.nupkg"
+  "$package_dir/DeltaRender.Platform.SDL3.0.0.15.nupkg"
 )
 
 for package in "${packages[@]}"; do

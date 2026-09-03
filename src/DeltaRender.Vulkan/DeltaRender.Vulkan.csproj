@@ -4,7 +4,7 @@
     <RootNamespace>Delta.Render.Vulkan</RootNamespace>
     <AssemblyName>DeltaRender.Vulkan</AssemblyName>
     <PackageId>DeltaRender.Vulkan</PackageId>
-    <Version>0.0.14</Version>
+    <Version>0.0.15</Version>
     <IsPackable>true</IsPackable>
     <Authors>Artromskiy</Authors>
     <Description>Vulkan implementation of the DeltaRender RenderGraph contract.</Description>

@@ -4,7 +4,7 @@
     <RootNamespace>Delta.Render.Platform.SDL3</RootNamespace>
     <AssemblyName>DeltaRender.Platform.SDL3</AssemblyName>
     <PackageId>DeltaRender.Platform.SDL3</PackageId>
-    <Version>0.0.14</Version>
+    <Version>0.0.15</Version>
     <IsPackable>true</IsPackable>
     <Authors>Artromskiy</Authors>
     <Description>SDL3 window and Vulkan surface integration for DeltaRender.</Description>
