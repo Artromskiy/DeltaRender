@@ -7,7 +7,7 @@ using Delta.Render.RenderGraph;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
-using Maths = global::Delta.Maths;
+
 
 internal sealed class TextAtlas : IDisposable
 {

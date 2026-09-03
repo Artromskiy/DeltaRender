@@ -3,7 +3,7 @@ using Delta.Shader.Contract;
 
 namespace Delta.Render.RenderGraph;
 
-using Maths = global::Delta.Maths;
+
 
 internal sealed class RenderBatchPipelineState : IDisposable
 {

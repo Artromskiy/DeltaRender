@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Numerics;
-using Delta.Diagnostics;
 using Delta;
+using Delta.Diagnostics;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
 using Delta.Shader.Contract;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
-using Maths = global::Delta.Maths;
+
 
 /// <summary>
 /// Synchronously consumes one borrowed DeltaXAML display list and exposes it as

@@ -8,7 +8,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Delta.Render.Vulkan;
-using Maths = global::Delta.Maths;
+
 
 internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 {

@@ -2,7 +2,7 @@ using Delta;
 using Delta.Render.RenderGraph;
 
 namespace Delta.Render.XAML;
-using Maths = global::Delta.Maths;
+
 
 internal static class UiDisplayListGeometry
 {

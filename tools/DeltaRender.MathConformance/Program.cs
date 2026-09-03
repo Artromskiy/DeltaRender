@@ -9,7 +9,7 @@ using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.MathConformance;
-using Maths = global::Delta.Maths;
+
 
 internal static class Program
 {

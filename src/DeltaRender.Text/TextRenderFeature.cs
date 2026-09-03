@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using Delta.Diagnostics;
 using Delta;
+using Delta.Diagnostics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -12,7 +12,7 @@ using Delta.Shader.Text;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
-using Maths = global::Delta.Maths;
+
 
 /// <summary>
 /// Reusable graph feature for positioned text. The caller supplies already shaped

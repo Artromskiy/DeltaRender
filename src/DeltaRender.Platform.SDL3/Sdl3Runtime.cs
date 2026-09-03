@@ -4,7 +4,7 @@ using Delta.Render;
 using SDL3;
 
 namespace Delta.Render.Platform.SDL3;
-using Maths = global::Delta.Maths;
+
 
 internal static class Sdl3Runtime
 {

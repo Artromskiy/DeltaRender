@@ -1,14 +1,14 @@
 using System.Runtime.InteropServices;
 using Delta;
 using Delta.Render;
+using Delta.Render.FullscreenShaders;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.RenderGraph;
-using Delta.Render.FullscreenShaders;
 using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.ShaderSandbox;
-using Maths = global::Delta.Maths;
+
 
 internal static class Program
 {

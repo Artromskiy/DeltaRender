@@ -3,7 +3,7 @@ using System.Globalization;
 using Delta;
 
 namespace Delta.Render.MathConformance;
-using Maths = global::Delta.Maths;
+
 
 internal sealed record ComparisonResult(bool Passed, IReadOnlyList<MismatchDetail> Mismatches);
 

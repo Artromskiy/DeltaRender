@@ -5,7 +5,7 @@ using Delta.Shader.UI;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
-using Maths = global::Delta.Maths;
+
 
 internal enum UiRectangleShaderKind : byte
 {

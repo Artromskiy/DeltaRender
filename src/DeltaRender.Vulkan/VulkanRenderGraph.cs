@@ -8,7 +8,7 @@ using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
-using Maths = global::Delta.Maths;
+
 
 internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {

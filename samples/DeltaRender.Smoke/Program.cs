@@ -10,7 +10,6 @@ using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.Smoke;
-using Maths = global::Delta.Maths;
 
 internal static class Program
 {
