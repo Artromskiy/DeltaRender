@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Delta.Maths;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.RenderGraph;
@@ -16,7 +17,8 @@ internal sealed class RenderBatchResourceRegistry : IDisposable
     internal RenderBatchResourceRegistry(IRenderFrameSession session)
     {
         _session = session;
-        _alignment = Math.Max(1UL, session.Capabilities.MinStorageBufferOffsetAlignment);
+        var alignment = session.Capabilities.MinStorageBufferOffsetAlignment;
+        _alignment = alignment >= 1UL ? alignment : 1UL;
     }
 
     internal int PipelineCount => _pipelines.Count;

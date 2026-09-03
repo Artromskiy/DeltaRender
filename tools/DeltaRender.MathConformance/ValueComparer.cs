@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
+using Delta.Maths;
 
 namespace Delta.Render.MathConformance;
 
@@ -79,7 +80,7 @@ internal static class ValueComparer
 
     private static bool AcceptQuaternion(uint[] expected, uint[] actual)
     {
-        const double angularToleranceRadians = 0.0001 * Math.PI / 180.0;
+        var angularToleranceRadians = DeltaMaths.Radians(0.0001);
         if (expected.Length != 4 || actual.Length != 4)
         {
             return false;
@@ -107,9 +108,9 @@ internal static class ValueComparer
             return false;
         }
 
-        var normalizedDot = Math.Abs(dot / Math.Sqrt(expectedLengthSquared * actualLengthSquared));
-        normalizedDot = Math.Clamp(normalizedDot, -1, 1);
-        return 2 * Math.Acos(normalizedDot) <= angularToleranceRadians;
+        var normalizedDot = DeltaMaths.Abs(dot / DeltaMaths.Sqrt(expectedLengthSquared * actualLengthSquared));
+        normalizedDot = DeltaMaths.Clamp(normalizedDot, -1, 1);
+        return 2 * DeltaMaths.Acos(normalizedDot) <= angularToleranceRadians;
     }
 
     private static bool AcceptFloat(
@@ -124,8 +125,8 @@ internal static class ValueComparer
     {
         var cpu = BitConverter.UInt32BitsToSingle(cpuWord);
         var gpu = BitConverter.UInt32BitsToSingle(gpuWord);
-        absolute = Math.Abs((double)cpu - gpu);
-        relative = absolute / Math.Max(Math.Abs((double)cpu), Math.Abs((double)gpu));
+        absolute = DeltaMaths.Abs((double)cpu - gpu);
+        relative = absolute / DeltaMaths.Max(DeltaMaths.Abs((double)cpu), DeltaMaths.Abs((double)gpu));
         if (float.IsNaN(cpu) || float.IsNaN(gpu))
         {
             ulp = null;
@@ -138,7 +139,8 @@ internal static class ValueComparer
             return cpu == gpu;
         }
 
-        ulp = Math.Abs(Ordered(cpuWord) - Ordered(gpuWord));
+        var ulpDistance = Ordered(cpuWord) - Ordered(gpuWord);
+        ulp = ulpDistance >= 0 ? ulpDistance : -ulpDistance;
         if (cpuWord == gpuWord)
         {
             return true;

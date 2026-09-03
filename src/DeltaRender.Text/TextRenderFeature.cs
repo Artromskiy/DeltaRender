@@ -372,8 +372,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 continue;
             }
 
-            firstBatch = firstBatch < 0 ? batchStart : Math.Min(firstBatch, batchStart);
-            lastBatch = Math.Max(lastBatch, checked(batchStart + batchCount));
+            firstBatch = firstBatch < 0 ? batchStart : DeltaMaths.Min(firstBatch, batchStart);
+            lastBatch = DeltaMaths.Max(lastBatch, checked(batchStart + batchCount));
         }
 
         if (firstBatch < 0)
@@ -758,7 +758,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private static int GrowCapacity(int current, int required)
     {
-        var capacity = Math.Max(1, current);
+        var capacity = DeltaMaths.Max(1, current);
         while (capacity < required)
         {
             capacity = checked(capacity * 2);
@@ -780,10 +780,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private static bool TryClip(PixelRect requested, PixelExtent viewport, out PixelRect clip)
     {
-        var left = Math.Max(0L, requested.X);
-        var top = Math.Max(0L, requested.Y);
-        var right = Math.Min((long)viewport.Width, (long)requested.X + requested.Width);
-        var bottom = Math.Min((long)viewport.Height, (long)requested.Y + requested.Height);
+        var left = requested.X >= 0L ? requested.X : 0L;
+        var top = requested.Y >= 0L ? requested.Y : 0L;
+        var requestedRight = (long)requested.X + requested.Width;
+        var requestedBottom = (long)requested.Y + requested.Height;
+        var right = requestedRight <= (long)viewport.Width ? requestedRight : (long)viewport.Width;
+        var bottom = requestedBottom <= (long)viewport.Height ? requestedBottom : (long)viewport.Height;
         if (right <= left || bottom <= top)
         {
             clip = default;

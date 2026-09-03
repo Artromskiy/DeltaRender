@@ -193,6 +193,17 @@ diagnostics.
 
 ## Code metrics
 
+### DeltaMaths usage gate
+
+All DeltaRender C# under `src/`, `tools/`, `samples/`, `tests/` and
+`benchmarks/` uses `Delta.Maths` primitives instead of direct `System.Math`
+or `MathF` calls. Generated output and `bin/obj` are excluded; there are no
+provider exceptions in this repository.
+
+```bash
+./eng/check-delta-maths-usage.sh
+```
+
 Run the same analyzer/code-metrics build locally and in the manual GitHub
 Actions workflow through the repository wrapper:
 

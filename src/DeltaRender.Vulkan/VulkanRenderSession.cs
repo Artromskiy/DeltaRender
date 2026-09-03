@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -104,7 +105,9 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _memoryProperties = deviceContext.MemoryProperties;
         _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         var drawableExtent = metrics.DrawableExtent;
-        _extent = new Extent2D(Math.Max(1u, drawableExtent.Width), Math.Max(1u, drawableExtent.Height));
+        _extent = new Extent2D(
+            DeltaMaths.Max(1u, drawableExtent.Width),
+            DeltaMaths.Max(1u, drawableExtent.Height));
 
         RenderPass renderPass = default;
         CommandPool commandPool = default;

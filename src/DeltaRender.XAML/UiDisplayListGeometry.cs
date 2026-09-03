@@ -22,10 +22,10 @@ internal static class UiDisplayListGeometry
             return false;
         }
 
-        var leftValue = Math.Floor(bounds.x);
-        var topValue = Math.Floor(bounds.y);
-        var rightValue = Math.Ceiling(right);
-        var bottomValue = Math.Ceiling(bottom);
+        var leftValue = DeltaMaths.Floor(bounds.x);
+        var topValue = DeltaMaths.Floor(bounds.y);
+        var rightValue = DeltaMaths.Ceil(right);
+        var bottomValue = DeltaMaths.Ceil(bottom);
         var left = ClampToInt(leftValue);
         var top = ClampToInt(topValue);
         var rightInt = ClampToInt(rightValue);
@@ -43,10 +43,14 @@ internal static class UiDisplayListGeometry
 
     internal static PixelRect Intersect(PixelRect left, PixelRect right)
     {
-        var x = Math.Max((long)left.X, right.X);
-        var y = Math.Max((long)left.Y, right.Y);
-        var rightEdge = Math.Min((long)left.X + left.Width, (long)right.X + right.Width);
-        var bottomEdge = Math.Min((long)left.Y + left.Height, (long)right.Y + right.Height);
+        var x = left.X >= right.X ? left.X : right.X;
+        var y = left.Y >= right.Y ? left.Y : right.Y;
+        var leftRight = (long)left.X + left.Width;
+        var rightRight = (long)right.X + right.Width;
+        var leftBottom = (long)left.Y + left.Height;
+        var rightBottom = (long)right.Y + right.Height;
+        var rightEdge = leftRight <= rightRight ? leftRight : rightRight;
+        var bottomEdge = leftBottom <= rightBottom ? leftBottom : rightBottom;
         if (rightEdge <= x || bottomEdge <= y)
         {
             return new PixelRect((int)x, (int)y, 0, 0);

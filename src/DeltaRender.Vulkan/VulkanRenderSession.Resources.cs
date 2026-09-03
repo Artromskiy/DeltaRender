@@ -15,7 +15,7 @@ internal sealed unsafe partial class VulkanRenderSession
             var info = new BufferCreateInfo
             {
                 SType = StructureType.BufferCreateInfo,
-                Size = Math.Max(4, size),
+                Size = size >= 4UL ? size : 4UL,
                 Usage = usage,
                 SharingMode = shared ? SharingMode.Concurrent : SharingMode.Exclusive,
                 QueueFamilyIndexCount = shared ? (uint)_queueFamilies.Length : 0u,

@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaRender" />
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Windows" />

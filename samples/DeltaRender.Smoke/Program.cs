@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.FullscreenShaders;
 using Delta.Render.Platform.SDL3;
@@ -107,7 +108,7 @@ internal static class Program
         {
             if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase) && int.TryParse(args[index + 1], out var value))
             {
-                return Math.Max(1, value);
+                return DeltaMaths.Max(1, value);
             }
         }
 

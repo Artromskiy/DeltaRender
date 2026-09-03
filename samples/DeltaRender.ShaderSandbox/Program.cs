@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.RenderGraph;
@@ -23,7 +24,7 @@ internal static class Program
         }
 
         var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
-            ? Math.Max(1, parsedFrames)
+            ? DeltaMaths.Max(1, parsedFrames)
             : 1;
         var interactive = args.Any(static argument => string.Equals(argument, "--interactive", StringComparison.OrdinalIgnoreCase));
 

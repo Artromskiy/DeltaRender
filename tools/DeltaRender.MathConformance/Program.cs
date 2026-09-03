@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
@@ -462,7 +463,7 @@ internal sealed class VulkanCaseRunner
 
                 var bytes = checked((int)(stride * (ulong)cases.Count));
                 var description = new RenderBufferDescription(
-                    (ulong)Math.Max(1, bytes),
+                    (ulong)DeltaMaths.Max(1, bytes),
                     RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination | RenderBufferUsage.TransferSource);
                 buffers[resourceIndex] = _session.CreateBuffer(in description);
                 createdBufferCount++;

@@ -24,7 +24,7 @@ internal static class UiVisualShaderContract
     private static int GetMaxPushConstantSize()
     {
         var size = SolidVertexAbi.PushConstants[0].Size;
-        size = Math.Max(size, RoundedVertexAbi.PushConstants[0].Size);
+        size = DeltaMaths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
         return checked((int)size);
     }
 

@@ -1,3 +1,4 @@
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 
@@ -206,7 +207,7 @@ internal sealed class VulkanGraphDependencyPlanner
     private static int GrowCapacity(int current, int required)
     {
         var capacity = current == 0 ? 8 : checked(current * 2);
-        return Math.Max(capacity, required);
+        return DeltaMaths.Max(capacity, required);
     }
 
     private void AddEdge(int from, int to)

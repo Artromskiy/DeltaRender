@@ -28,6 +28,7 @@
   <ItemGroup>
     <PackageReference Include="DeltaShader.Contract" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
+    <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaRender" />
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />

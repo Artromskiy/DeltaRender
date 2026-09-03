@@ -1,3 +1,4 @@
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Silk.NET.Vulkan;
@@ -215,10 +216,10 @@ internal sealed unsafe partial class VulkanRenderSession
 
     private SwapchainKHR CreateSwapchain(SurfaceKHR surface, Extent2D extent, SurfaceCapabilitiesKHR capabilities, SurfaceFormatKHR[] formats, PresentModeKHR[] modes)
     {
-        var imageCount = Math.Max(2u, capabilities.MinImageCount);
+        var imageCount = DeltaMaths.Max(2u, capabilities.MinImageCount);
         if (capabilities.MaxImageCount != 0)
         {
-            imageCount = Math.Min(imageCount, capabilities.MaxImageCount);
+            imageCount = DeltaMaths.Min(imageCount, capabilities.MaxImageCount);
         }
 
         var queueFamilies = new[] { _graphicsFamily, _presentFamily };

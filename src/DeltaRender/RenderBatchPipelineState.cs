@@ -1,3 +1,4 @@
+using Delta.Maths;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.RenderGraph;
@@ -206,8 +207,8 @@ internal sealed class RenderBatchPipelineState : IDisposable
             return false;
         }
 
-        existing.Offset = Math.Min(existing.Offset, offset);
-        existing.End = Math.Max(existing.End, end);
+        existing.Offset = DeltaMaths.Min(existing.Offset, offset);
+        existing.End = DeltaMaths.Max(existing.End, end);
         _dirty[index] = existing;
         return true;
     }

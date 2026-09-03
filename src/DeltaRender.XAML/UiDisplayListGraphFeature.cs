@@ -145,7 +145,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _clipResolver = new UiClipResolver(viewport, _diagnostics);
         if (session is not null)
         {
-            _visualInstanceAlignment = Math.Max(1UL, session.Capabilities.MinStorageBufferOffsetAlignment);
+            var alignment = session.Capabilities.MinStorageBufferOffsetAlignment;
+            _visualInstanceAlignment = alignment >= 1UL ? alignment : 1UL;
         }
     }
 
@@ -946,7 +947,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var previousEnd = checked(previous.Offset + previous.SizeInBytes);
             if (start <= checked(previousEnd + (ulong)VisualUploadMergeGapBytes))
             {
-                previous = new BufferRange(previous.Offset, checked(Math.Max(previousEnd, end) - previous.Offset));
+                previous = new BufferRange(previous.Offset, checked((previousEnd >= end ? previousEnd : end) - previous.Offset));
                 return;
             }
         }
@@ -1053,10 +1054,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var scale = (double)_dpiScale;
-        var left = checked((int)Math.Floor(clip.X * scale));
-        var top = checked((int)Math.Floor(clip.Y * scale));
-        var right = checked((int)Math.Ceiling((clip.X + (double)clip.Width) * scale));
-        var bottom = checked((int)Math.Ceiling((clip.Y + (double)clip.Height) * scale));
+        var left = checked((int)DeltaMaths.Floor(clip.X * scale));
+        var top = checked((int)DeltaMaths.Floor(clip.Y * scale));
+        var right = checked((int)DeltaMaths.Ceil((clip.X + (double)clip.Width) * scale));
+        var bottom = checked((int)DeltaMaths.Ceil((clip.Y + (double)clip.Height) * scale));
         return new PixelRect(left, top, checked(right - left), checked(bottom - top));
     }
 

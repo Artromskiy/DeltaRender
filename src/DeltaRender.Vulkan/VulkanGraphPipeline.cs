@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -153,7 +154,7 @@ internal sealed unsafe class VulkanGraphPipeline
                 pipeline = output[0];
             }
 
-            return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Graphics, descriptorState, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, Math.Max(GetPushSize(program.Vertex.Abi.PushConstants), GetPushSize(program.Fragment.Abi.PushConstants)));
+            return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Graphics, descriptorState, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, DeltaMaths.Max(GetPushSize(program.Vertex.Abi.PushConstants), GetPushSize(program.Fragment.Abi.PushConstants)));
         }
         catch
         {

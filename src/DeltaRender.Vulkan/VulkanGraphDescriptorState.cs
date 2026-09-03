@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Delta.Maths;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -62,7 +63,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
                 throw new ArgumentException("The graph supports one descriptor per binding.");
             }
 
-            maxSet = Math.Max(maxSet, checked((int)resource.Binding.Set));
+            maxSet = DeltaMaths.Max(maxSet, checked((int)resource.Binding.Set));
             if (seen.Add(resource.Binding))
             {
                 result.Add(new VulkanGraphBinding(
