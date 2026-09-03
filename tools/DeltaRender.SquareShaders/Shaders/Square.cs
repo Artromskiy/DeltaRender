@@ -29,24 +29,18 @@ public static class Square
 
     public readonly struct VertexContext
     {
-        [Interstage]
-        public readonly Varying Vertex;
-
         [PushConstant]
         public readonly PushConstants Constants;
     }
 
     public readonly struct FragmentContext
     {
-        [Interstage]
-        public readonly Varying Fragment;
-
         [PushConstant]
         public readonly PushConstants Constants;
     }
 
     [VertexShader("square")]
-    public static Varying SquareVertex(in VertexContext context)
+    public static Varying SquareVertex(in VertexContext context, in Varying input)
     {
         var vertexIndex = ShaderBuiltins.VertexIndex;
         var top = new float4(0.58f, 0.58f, 0.58f, 1f);
@@ -142,8 +136,8 @@ public static class Square
     }
 
     [FragmentShader("square")]
-    public static float4 SquareFragment(in FragmentContext context)
+    public static float4 SquareFragment(in FragmentContext context, in Varying input)
     {
-        return context.Fragment.Color;
+        return input.Color;
     }
 }

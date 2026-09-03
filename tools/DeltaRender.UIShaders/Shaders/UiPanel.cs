@@ -25,24 +25,18 @@ public static class UiPanel
 
     public readonly struct VertexContext
     {
-        [Interstage]
-        public readonly VertexOutput Vertex;
-
         [PushConstant]
         public readonly Parameters Constants;
     }
 
     public readonly struct FragmentContext
     {
-        [Interstage]
-        public readonly VertexOutput Fragment;
-
         [PushConstant]
         public readonly Parameters Constants;
     }
 
     [VertexShader]
-    public static VertexOutput Vertex(in VertexContext context)
+    public static VertexOutput Vertex(in VertexContext context, in VertexOutput input)
     {
         var vertexIndex = ShaderBuiltins.VertexIndex;
         var local = new float2(0f, 0f);
@@ -65,5 +59,5 @@ public static class UiPanel
     }
 
     [FragmentShader]
-    public static float4 Fragment(in FragmentContext context) => context.Constants.Color;
+    public static float4 Fragment(in FragmentContext context, in VertexOutput input) => context.Constants.Color;
 }
