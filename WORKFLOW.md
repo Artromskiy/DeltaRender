@@ -196,7 +196,7 @@ diagnostics.
 ### DeltaMaths usage gate
 
 All DeltaRender C# under `src/`, `tools/`, `samples/`, `tests/` and
-`benchmarks/` uses `Delta.Maths` primitives instead of direct `System.Math`
+Render consumers use `using Delta;` with the canonical `Maths.*` facade instead of direct `System.Math`; `global::Delta.Maths` is only the fully-qualified class alias. Shader-authoring code may use `Delta.maths`.
 or `MathF` calls. Generated output and `bin/obj` are excluded; there are no
 provider exceptions in this repository.
 

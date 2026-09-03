@@ -29,7 +29,7 @@ if [[ -n "$matches" ]]; then
 fi
 
 if [[ -n "$legacy_aliases" ]]; then
-    printf '%s\n' "Legacy Delta.Maths/DeltaMaths/lowercase maths spelling is forbidden in DeltaRender consumers:" >&2
+    printf '%s\n' "Legacy Delta.Maths imports/DeltaMaths calls/lowercase maths calls are forbidden in DeltaRender consumers:" >&2
     printf '%s\n' "$legacy_aliases" >&2
     exit 1
 fi
