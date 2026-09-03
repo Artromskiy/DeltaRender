@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -8,6 +8,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Delta.Render.Vulkan;
+using Maths = global::Delta.Maths;
 
 internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 {
@@ -106,8 +107,8 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _profiler = _profilingEnabled ? new VulkanRenderProfiler(renderer.Api, _device, _physicalDevice, _graphicsFamily) : null;
         var drawableExtent = metrics.DrawableExtent;
         _extent = new Extent2D(
-            DeltaMaths.Max(1u, drawableExtent.Width),
-            DeltaMaths.Max(1u, drawableExtent.Height));
+            Maths.Max(1u, drawableExtent.Width),
+            Maths.Max(1u, drawableExtent.Height));
 
         RenderPass renderPass = default;
         CommandPool commandPool = default;

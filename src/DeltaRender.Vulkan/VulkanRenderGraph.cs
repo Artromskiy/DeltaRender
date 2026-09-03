@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
+using Maths = global::Delta.Maths;
 
 internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGraphBuilder, IAsyncDisposable
 {
@@ -344,7 +345,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         int capacity = _states.Length == 0 ? 8 : checked(_states.Length * 2);
-        _states = new ResourceState[DeltaMaths.Max(capacity, required)];
+        _states = new ResourceState[Maths.Max(capacity, required)];
     }
 
     private static VulkanQueueRole QueueRoleFor(PassKind kind) => kind switch
@@ -363,7 +364,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         int capacity = _order.Length == 0 ? 8 : checked(_order.Length * 2);
-        _order = new int[DeltaMaths.Max(capacity, required)];
+        _order = new int[Maths.Max(capacity, required)];
     }
 
     private bool TryCaptureTopology(out int tokenCount)
@@ -458,7 +459,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
 
         int capacity = _topologyTokens.Length == 0 ? 8 : checked(_topologyTokens.Length * 2);
-        capacity = DeltaMaths.Max(capacity, required);
+        capacity = Maths.Max(capacity, required);
         if (_topologyTokens.Length < capacity)
         {
             _topologyTokens = new TopologyToken[capacity];

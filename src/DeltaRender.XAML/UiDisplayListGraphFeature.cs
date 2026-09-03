@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using System.Numerics;
 using Delta.Diagnostics;
-using Delta.Maths;
+using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
 using Delta.Shader.Contract;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
+using Maths = global::Delta.Maths;
 
 /// <summary>
 /// Synchronously consumes one borrowed DeltaXAML display list and exposes it as
@@ -1054,10 +1055,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var scale = (double)_dpiScale;
-        var left = checked((int)DeltaMaths.Floor(clip.X * scale));
-        var top = checked((int)DeltaMaths.Floor(clip.Y * scale));
-        var right = checked((int)DeltaMaths.Ceil((clip.X + (double)clip.Width) * scale));
-        var bottom = checked((int)DeltaMaths.Ceil((clip.Y + (double)clip.Height) * scale));
+        var left = checked((int)Maths.Floor(clip.X * scale));
+        var top = checked((int)Maths.Floor(clip.Y * scale));
+        var right = checked((int)Maths.Ceil((clip.X + (double)clip.Width) * scale));
+        var bottom = checked((int)Maths.Ceil((clip.Y + (double)clip.Height) * scale));
         return new PixelRect(left, top, checked(right - left), checked(bottom - top));
     }
 

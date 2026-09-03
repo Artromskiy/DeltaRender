@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using Delta.Diagnostics;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
+using Maths = global::Delta.Maths;
 
 internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
 {
@@ -265,7 +266,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         }
 
         int capacity = _queryCapacity == 0 ? 64 : checked(_queryCapacity * 2);
-        capacity = DeltaMaths.Max(capacity, required);
+        capacity = Maths.Max(capacity, required);
         var createInfo = new QueryPoolCreateInfo
         {
             SType = StructureType.QueryPoolCreateInfo,
@@ -299,7 +300,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
         }
 
         int capacity = _passMeasurements.Length == 0 ? 8 : checked(_passMeasurements.Length * 2);
-        Array.Resize(ref _passMeasurements, DeltaMaths.Max(capacity, required));
+        Array.Resize(ref _passMeasurements, Maths.Max(capacity, required));
     }
 
     private void ReadGpuDurations()
@@ -356,7 +357,7 @@ internal sealed unsafe class VulkanRenderProfiler : IRenderProfiler, IDisposable
             return new ProfileDuration(ulong.MaxValue);
         }
 
-        return new ProfileDuration((ulong)DeltaMaths.Round(picoseconds));
+        return new ProfileDuration((ulong)Maths.Round(picoseconds));
     }
 
     private static uint GetTimestampValidBits(Vk api, PhysicalDevice physicalDevice, uint graphicsFamily)

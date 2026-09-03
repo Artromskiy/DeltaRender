@@ -1,4 +1,4 @@
-using Delta.Maths;
+using Delta;
 using Delta.Shader;
 
 namespace Delta.Render.UIShaders;

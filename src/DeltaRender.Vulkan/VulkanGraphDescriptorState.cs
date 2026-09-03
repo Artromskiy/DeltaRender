@@ -1,11 +1,12 @@
 using System.Collections.Generic;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
+using Maths = global::Delta.Maths;
 
 internal readonly record struct VulkanGraphBinding(
     ShaderBinding Binding,
@@ -63,7 +64,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
                 throw new ArgumentException("The graph supports one descriptor per binding.");
             }
 
-            maxSet = DeltaMaths.Max(maxSet, checked((int)resource.Binding.Set));
+            maxSet = Maths.Max(maxSet, checked((int)resource.Binding.Set));
             if (seen.Add(resource.Binding))
             {
                 result.Add(new VulkanGraphBinding(

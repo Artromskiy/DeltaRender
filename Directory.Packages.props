@@ -23,7 +23,7 @@
     <PackageVersion Include="DeltaShader.Contract" Version="*" />
     <PackageVersion Include="DeltaText" Version="*" />
     <PackageVersion Include="DeltaXAML.Contract" Version="*" />
-    <PackageVersion Include="DeltaMaths" Version="*" />
+    <PackageVersion Include="DeltaMaths" Version="0.0.9" />
     <PackageVersion Include="DeltaRender" Version="*" />
     <PackageVersion Include="DeltaRender.Vulkan" Version="*" />
     <PackageVersion Include="DeltaRender.Platform.SDL3" Version="*" />

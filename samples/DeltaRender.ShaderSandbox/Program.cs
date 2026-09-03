@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.RenderGraph;
@@ -8,6 +8,7 @@ using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.ShaderSandbox;
+using Maths = global::Delta.Maths;
 
 internal static class Program
 {
@@ -24,7 +25,7 @@ internal static class Program
         }
 
         var frames = GetOption(args, "--frames") is { } frameText && int.TryParse(frameText, out var parsedFrames)
-            ? DeltaMaths.Max(1, parsedFrames)
+            ? Maths.Max(1, parsedFrames)
             : 1;
         var interactive = args.Any(static argument => string.Equals(argument, "--interactive", StringComparison.OrdinalIgnoreCase));
 

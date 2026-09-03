@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
+using Maths = global::Delta.Maths;
 
 internal sealed class TextAtlas : IDisposable
 {
@@ -162,7 +163,7 @@ internal sealed class TextAtlas : IDisposable
                 (float)(destinationY + height) / _height));
         _glyphs.Add(key, placement);
         page.CursorX = checked(destinationX + width + _padding);
-        page.RowHeight = DeltaMaths.Max(page.RowHeight, height);
+        page.RowHeight = Maths.Max(page.RowHeight, height);
         page.LastUse = useStamp;
         page.Dirty = true;
         return placement;
@@ -318,7 +319,7 @@ internal sealed class TextAtlas : IDisposable
             return;
         }
 
-        Array.Resize(ref _pages, DeltaMaths.Max(required, checked(_pages.Length * 2)));
+        Array.Resize(ref _pages, Maths.Max(required, checked(_pages.Length * 2)));
     }
 
     private void CopyImage(GlyphImage image, byte[] destinationPixels, uint destinationX, uint destinationY)

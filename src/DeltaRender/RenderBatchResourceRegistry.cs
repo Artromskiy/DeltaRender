@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Maths;
+using Delta;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.RenderGraph;

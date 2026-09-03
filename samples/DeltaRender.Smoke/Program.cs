@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.FullscreenShaders;
 using Delta.Render.Platform.SDL3;
@@ -10,6 +10,7 @@ using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.Smoke;
+using Maths = global::Delta.Maths;
 
 internal static class Program
 {
@@ -108,7 +109,7 @@ internal static class Program
         {
             if (string.Equals(args[index], option, StringComparison.OrdinalIgnoreCase) && int.TryParse(args[index + 1], out var value))
             {
-                return DeltaMaths.Max(1, value);
+                return Maths.Max(1, value);
             }
         }
 

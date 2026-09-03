@@ -1,10 +1,11 @@
-using Delta.Maths;
+using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Shader.UI;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
+using Maths = global::Delta.Maths;
 
 internal enum UiRectangleShaderKind : byte
 {
@@ -24,7 +25,7 @@ internal static class UiVisualShaderContract
     private static int GetMaxPushConstantSize()
     {
         var size = SolidVertexAbi.PushConstants[0].Size;
-        size = DeltaMaths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
         return checked((int)size);
     }
 

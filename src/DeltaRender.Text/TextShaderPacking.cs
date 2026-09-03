@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Delta.Maths;
+using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Shader.Text;

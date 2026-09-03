@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Globalization;
-using Delta.Maths;
+using Delta;
 
 namespace Delta.Render.MathConformance;
+using Maths = global::Delta.Maths;
 
 internal sealed record ComparisonResult(bool Passed, IReadOnlyList<MismatchDetail> Mismatches);
 
@@ -80,7 +81,7 @@ internal static class ValueComparer
 
     private static bool AcceptQuaternion(uint[] expected, uint[] actual)
     {
-        var angularToleranceRadians = DeltaMaths.Radians(0.0001);
+        var angularToleranceRadians = Maths.Radians(0.0001);
         if (expected.Length != 4 || actual.Length != 4)
         {
             return false;
@@ -108,9 +109,9 @@ internal static class ValueComparer
             return false;
         }
 
-        var normalizedDot = DeltaMaths.Abs(dot / DeltaMaths.Sqrt(expectedLengthSquared * actualLengthSquared));
-        normalizedDot = DeltaMaths.Clamp(normalizedDot, -1, 1);
-        return 2 * DeltaMaths.Acos(normalizedDot) <= angularToleranceRadians;
+        var normalizedDot = Maths.Abs(dot / Maths.Sqrt(expectedLengthSquared * actualLengthSquared));
+        normalizedDot = Maths.Clamp(normalizedDot, -1, 1);
+        return 2 * Maths.Acos(normalizedDot) <= angularToleranceRadians;
     }
 
     private static bool AcceptFloat(
@@ -125,8 +126,8 @@ internal static class ValueComparer
     {
         var cpu = BitConverter.UInt32BitsToSingle(cpuWord);
         var gpu = BitConverter.UInt32BitsToSingle(gpuWord);
-        absolute = DeltaMaths.Abs((double)cpu - gpu);
-        relative = absolute / DeltaMaths.Max(DeltaMaths.Abs((double)cpu), DeltaMaths.Abs((double)gpu));
+        absolute = Maths.Abs((double)cpu - gpu);
+        relative = absolute / Maths.Max(Maths.Abs((double)cpu), Maths.Abs((double)gpu));
         if (float.IsNaN(cpu) || float.IsNaN(gpu))
         {
             ulp = null;

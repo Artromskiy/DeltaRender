@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using Delta.Maths;
+using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;

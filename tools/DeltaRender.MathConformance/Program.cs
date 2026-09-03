@@ -2,13 +2,14 @@ using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
 
 namespace Delta.Render.MathConformance;
+using Maths = global::Delta.Maths;
 
 internal static class Program
 {
@@ -138,7 +139,7 @@ internal sealed record RunnerOptions(
     public static RunnerOptions Parse(string[] args)
     {
         return new RunnerOptions(
-            Get(args, "--cases") ?? Path.Combine("..", "DeltaMaths", "Tests", "DeltaMaths.Conformance", "shader-conformance.json"),
+            Get(args, "--cases") ?? Path.Combine("..", "DeltaMaths", "Tests", "Maths.Conformance", "shader-conformance.json"),
             Get(args, "--artifacts") ?? Path.Combine("..", "DeltaShader", "artifacts", "maths-conformance"),
             Get(args, "--report") ?? Path.Combine("artifacts", "math-conformance", "render-report.json"),
             Get(args, "--text-report") ?? Path.Combine("artifacts", "math-conformance", "render-report.txt"));
@@ -463,7 +464,7 @@ internal sealed class VulkanCaseRunner
 
                 var bytes = checked((int)(stride * (ulong)cases.Count));
                 var description = new RenderBufferDescription(
-                    (ulong)DeltaMaths.Max(1, bytes),
+                    (ulong)Maths.Max(1, bytes),
                     RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination | RenderBufferUsage.TransferSource);
                 buffers[resourceIndex] = _session.CreateBuffer(in description);
                 createdBufferCount++;

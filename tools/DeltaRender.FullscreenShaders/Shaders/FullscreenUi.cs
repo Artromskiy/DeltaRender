@@ -1,4 +1,5 @@
-using Delta.Maths;
+using Delta;
+using static Delta.maths;
 using Delta.Shader;
 
 namespace Delta.Render.FullscreenShaders;

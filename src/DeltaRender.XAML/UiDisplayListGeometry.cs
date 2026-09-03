@@ -1,7 +1,8 @@
-using Delta.Maths;
+using Delta;
 using Delta.Render.RenderGraph;
 
 namespace Delta.Render.XAML;
+using Maths = global::Delta.Maths;
 
 internal static class UiDisplayListGeometry
 {
@@ -22,10 +23,10 @@ internal static class UiDisplayListGeometry
             return false;
         }
 
-        var leftValue = DeltaMaths.Floor(bounds.x);
-        var topValue = DeltaMaths.Floor(bounds.y);
-        var rightValue = DeltaMaths.Ceil(right);
-        var bottomValue = DeltaMaths.Ceil(bottom);
+        var leftValue = Maths.Floor(bounds.x);
+        var topValue = Maths.Floor(bounds.y);
+        var rightValue = Maths.Ceil(right);
+        var bottomValue = Maths.Ceil(bottom);
         var left = ClampToInt(leftValue);
         var top = ClampToInt(topValue);
         var rightInt = ClampToInt(rightValue);

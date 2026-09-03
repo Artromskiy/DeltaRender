@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Delta.Diagnostics;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
@@ -12,6 +12,7 @@ using Delta.Shader.Text;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
+using Maths = global::Delta.Maths;
 
 /// <summary>
 /// Reusable graph feature for positioned text. The caller supplies already shaped
@@ -372,8 +373,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 continue;
             }
 
-            firstBatch = firstBatch < 0 ? batchStart : DeltaMaths.Min(firstBatch, batchStart);
-            lastBatch = DeltaMaths.Max(lastBatch, checked(batchStart + batchCount));
+            firstBatch = firstBatch < 0 ? batchStart : Maths.Min(firstBatch, batchStart);
+            lastBatch = Maths.Max(lastBatch, checked(batchStart + batchCount));
         }
 
         if (firstBatch < 0)
@@ -758,7 +759,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     private static int GrowCapacity(int current, int required)
     {
-        var capacity = DeltaMaths.Max(1, current);
+        var capacity = Maths.Max(1, current);
         while (capacity < required)
         {
             capacity = checked(capacity * 2);

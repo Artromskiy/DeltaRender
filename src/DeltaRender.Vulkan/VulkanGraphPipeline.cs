@@ -2,13 +2,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Silk.NET.Vulkan;
 
 namespace Delta.Render.Vulkan;
+using Maths = global::Delta.Maths;
 
 internal sealed unsafe class VulkanGraphPipeline
 {
@@ -154,7 +155,7 @@ internal sealed unsafe class VulkanGraphPipeline
                 pipeline = output[0];
             }
 
-            return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Graphics, descriptorState, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, DeltaMaths.Max(GetPushSize(program.Vertex.Abi.PushConstants), GetPushSize(program.Fragment.Abi.PushConstants)));
+            return new VulkanGraphPipeline(pipeline, pipelineLayout, PipelineBindPoint.Graphics, descriptorState, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, Maths.Max(GetPushSize(program.Vertex.Abi.PushConstants), GetPushSize(program.Fragment.Abi.PushConstants)));
         }
         catch
         {

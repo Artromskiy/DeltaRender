@@ -1,9 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
-using Delta.Maths;
+using Delta;
 using Delta.Render;
 using SDL3;
 
 namespace Delta.Render.Platform.SDL3;
+using Maths = global::Delta.Maths;
 
 internal static class Sdl3Runtime
 {
@@ -131,7 +132,7 @@ internal static class Sdl3Runtime
             var dpiScale = SDL.GetWindowPixelDensity(handle);
             if (!float.IsFinite(dpiScale) || dpiScale <= 0)
             {
-                dpiScale = DeltaMaths.Max(
+                dpiScale = Maths.Max(
                     (float)drawableWidth / logicalWidth,
                     (float)drawableHeight / logicalHeight);
             }
