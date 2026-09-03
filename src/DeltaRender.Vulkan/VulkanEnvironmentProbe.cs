@@ -1,5 +1,4 @@
 using Delta.Render;
-using System.Diagnostics.CodeAnalysis;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -7,7 +6,6 @@ namespace Delta.Render.Vulkan;
 
 public static unsafe class VulkanEnvironmentProbe
 {
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "The headless probe is a Vulkan loader boundary and must convert unknown native-loader failures into diagnostics.")]
     public static VulkanProbeResult CheckHeadless()
     {
         var diagnostics = new RenderDiagnosticBag();

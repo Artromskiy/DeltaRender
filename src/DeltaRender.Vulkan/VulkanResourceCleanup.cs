@@ -1,13 +1,7 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Delta.Render.Vulkan;
 
 internal static class VulkanResourceCleanup
 {
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "Cleanup must attempt every native release and aggregate failures without hiding the original operation failure.")]
     internal static void CleanupInReverse<T>(ReadOnlySpan<T> resources, Action<T> cleanup)
     {
         ArgumentNullException.ThrowIfNull(cleanup);

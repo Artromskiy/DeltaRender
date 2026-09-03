@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Silk.NET.Vulkan;
@@ -10,10 +8,6 @@ namespace Delta.Render.Vulkan;
 
 internal sealed unsafe partial class VulkanRenderSession
 {
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "Device-loss recovery must release every partially reacquired native resource and return a diagnostic instead of leaking or escaping an FFI failure.")]
     public bool TryReinitializeAfterDeviceLoss()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
