@@ -78,7 +78,7 @@ internal static class Program
 
     private static string ResolveProducerShaderDirectory()
     {
-        var producerRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../../DeltaShader/src/DeltaShader.Mesh/bin"));
+        var producerRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../DeltaShader/src/DeltaShader.Mesh/bin"));
         foreach (var configuration in new[] { "Release", "Debug" })
         {
             var directory = Path.Combine(producerRoot, configuration, "net10.0", "DeltaShader", "DeltaShader.Mesh");
