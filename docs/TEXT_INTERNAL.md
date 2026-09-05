@@ -30,6 +30,15 @@ The implementation remains a short pipeline:
 5. One transfer pass uploads the changed page and current instances; one raster
    pass draws adjacent clip batches with instancing.
 
+For SDF and MSDF images, `DeltaText` supplies a distance margin of
+`ceil(DistanceRange)` plus its additional guard pixel. `DeltaRender.Text` adds a
+one-pixel gap between atlas slots. With the current linear, single-level,
+clamped sampler this is sufficient to keep adjacent glyph slots from being
+sampled as one another; the invariant is covered by the headless
+`SdfAtlasPaddingSeparatesAdjacentGlyphSlots` regression. Increasing atlas
+padding to the distance range would duplicate producer-owned SDF margin and
+increase atlas memory without improving the sampling boundary.
+
 ## Atlas ownership
 
 The feature owns CPU page metadata and renderer-owned pixel storage. The first

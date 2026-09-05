@@ -433,6 +433,39 @@ public sealed class TextRenderFeatureTests
     }
 
     [Fact]
+    public void SdfAtlasPaddingSeparatesAdjacentGlyphSlots()
+    {
+        using var textService = new SixLaborsTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var shaped = textService.Shape(new TextShapeRequest("AB".AsMemory(), 32, new[] { font }));
+        var run = shaped.Runs.Span[0];
+        using var session = new FakeSession();
+        using var atlas = new TextAtlas(
+            session,
+            textService,
+            GlyphImageMode.Sdf,
+            GlyphImageEncoding.SdfR8,
+            RenderTextureFormat.R8Unorm,
+            1,
+            128,
+            128,
+            1,
+            4f,
+            null);
+
+        var first = atlas.GetOrCreateGlyph(run, run.Glyphs.Span[0], 1);
+        var second = atlas.GetOrCreateGlyph(run, run.Glyphs.Span[1], 1);
+
+        Assert.Equal(first.PageIndex, second.PageIndex);
+        var firstRight = (int)MathF.Round(first.UvRect.Z * atlas.Width);
+        var secondLeft = (int)MathF.Round(second.UvRect.X * atlas.Width);
+        Assert.Equal(1, secondLeft - firstRight);
+    }
+
+    [Fact]
     public void PackedInstanceUploadPreservesPlaneBoundsAndUvMetrics()
     {
         using var textService = new SixLaborsTextService();
