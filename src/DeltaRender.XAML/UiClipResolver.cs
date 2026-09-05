@@ -5,7 +5,7 @@ namespace Delta.Render.XAML;
 
 internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnostics)
 {
-    private readonly PixelExtent _viewport = viewport;
+    private PixelExtent _logicalViewport = viewport;
     private readonly List<string> _diagnostics = diagnostics;
     private UiClipRegion[] _clips = [];
     private PixelRect[] _resolvedClips = [];
@@ -15,10 +15,11 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
     private int _clipMarkEpoch;
     private int _frameEpoch;
 
-    internal void SetFrame(UiClipRegion[] clips, int count)
+    internal void SetFrame(UiClipRegion[] clips, int count, PixelExtent logicalViewport)
     {
         _clips = clips;
         _clipCount = count;
+        _logicalViewport = logicalViewport;
         EnsureCapacity(ref _resolvedClips, count);
         EnsureCapacity(ref _resolvedEpochs, count);
         EnsureCapacity(ref _clipMarks, count);
@@ -43,7 +44,7 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
     {
         if (!id.IsValid)
         {
-            clip = UiDisplayListGeometry.ViewportRect(_viewport);
+            clip = UiDisplayListGeometry.ViewportRect(_logicalViewport);
             return true;
         }
 
@@ -60,7 +61,7 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
 
     internal bool TryResolve(UiClipId id, out PixelRect result)
     {
-        result = UiDisplayListGeometry.ViewportRect(_viewport);
+        result = UiDisplayListGeometry.ViewportRect(_logicalViewport);
         if (id.IsValid && _resolvedEpochs.RefAt(id.Value) == _frameEpoch)
         {
             result = _resolvedClips.RefAt(id.Value);

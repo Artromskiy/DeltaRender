@@ -29,6 +29,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
+    private UiCoordinateMapper _coordinates;
     private float _dpiScale = 1f;
 
     private UiVisualDraw[] _visuals = [];
@@ -144,6 +145,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _textFeature = textFeature;
         _textVisualUploadPass = new UiTextVisualUploadPass(this);
         _clipResolver = new UiClipResolver(viewport, _diagnostics);
+        _coordinates = new UiCoordinateMapper(1f, viewport);
         if (session is not null)
         {
             var alignment = session.Capabilities.MinStorageBufferOffsetAlignment;
@@ -224,6 +226,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         var dpiScaleChanged = _dpiScale != displayList.DpiScale;
         _dpiScale = displayList.DpiScale;
+        _coordinates = new UiCoordinateMapper(_dpiScale, _viewport);
         var reuseVisualInstanceLayout = !dpiScaleChanged && CanReuseVisualInstanceLayout(displayList);
         ClearFrameStorage(reuseVisualInstanceLayout);
 
@@ -259,7 +262,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _clipCount = displayList.Clips.Length;
         _textCount = displayList.Text.Length;
         _orderCount = displayList.Order.Length;
-        _clipResolver.SetFrame(_clips, _clipCount);
+        _clipResolver.SetFrame(_clips, _clipCount, _coordinates.LogicalViewport);
 
         for (var index = 0; index < _clipCount; index++)
         {
@@ -395,12 +398,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     var text = _texts.RefAt(draw.Index);
                     var color = text.Paint.FillColor;
                     var identity = _identities.RefAt(index);
+                    var origin = _coordinates.ToPhysical(text.BaselineOrigin);
                     _textRunIndices.RefAt(index) = _textFeature.QueueCompositeRun(
                         text.Text,
-                        text.BaselineOrigin.x * _dpiScale,
-                        text.BaselineOrigin.y * _dpiScale,
+                        origin.x,
+                        origin.y,
                         new Vector4(color.x, color.y, color.z, color.w),
-                        ScaleClip(_commandClips.RefAt(index)),
+                        _coordinates.ToPhysical(_commandClips.RefAt(index)),
                         mergeWithPrevious: previousWasText,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
@@ -711,11 +715,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             EnsureCapacity(ref _visualInstanceBytes, end);
             var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
             var clip = _commandClips.RefAt(orderIndex);
+            var physicalVisual = _coordinates.ToPhysical(visual);
             var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
-                in visual,
+                in physicalVisual,
                 in clip,
-                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -756,11 +760,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var instanceBytes = checked((int)(stride * (uint)instanceCount));
             var visual = _visuals.RefAt(draw.Index);
             var clip = _commandClips.RefAt(orderIndex);
+            var physicalVisual = _coordinates.ToPhysical(visual);
             var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
-                in visual,
+                in physicalVisual,
                 in clip,
-                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1036,7 +1040,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             if (instanceCount != 0)
             {
-                commands.SetScissor(ScaleClip(clip));
+                commands.SetScissor(_coordinates.ToPhysical(clip));
                 var firstInstance = _flatVisualInstanceBuffer
                     ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) / stride))
                     : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
@@ -1045,21 +1049,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             drawStart = drawEnd;
         }
-    }
-
-    private PixelRect ScaleClip(PixelRect clip)
-    {
-        if (_dpiScale == 1f || clip.IsEmpty)
-        {
-            return clip;
-        }
-
-        var scale = (double)_dpiScale;
-        var left = checked((int)Maths.Floor(clip.X * scale));
-        var top = checked((int)Maths.Floor(clip.Y * scale));
-        var right = checked((int)Maths.Ceil((clip.X + (double)clip.Width) * scale));
-        var bottom = checked((int)Maths.Ceil((clip.Y + (double)clip.Height) * scale));
-        return new PixelRect(left, top, checked(right - left), checked(bottom - top));
     }
 
     /// <inheritdoc />
@@ -1320,6 +1309,81 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private void AddDiagnostic(string message) => _diagnostics.Add(message);
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    private readonly struct UiCoordinateMapper
+    {
+        private readonly float _dpiScale;
+        private readonly PixelExtent _physicalViewport;
+
+        internal UiCoordinateMapper(float dpiScale, PixelExtent physicalViewport)
+        {
+            _dpiScale = dpiScale;
+            _physicalViewport = physicalViewport;
+        }
+
+        internal PixelExtent LogicalViewport => new(
+            ToLogicalExtent(_physicalViewport.Width),
+            ToLogicalExtent(_physicalViewport.Height));
+
+        internal UiVisualDraw ToPhysical(UiVisualDraw visual)
+        {
+            var paint = visual.Paint;
+            var physicalPaint = paint with
+            {
+                StrokeWidth = paint.Units switch
+                {
+                    PaintUnits.Logical => paint.StrokeWidth * _dpiScale,
+                    PaintUnits.Device => paint.StrokeWidth,
+                    _ => throw new ArgumentOutOfRangeException(nameof(visual), paint.Units, "Unknown paint unit system."),
+                },
+                CornerRadii = ToPhysical(paint.CornerRadii),
+                Units = PaintUnits.Device,
+            };
+            return visual with
+            {
+                Bounds = ToPhysical(visual.Bounds),
+                Paint = physicalPaint,
+            };
+        }
+
+        internal float2 ToPhysical(float2 value)
+            => new(value.x * _dpiScale, value.y * _dpiScale);
+
+        internal float4 ToPhysical(float4 value)
+            => new(
+                value.x * _dpiScale,
+                value.y * _dpiScale,
+                value.z * _dpiScale,
+                value.w * _dpiScale);
+
+        internal PixelRect ToPhysical(PixelRect value)
+        {
+            if (_dpiScale == 1f || value.IsEmpty)
+            {
+                return value;
+            }
+
+            var scale = (double)_dpiScale;
+            var left = checked((int)Maths.Floor(value.X * scale));
+            var top = checked((int)Maths.Floor(value.Y * scale));
+            var right = checked((int)Maths.Ceil((value.X + (double)value.Width) * scale));
+            var bottom = checked((int)Maths.Ceil((value.Y + (double)value.Height) * scale));
+            return new PixelRect(left, top, checked(right - left), checked(bottom - top));
+        }
+
+        private uint ToLogicalExtent(uint physicalExtent)
+        {
+            var logicalExtent = physicalExtent / (double)_dpiScale;
+            if (logicalExtent <= 0)
+            {
+                return 0;
+            }
+
+            return logicalExtent >= uint.MaxValue
+                ? uint.MaxValue
+                : checked((uint)Maths.Ceil(logicalExtent));
+        }
+    }
 
     private static void EnsureCapacity<T>(ref T[] storage, int required)
     {

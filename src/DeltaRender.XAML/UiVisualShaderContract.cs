@@ -166,21 +166,20 @@ internal static class UiVisualShaderContract
     internal static int PackInstance(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
-        float dpiScale,
         Span<byte> destination)
     {
         return shaderKind switch
         {
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexInstancesElement(
-                new SolidRectangleParameters(Scale(visual.Bounds, dpiScale), visual.Paint.FillColor),
+                new SolidRectangleParameters(visual.Bounds, visual.Paint.FillColor),
                 destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexInstancesElement(
                 new RoundedRectangleParameters(
-                    Scale(visual.Bounds, dpiScale),
+                    visual.Bounds,
                     visual.Paint.FillColor,
                     visual.Paint.StrokeColor,
-                    Scale(visual.Paint.CornerRadii, dpiScale),
-                    ResolvePaintMetric(visual.Paint.StrokeWidth, visual.Paint.Units, dpiScale)),
+                    visual.Paint.CornerRadii,
+                    visual.Paint.StrokeWidth),
                 destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
@@ -190,47 +189,29 @@ internal static class UiVisualShaderContract
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
         in PixelRect clip,
-        float dpiScale,
         Span<byte> destination)
-        => PackInstance(shaderKind, in visual, dpiScale, destination);
+        => PackInstance(shaderKind, in visual, destination);
 
     internal static int MaxInstanceCount(UiRectangleShaderKind shaderKind) => 1;
 
     internal static int PackInstances(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
-        float dpiScale,
         uint instanceStride,
         Span<byte> destination)
     {
-        return PackInstance(shaderKind, in visual, dpiScale, destination);
+        return PackInstance(shaderKind, in visual, destination);
     }
 
     internal static int PackInstances(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
         in PixelRect clip,
-        float dpiScale,
         uint instanceStride,
         Span<byte> destination)
     {
-        return PackInstance(shaderKind, in visual, dpiScale, destination);
+        return PackInstance(shaderKind, in visual, destination);
     }
-
-    private static float ResolvePaintMetric(float value, PaintUnits units, float dpiScale)
-        => units switch
-        {
-            PaintUnits.Logical => value * dpiScale,
-            PaintUnits.Device => value,
-            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
-        };
-
-    private static float4 Scale(float4 value, float dpiScale)
-        => new(
-            value.x * dpiScale,
-            value.y * dpiScale,
-            value.z * dpiScale,
-            value.w * dpiScale);
 
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,

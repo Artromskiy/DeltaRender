@@ -726,6 +726,30 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.False(registry.UnregisterImage(resource));
     }
 
+    [Fact]
+    public void DpiScaleConvertsLogicalClipOnceAtRasterBoundary()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(200, 160));
+        var clips = new[] { new UiClipRegion(new float4(12, 20, 30, 10), UiClipId.None) };
+        var visuals = new[] { Solid(1, new UiClipId(0)) };
+        var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
+        var identities = new[] { new UiElementIdentity(1, 1, 1) };
+        var displayList = new UiDisplayList(visuals, clips, Array.Empty<UiTextDraw>(), order, identities, 2f);
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+        Assert.Equal(new PixelRect(12, 20, 30, 10), feature.GetEffectiveClip(0));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(commands.Scissors);
+        Assert.Equal(new PixelRect(24, 40, 60, 20), commands.Scissors[0]);
+    }
+
     private static UiVisualDraw Solid(int seed, UiClipId? clip = null)
         => new(
             UiVisualKind.SolidRectangle,
