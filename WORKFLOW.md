@@ -35,9 +35,11 @@ Package and adapter boundaries can be checked without restore or build:
 ./eng/check-package-boundaries.sh
 ```
 
-The gate keeps the three published packages version-aligned, rejects source
+The gate keeps the four published packages version-aligned, rejects source
 references and exact pins for those packages, and keeps the source-only text
-and XAML adapters non-packable with explicit producer edges.
+and XAML adapters non-packable with explicit producer edges. `DeltaRender.UI`
+is the consumer bundle: it packages those adapter assemblies and generated UI
+and text shader assemblies without making the adapters independent packages.
 
 ## NuGet release protocol for 0.0.15
 
@@ -78,9 +80,11 @@ dotnet pack src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj \
   "${pack_options[@]}" "${package_sources[@]}"
 dotnet pack src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
   "${pack_options[@]}" "${package_sources[@]}"
+dotnet pack src/DeltaRender.UI/DeltaRender.UI.csproj \
+  "${pack_options[@]}" "${package_sources[@]}"
 ```
 
-Validate all three archives before publishing. `unzip -t` checks archive
+Validate all four archives before publishing. `unzip -t` checks archive
 integrity; the nuspec output must show package version `0.0.15`, the current
 repository commit, and the resolved matching `DeltaShader.Contract` version for
 the base/Vulkan packages,
@@ -91,6 +95,7 @@ packages=(
   "$package_dir/DeltaRender.0.0.15.nupkg"
   "$package_dir/DeltaRender.Vulkan.0.0.15.nupkg"
   "$package_dir/DeltaRender.Platform.SDL3.0.0.15.nupkg"
+  "$package_dir/DeltaRender.UI.0.0.15.nupkg"
 )
 
 for package in "${packages[@]}"; do
@@ -123,9 +128,10 @@ for package in "${packages[@]}"; do
 done
 ```
 
-Do not push adapter assemblies: `DeltaRender.Text` and `DeltaRender.XAML` are
-source-only internal projects until their generated shader producer assemblies
-have publishable runtime packages.
+Do not push adapter assemblies separately: `DeltaRender.Text` and
+`DeltaRender.XAML` are source-only internal projects. Their runtime assemblies
+and the generated shader producer assemblies are distributed through
+`DeltaRender.UI`.
 
 The contract checkpoint can be checked independently while the Vulkan and
 consumer migration in `docs/MIGRATION.md` is in progress:

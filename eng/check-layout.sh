@@ -20,7 +20,6 @@ required_management_files=(
     IDEAS.md
 )
 forbidden_root_documents=(
-    README.md
     CONTRACT.md
     USER_API.md
     INTERNAL.md

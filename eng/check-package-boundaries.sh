@@ -35,6 +35,7 @@ package_projects=(
     src/DeltaRender/DeltaRender.csproj
     src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj
     src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj
+    src/DeltaRender.UI/DeltaRender.UI.csproj
 )
 base_version="$(read_version "$repo_root/${package_projects[0]}")"
 if [[ -z "$base_version" ]]; then
@@ -62,11 +63,21 @@ require_literal src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
     '<PackageReference Include="DeltaRender" />' \
     'DeltaRender.Platform.SDL3 must consume the base package'
 
-for package in DeltaRender DeltaRender.Vulkan DeltaRender.Platform.SDL3; do
+for package in DeltaRender DeltaRender.Vulkan DeltaRender.Platform.SDL3 DeltaRender.UI; do
     require_literal Directory.Packages.props \
         "<PackageVersion Include=\"$package\" Version=\"*\" />" \
         "first-party package version must remain floating for $package"
 done
+
+require_literal src/DeltaRender.UI/DeltaRender.UI.csproj \
+    '<IsPackable>true</IsPackable>' \
+    'DeltaRender.UI bundle must be publishable'
+require_literal src/DeltaRender.UI/DeltaRender.UI.csproj \
+    'DeltaRender.XAML/DeltaRender.XAML.csproj' \
+    'DeltaRender.UI must bundle the XAML feature adapter'
+require_literal src/DeltaRender.UI/DeltaRender.UI.csproj \
+    'DeltaShader.UI/DeltaShader.UI.csproj' \
+    'DeltaRender.UI must bundle the generated UI shader assembly'
 
 require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
     '<IsPackable>false</IsPackable>' \

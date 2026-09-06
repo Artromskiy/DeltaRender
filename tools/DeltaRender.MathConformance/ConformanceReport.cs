@@ -30,7 +30,8 @@ internal sealed class ConformanceReport
         _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.Passed),
         _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.Mismatched),
         _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.CompilerBlocked),
-        _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.CapabilityExcluded));
+        _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.CapabilityExcluded),
+        _cases.Count(caseReport => caseReport.Disposition == ConformanceDisposition.ExternalValidationBlocked));
 
     public void AddCompilerBlocked(ConformanceCase testCase, string reason)
         => AddCompilerBlocked(testCase.Id, testCase.Operation, reason, testCase);
@@ -46,6 +47,9 @@ internal sealed class ConformanceReport
 
     public void AddCapabilityExcluded(ConformanceCase testCase, string artifact, string reason)
         => _cases.Add(AttachMetadata(CaseReport.Excluded(testCase.Id, testCase.Operation, artifact, reason, testCase.Comparison.ToString()), testCase));
+
+    public void AddExternalValidationBlocked(ConformanceCase testCase, string artifact, string reason)
+        => _cases.Add(AttachMetadata(CaseReport.ExternalBlocked(testCase.Id, testCase.Operation, artifact, reason, testCase.Comparison.ToString()), testCase));
 
     public void AddComparison(ConformanceCase testCase, string artifact, ComparisonResult result)
         => _cases.Add(AttachMetadata(result.Passed
@@ -81,7 +85,7 @@ internal sealed class ConformanceReport
             UnmatchedArtifacts,
             Cases);
         await File.WriteAllTextAsync(fullReportPath, JsonSerializer.Serialize(machine, _jsonOptions)).ConfigureAwait(false);
-        var text = $"maths-cpu-gpu-conformance cpuCases={CpuCaseCount} artifacts={ArtifactCount} gpuCases={ExecutedGpuCaseCount} passed={Counts.Passed} mismatched={Counts.Mismatched} compiler-blocked={Counts.CompilerBlocked} capability-excluded={Counts.CapabilityExcluded}{Environment.NewLine}" +
+        var text = $"maths-cpu-gpu-conformance cpuCases={CpuCaseCount} artifacts={ArtifactCount} gpuCases={ExecutedGpuCaseCount} passed={Counts.Passed} mismatched={Counts.Mismatched} compiler-blocked={Counts.CompilerBlocked} capability-excluded={Counts.CapabilityExcluded} external-validation-blocked={Counts.ExternalValidationBlocked}{Environment.NewLine}" +
             string.Join(Environment.NewLine, _cases.Select(caseReport => $"{caseReport.Disposition} {caseReport.Id} {caseReport.Operation}: {caseReport.Diagnostic}"));
         await File.WriteAllTextAsync(fullTextPath, text + Environment.NewLine).ConfigureAwait(false);
         await Console.Out.WriteLineAsync(text).ConfigureAwait(false);
@@ -109,7 +113,7 @@ internal sealed record DeviceReport(
     }
 }
 
-internal sealed record ReportCounts(int Passed, int Mismatched, int CompilerBlocked, int CapabilityExcluded);
+internal sealed record ReportCounts(int Passed, int Mismatched, int CompilerBlocked, int CapabilityExcluded, int ExternalValidationBlocked);
 
 internal sealed record MachineReport(
     int SchemaVersion,
@@ -148,4 +152,7 @@ internal sealed record CaseReport(
 
     public static CaseReport Excluded(string id, string operation, string artifact, string diagnostic, string comparison)
         => new(id, operation, ConformanceDisposition.CapabilityExcluded, artifact, comparison, diagnostic, []);
+
+    public static CaseReport ExternalBlocked(string id, string operation, string artifact, string diagnostic, string comparison)
+        => new(id, operation, ConformanceDisposition.ExternalValidationBlocked, artifact, comparison, diagnostic, []);
 }

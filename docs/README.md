@@ -64,6 +64,9 @@ objects.
   Vulkan implementation.
 - [`DeltaRender.Platform.SDL3`](../src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj):
   SDL3 window and surface integration.
+- [`DeltaRender.UI`](../src/DeltaRender.UI/DeltaRender.UI.csproj):
+  consumer bundle for DeltaXAML display-list features, text/UI adapters and
+  generated shader programs.
 - [Headless shader playground](../samples/DeltaRender.HeadlessShaderPlayground/README.md):
   offscreen shader rendering.
 - [Shader sandbox](../samples/DeltaRender.ShaderSandbox/README.md): windowed

@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)..\contentFiles\any\any\DeltaShader\**\*"
+             Link="DeltaShader\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             Visible="false" />
+  </ItemGroup>
+</Project>

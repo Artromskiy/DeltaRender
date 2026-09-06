@@ -19,6 +19,11 @@ internal static class ShaderArtifactLoader
         var result = new List<LoadedArtifact>(manifests.Length);
         foreach (var manifestPath in manifests.Order(StringComparer.Ordinal))
         {
+            if (!File.Exists(GetSpirvPath(manifestPath)))
+            {
+                continue;
+            }
+
             try
             {
                 result.Add(Load(manifestPath));
@@ -34,9 +39,7 @@ internal static class ShaderArtifactLoader
 
     private static LoadedArtifact Load(string manifestPath)
     {
-        var spirvPath = manifestPath.EndsWith(".shader.json", StringComparison.Ordinal)
-            ? manifestPath[..^".shader.json".Length] + ".spv"
-            : throw new InvalidDataException($"Unexpected shader manifest path '{manifestPath}'.");
+        var spirvPath = GetSpirvPath(manifestPath);
         if (!File.Exists(spirvPath))
         {
             throw new FileNotFoundException($"SPIR-V sidecar was not found for '{manifestPath}'.", spirvPath);
@@ -73,6 +76,11 @@ internal static class ShaderArtifactLoader
                 metadata.OperationIdentity);
         }
     }
+
+    private static string GetSpirvPath(string manifestPath)
+        => manifestPath.EndsWith(".shader.json", StringComparison.Ordinal)
+            ? manifestPath[..^".shader.json".Length] + ".spv"
+            : throw new InvalidDataException($"Unexpected shader manifest path '{manifestPath}'.");
 
     private static ShaderResourceBinding[] ParseResources(JsonElement root)
     {

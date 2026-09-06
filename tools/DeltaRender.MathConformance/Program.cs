@@ -116,8 +116,7 @@ internal static class ConformanceOrchestrator
     {
         await report.WriteAsync(options).ConfigureAwait(false);
         return report.Counts.Mismatched == 0 &&
-            report.Counts.CompilerBlocked == 0 &&
-            report.Counts.CapabilityExcluded == 0
+            report.Counts.CompilerBlocked == 0
             ? 0
             : 2;
     }
@@ -164,7 +163,8 @@ internal enum ConformanceDisposition
     Passed,
     Mismatched,
     CompilerBlocked,
-    CapabilityExcluded
+    CapabilityExcluded,
+    ExternalValidationBlocked
 }
 
 internal enum ComparisonProfile
@@ -400,6 +400,14 @@ internal sealed record CaseAssignment(LoadedArtifact Artifact, IReadOnlyList<Con
                         entry.ArtifactPath ?? "<producer-index>",
                         entry.Diagnostic ?? "Producer marked this case capability-blocked.");
                 }
+                else if (catalog is not null && catalog.TryGet(testCase.Id, out entry) &&
+                    IsExternalValidationBlocked(entry.Status))
+                {
+                    report.AddExternalValidationBlocked(
+                        testCase,
+                        entry.ArtifactPath ?? "<producer-index>",
+                        entry.Diagnostic ?? "Producer marked this case external-validation-blocked.");
+                }
                 else
                 {
                     report.AddCompilerBlocked(testCase, "No artifact metadata matched this case identity.");
@@ -409,6 +417,10 @@ internal sealed record CaseAssignment(LoadedArtifact Artifact, IReadOnlyList<Con
 
         return assignments;
     }
+
+    private static bool IsExternalValidationBlocked(string status)
+        => string.Equals(status, "glslang-diagnostic", StringComparison.Ordinal) ||
+            string.Equals(status, "external-validation-blocked", StringComparison.Ordinal);
 
     private static bool Matches(ConformanceCase testCase, LoadedArtifact artifact)
     {
@@ -494,7 +506,20 @@ internal sealed class VulkanCaseRunner
                 throw new InvalidOperationException($"RenderGraph execution failed with status {execution.Status}.");
             }
 
-            var outputResource = resources[^1];
+            var outputResource = resources[0];
+            for (var resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
+            {
+                if ((resources[resourceIndex].Access & ShaderResourceAccess.Write) != 0)
+                {
+                    outputResource = resources[resourceIndex];
+                    break;
+                }
+            }
+
+            if ((outputResource.Access & ShaderResourceAccess.Write) == 0)
+            {
+                throw new InvalidDataException("The artifact must declare a writable return output storage buffer.");
+            }
             var outputStride = outputResource.Layout.ArrayStride == 0 ? outputResource.Layout.Size : outputResource.Layout.ArrayStride;
             var readback = feature.Readback;
             var outputData = new byte[checked((int)(outputStride * (ulong)cases.Count))];

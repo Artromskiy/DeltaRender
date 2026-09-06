@@ -9,6 +9,7 @@
   <Project Path="src/DeltaRender.Text/DeltaRender.Text.csproj" />
   <Project Path="src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj" />
   <Project Path="src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
+  <Project Path="src/DeltaRender.UI/DeltaRender.UI.csproj" />
   <Project Path="tests/DeltaRender.Tests/DeltaRender.Tests.csproj" />
   <Project Path="tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
   <Project Path="tools/DeltaRender.FullscreenShaders/DeltaRender.FullscreenShaders.csproj" />

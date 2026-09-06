@@ -59,8 +59,23 @@ internal sealed class GraphConformanceFeature : IRenderFeature
             graph.UseBuffer(compute, graphBuffers[index], ToRenderAccess(_resources[index].Access), RenderPipelineStages.Compute);
         }
 
-        var output = _resources[^1].Layout.ArrayStride == 0 ? _resources[^1].Layout.Size : _resources[^1].Layout.ArrayStride;
-        Readback = graph.ReadbackBuffer(graphBuffers[^1], new BufferRange(0, checked(output * (ulong)_caseCount)));
+        var outputIndex = 0;
+        for (var index = 0; index < _resources.Count; index++)
+        {
+            if (_resources[index].Access.HasFlag(ShaderResourceAccess.Write))
+            {
+                outputIndex = index;
+                break;
+            }
+        }
+
+        if (!_resources[outputIndex].Access.HasFlag(ShaderResourceAccess.Write))
+        {
+            throw new InvalidOperationException("The artifact must declare a writable return output storage buffer.");
+        }
+
+        var output = _resources[outputIndex].Layout.ArrayStride == 0 ? _resources[outputIndex].Layout.Size : _resources[outputIndex].Layout.ArrayStride;
+        Readback = graph.ReadbackBuffer(graphBuffers[outputIndex], new BufferRange(0, checked(output * (ulong)_caseCount)));
     }
 
     private static RenderResourceAccess ToRenderAccess(ShaderResourceAccess access)
