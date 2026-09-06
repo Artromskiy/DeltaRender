@@ -536,6 +536,45 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void AdjacentVisualClipRunsUseSequentialInstancesAndOneBufferRange()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(4096, 4096));
+        var visuals = new UiVisualDraw[29];
+        var clips = new UiClipRegion[visuals.Length];
+        var order = new UiDrawRef[visuals.Length];
+        for (var index = 0; index < visuals.Length; index++)
+        {
+            visuals[index] = Solid(index, new UiClipId(index));
+            clips[index] = new UiClipRegion(new float4(index, 0, 1, 1), UiClipId.None);
+            order[index] = new UiDrawRef(UiDrawKind.Visual, index);
+        }
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(visuals, clips, Array.Empty<UiTextDraw>(), order)),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Equal(visuals.Length, commands.Draws.Count);
+        Assert.Equal(visuals.Length, commands.Scissors.Count);
+        Assert.Single(commands.BufferBindings);
+        Assert.Equal(0UL, commands.BufferBindings[0].Offset);
+        Assert.Equal(
+            checked((ulong)visuals.Length * program.Vertex.Abi.Resources[0].Layout.ArrayStride),
+            commands.BufferBindings[0].SizeInBytes);
+        for (var index = 0; index < visuals.Length; index++)
+        {
+            Assert.Equal((uint)index, commands.Draws[index].FirstInstance);
+        }
+    }
+
+    [Fact]
     public void PaintOnlyConsumeReusesRetainedStorageAndUpdatesValue()
     {
         var firstVisual = Solid(1);
@@ -945,6 +984,10 @@ public sealed class UiDisplayListGraphFeatureTests
 
     private sealed class RecordingRasterCommands : IRasterCommandContext
     {
+        public readonly record struct BufferBinding(ulong Offset, ulong SizeInBytes);
+
+        public readonly record struct DrawCall(uint InstanceCount, uint FirstInstance);
+
         public List<PixelRect> Scissors { get; } = [];
 
         public List<byte[]> PushedConstants { get; } = [];
@@ -953,8 +996,13 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public List<uint> InstanceCounts { get; } = [];
 
+        public List<BufferBinding> BufferBindings { get; } = [];
+
+        public List<DrawCall> Draws { get; } = [];
+
         public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0)
         {
+            BufferBindings.Add(new BufferBinding(offset, sizeInBytes));
         }
 
         public void BindTexture(ShaderBinding binding, RenderGraphTextureHandle texture, RenderSamplerHandle sampler)
@@ -981,6 +1029,7 @@ public sealed class UiDisplayListGraphFeatureTests
         {
             DrawCount++;
             InstanceCounts.Add(instanceCount);
+            Draws.Add(new DrawCall(instanceCount, firstInstance));
         }
 
         public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
