@@ -248,6 +248,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
             PImageInfo = imageInfo
         };
         graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
+        graph.CommandWriter.InvalidateDescriptorSetCache();
         if (bufferInfo != null)
         {
             _cachedBuffers.RefAt(index) = *bufferInfo;

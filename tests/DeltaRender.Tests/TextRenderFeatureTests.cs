@@ -26,7 +26,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void FiveThousandAdjacentGlyphsUseOneInstancedDraw()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -67,7 +67,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void GeneratedTextParametersAreSubmittedAndResizeUpdatesResolution()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -113,7 +113,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void InstanceUploadSkipsUnchangedPayloadAndResizeButKeepsChangesDirty()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -164,7 +164,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void ProducerIdentityAndVersionReuseOnlyMatchingRunPayload()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -202,7 +202,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void InstanceBufferGrowthPreservesPreviouslyPackedRuns()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -242,7 +242,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void EffectiveClipIsIntersectedWithViewportBeforeScissor()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -269,7 +269,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void CompatibleRunsBatchButNonAdjacentClipChangesPreserveAbaOrder()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -313,7 +313,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void ClearEndsBorrowedRunLifetimeBeforeTheNextBuild()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -342,7 +342,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void WarmFeatureSubmissionPathDoesNotAllocateAfterWarmup()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -396,7 +396,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void TextModesUseIsolatedAtlasFormats()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         using var sdfSession = new FakeSession();
         using var sdfFeature = new TextRenderFeature(
             sdfSession,
@@ -435,7 +435,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void SdfAtlasPaddingSeparatesAdjacentGlyphSlots()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -468,7 +468,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void PackedInstanceUploadPreservesPlaneBoundsAndUvMetrics()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -512,7 +512,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void AtlasPagesUploadAndBindIndependentlyAndDisposeAllPages()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -549,7 +549,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void FailedPageAllocationLeavesExistingPagesOwnedAndUnchanged()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
@@ -580,7 +580,7 @@ public sealed class TextRenderFeatureTests
     [Fact]
     public void AtlasPagesRecycleOldestInactivePagesAcrossFrames()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),

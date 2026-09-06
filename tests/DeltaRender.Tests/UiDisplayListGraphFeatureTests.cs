@@ -91,7 +91,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void ConsumeCopiesVisualClipTextAndOrderBeforeProducerMutation()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("A".AsMemory(), 24, new[] { font }));
         var visuals = new[] { Solid(1, new UiClipId(0)) };
@@ -378,7 +378,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void TextOnlyDisplayListAddsTextRasterPassWithoutVisualInstances()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
         using var session = new RecordingSession();
@@ -418,7 +418,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void MixedVisualAndTextUseOneTransferPass()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
         using var session = new RecordingSession();
@@ -459,7 +459,7 @@ public sealed class UiDisplayListGraphFeatureTests
     [Fact]
     public void RepeatedTextOnlyConsumeDoesNotAccumulatePreviousFrameRuns()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
         using var session = new RecordingSession();
@@ -752,6 +752,23 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void EmptyClipIsWarningAndOmittedFromRenderWork()
+    {
+        var clips = new[] { new UiClipRegion(new float4(10, 12, 0, 20), UiClipId.None) };
+        using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            new[] { Solid(1, new UiClipId(0)) },
+            clips,
+            Array.Empty<UiTextDraw>(),
+            new[] { new UiDrawRef(UiDrawKind.Visual, 0) })), string.Join(" | ", feature.Diagnostics));
+        Assert.Empty(feature.Diagnostics);
+        Assert.Contains(feature.Warnings, static message =>
+            message == "Clip 0 has empty bounds and was omitted from render work.");
+        Assert.True(feature.GetEffectiveClip(0).IsEmpty);
+    }
+
+    [Fact]
     public void ResourceRegistryRetainsSemanticIdentityAndSessionHandles()
     {
         var registry = new UiDisplayListResourceRegistry();
@@ -798,7 +815,7 @@ public sealed class UiDisplayListGraphFeatureTests
             clip ?? UiClipId.None,
             UiResourceId.Empty);
 
-    private static FontInstanceId OpenTestFont(SixLaborsTextService service)
+    private static FontInstanceId OpenTestFont(DeltaTextService service)
         => service.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("d7f3e9ab-6fb6-4d0f-9d8a-4d4fc2c4d6f6")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),

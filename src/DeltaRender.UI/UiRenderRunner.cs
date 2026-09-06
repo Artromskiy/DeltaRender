@@ -78,7 +78,7 @@ internal static class UiRenderRunner
         var layoutPath = ParseOptionalPath(args, "--layout-json");
         var loadContextValue = loadContext ?? new XamlLoadContext(new EmptyTypeResolver(), new EmptyResourceResolver());
 
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         IHostDocument documentState;
         if (contentFactory is null)
         {

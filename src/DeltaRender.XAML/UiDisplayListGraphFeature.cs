@@ -29,6 +29,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
+    private readonly List<string> _warnings = [];
     private UiCoordinateMapper _coordinates;
     private float _dpiScale = 1f;
 
@@ -144,7 +145,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
         _textVisualUploadPass = new UiTextVisualUploadPass(this);
-        _clipResolver = new UiClipResolver(viewport, _diagnostics);
+        _clipResolver = new UiClipResolver(viewport, _diagnostics, _warnings);
         _coordinates = new UiCoordinateMapper(1f, viewport);
         if (session is not null)
         {
@@ -155,6 +156,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     /// <summary>Gets the reusable diagnostic list from the latest consume or submit attempt.</summary>
     public IReadOnlyList<string> Diagnostics => _diagnostics;
+
+    /// <summary>Gets non-fatal boundary warnings from the latest consume or submit attempt.</summary>
+    public IReadOnlyList<string> Warnings => _warnings;
 
     /// <summary>Gets whether the latest display list was accepted for planning.</summary>
     public bool HasFrame => _hasFrame;
@@ -216,6 +220,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         var profiler = _session?.Profiler;
         var started = profiler is null ? 0 : Stopwatch.GetTimestamp();
         _diagnostics.Clear();
+        _warnings.Clear();
         _textFeature?.Clear();
         if (!float.IsFinite(displayList.DpiScale) || displayList.DpiScale <= 0)
         {
@@ -389,7 +394,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 for (var index = 0; index < _orderCount; index++)
                 {
                     var draw = _order.RefAt(index);
-                    if (draw.Kind != UiDrawKind.Text)
+                    if (draw.Kind != UiDrawKind.Text || _commandClips.RefAt(index).IsEmpty)
                     {
                         previousWasText = false;
                         continue;

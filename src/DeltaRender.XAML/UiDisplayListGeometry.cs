@@ -18,7 +18,7 @@ internal static class UiDisplayListGeometry
         result = default;
         var right = (double)bounds.x + bounds.z;
         var bottom = (double)bounds.y + bounds.w;
-        if (!IsFinite(bounds) || !double.IsFinite(right) || !double.IsFinite(bottom) || bounds.z <= 0 || bounds.w <= 0)
+        if (!IsFinite(bounds) || !double.IsFinite(right) || !double.IsFinite(bottom) || bounds.z < 0 || bounds.w < 0)
         {
             return false;
         }
@@ -33,7 +33,7 @@ internal static class UiDisplayListGeometry
         var bottomInt = ClampToInt(bottomValue);
         var width = (long)rightInt - left;
         var height = (long)bottomInt - top;
-        if (width <= 0 || height <= 0)
+        if (width < 0 || height < 0)
         {
             return false;
         }

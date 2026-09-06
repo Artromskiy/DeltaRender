@@ -41,97 +41,19 @@ and XAML adapters non-packable with explicit producer edges. `DeltaRender.UI`
 is the consumer bundle: it packages those adapter assemblies and generated UI
 and text shader assemblies without making the adapters independent packages.
 
-## NuGet release protocol for 0.0.15
+## NuGet package details
 
-Run the package boundary gate first. The `DeltaRender` package must be produced
-before its Vulkan and SDL3 dependents so their restore resolves the same local
-`0.0.15` base package. The shader dependency is supplied by the selected
-DeltaShader producer package feed. Set `DELTASHADER_PACKAGE_DIR` to that feed
-before packing; do not pin a historical staging version here.
+Use the root [`dev` and `release` workflow`](../docs/NUGET_WORKFLOW.md); it is
+the only supported pack, restore and publish entry point. It reads package
+versions from the project files and stages the complete first-party dependency
+graph, so this document intentionally contains no version literals or manual
+push commands.
 
-```bash
-set -euo pipefail
-
-./eng/check-package-boundaries.sh
-
-package_dir="$PWD/artifacts/packages/0.0.15"
-shader_package_dir="${DELTASHADER_PACKAGE_DIR:?Set DELTASHADER_PACKAGE_DIR to the selected DeltaShader package feed}"
-mkdir -p "$package_dir"
-
-package_sources=(
-  --source "$package_dir"
-  --source "$PWD/../DeltaDiagnostics/artifacts"
-  --source "$PWD/../DeltaMaths/artifacts"
-  --source "$shader_package_dir"
-  --source https://api.nuget.org/v3/index.json
-)
-pack_options=(
-  -c Release
-  -o "$package_dir"
-  --disable-build-servers
-  -m:1
-  /p:UseSharedCompilation=false
-    -v:minimal
-)
-
-dotnet pack src/DeltaRender/DeltaRender.csproj \
-  "${pack_options[@]}" "${package_sources[@]}"
-dotnet pack src/DeltaRender.Vulkan/DeltaRender.Vulkan.csproj \
-  "${pack_options[@]}" "${package_sources[@]}"
-dotnet pack src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj \
-  "${pack_options[@]}" "${package_sources[@]}"
-dotnet pack src/DeltaRender.UI/DeltaRender.UI.csproj \
-  "${pack_options[@]}" "${package_sources[@]}"
-```
-
-Validate all four archives before publishing. `unzip -t` checks archive
-integrity; the nuspec output must show package version `0.0.15`, the current
-repository commit, and the resolved matching `DeltaShader.Contract` version for
-the base/Vulkan packages,
-and `DeltaRender 0.0.15` for the Vulkan/SDL3 packages.
-
-```bash
-packages=(
-  "$package_dir/DeltaRender.0.0.15.nupkg"
-  "$package_dir/DeltaRender.Vulkan.0.0.15.nupkg"
-  "$package_dir/DeltaRender.Platform.SDL3.0.0.15.nupkg"
-  "$package_dir/DeltaRender.UI.0.0.15.nupkg"
-)
-
-for package in "${packages[@]}"; do
-  unzip -t "$package"
-  unzip -l "$package"
-  unzip -p "$package" '*.nuspec' | \
-    rg '<id>|<version>|<repository|<dependency'
-done
-
-shasum -a 256 "${packages[@]}"
-git diff --check
-```
-
-The canonical public release destination is NuGet.org. GitHub Packages may be
-configured separately as a private feed for producer dependencies, but it is
-not the release destination for these packages. Provision `NUGET_API_KEY`
-outside the repository and shell history. Never put the credential in this
-file, a command literal, a log or an artifact. Push in dependency order and
-keep `--skip-duplicate` so a retry cannot create an ambiguous release step.
-
-```bash
-: "${NUGET_API_KEY:?NUGET_API_KEY must be supplied by the release environment}"
-nuget_source='https://api.nuget.org/v3/index.json'
-
-for package in "${packages[@]}"; do
-  dotnet nuget push "$package" \
-    --source "$nuget_source" \
-    --api-key "$NUGET_API_KEY" \
-    --skip-duplicate
-done
-```
-
-Do not push adapter assemblies separately: `DeltaRender.Text` and
-`DeltaRender.XAML` are source-only internal projects. Their runtime assemblies
-and the generated shader producer assemblies are distributed through
-`DeltaRender.UI`.
+DeltaRender publishes the base, Vulkan, SDL3 and UI bundle in dependency order.
+`DeltaRender.Text` and `DeltaRender.XAML` remain source-only implementation
+projects; their runtime assemblies and generated shader producer outputs are
+distributed through `DeltaRender.UI`. Run
+`./eng/check-package-boundaries.sh` when changing those ownership boundaries.
 
 The contract checkpoint can be checked independently while the Vulkan and
 consumer migration in `docs/MIGRATION.md` is in progress:

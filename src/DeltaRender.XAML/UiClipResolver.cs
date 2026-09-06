@@ -3,10 +3,11 @@ using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
 
-internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnostics)
+internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnostics, List<string> warnings)
 {
     private PixelExtent _logicalViewport = viewport;
     private readonly List<string> _diagnostics = diagnostics;
+    private readonly List<string> _warnings = warnings;
     private UiClipRegion[] _clips = [];
     private PixelRect[] _resolvedClips = [];
     private int[] _resolvedEpochs = [];
@@ -104,6 +105,11 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
                 return false;
             }
 
+            if (local.IsEmpty)
+            {
+                AddWarning($"Clip {current.Value} has empty bounds and was omitted from render work.");
+            }
+
             result = UiDisplayListGeometry.Intersect(result, local);
             current = region.Parent;
         }
@@ -129,6 +135,8 @@ internal sealed class UiClipResolver(PixelExtent viewport, List<string> diagnost
     }
 
     private void AddDiagnostic(string message) => _diagnostics.Add(message);
+
+    private void AddWarning(string message) => _warnings.Add(message);
 
     private static void EnsureCapacity<T>(ref T[] storage, int required)
     {

@@ -776,7 +776,7 @@ public sealed class RenderBatchingTests
 
     private static ShapedText CreateTestShapedText()
     {
-        using var textService = new SixLaborsTextService();
+        using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),

@@ -40,6 +40,9 @@ internal sealed unsafe class VulkanCommandWriter(VulkanRenderSession session)
         _hasIndexBuffer = false;
     }
 
+    internal void InvalidateDescriptorSetCache()
+        => _hasDescriptorSets = false;
+
     internal void SetViewport(in RenderViewport viewport)
     {
         if (_hasViewport && _lastViewport.Equals(viewport))

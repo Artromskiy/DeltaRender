@@ -64,9 +64,10 @@ resource lifetime are decided in one place.
 
 ### P1 - DeltaRender.XAML UI display-list adapter
 
-This is the selected consumer slice for the `DeltaXAML.Contract` v0.0.8 paint
-and clip data. It belongs in `src/DeltaRender.XAML/`, not in the core Render
-contract and not in DeltaXAML.
+This is the selected consumer slice for the frozen `DeltaXAML.Contract` paint
+and clip data. The contract version is owned by its project metadata and is
+intentionally not duplicated here. The slice belongs in
+`src/DeltaRender.XAML/`, not in the core Render contract and not in DeltaXAML.
 
 - [x] Create `UiDisplayListGraphFeature : IRenderFeature, IDisposable` with a
   synchronous `Consume(UiDisplayList)` followed by normal `AddPasses`.
