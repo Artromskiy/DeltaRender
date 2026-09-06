@@ -60,6 +60,8 @@ provide application data and pass recording without exposing Vulkan objects.
   Vulkan implementation.
 - [`DeltaRender.Platform.SDL3`](src/DeltaRender.Platform.SDL3/DeltaRender.Platform.SDL3.csproj):
   SDL3 window and surface integration.
+- [`DeltaRender.UI`](src/DeltaRender.UI/DeltaRender.UI.csproj):
+  DeltaXAML display-list, text and generated UI-shader integration.
 - [Headless shader playground](samples/DeltaRender.HeadlessShaderPlayground/README.md).
 
 ## Further reading
