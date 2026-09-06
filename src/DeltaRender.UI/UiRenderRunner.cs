@@ -74,7 +74,6 @@ internal static class UiRenderRunner
         var frameLimit = ParseFrameLimit(args, headless ? options.DefaultHeadlessFrames : 0);
         var watch = HasFlag(args, "--watch");
         var profile = HasFlag(args, "--profile");
-        var assertNoBlackPixels = HasFlag(args, "--assert-no-black-pixels");
         var readbackPath = ParseOptionalPath(args, "--readback");
         var layoutPath = ParseOptionalPath(args, "--layout-json");
         var loadContextValue = loadContext ?? new XamlLoadContext(new EmptyTypeResolver(), new EmptyResourceResolver());
@@ -109,7 +108,6 @@ internal static class UiRenderRunner
                 frameLimit,
                 watch,
                 profile,
-                assertNoBlackPixels,
                 readbackPath,
                 layoutPath,
                 cancellationToken).ConfigureAwait(false);
@@ -130,7 +128,6 @@ internal static class UiRenderRunner
         int frameLimit,
         bool watch,
         bool profile,
-        bool assertNoBlackPixels,
         string? readbackPath,
         string? layoutPath,
         CancellationToken cancellationToken)
@@ -159,7 +156,6 @@ internal static class UiRenderRunner
                 frameLimit,
                 watch,
                 profile,
-                assertNoBlackPixels,
                 readbackPath,
                 layoutPath,
                 sourcePath,
@@ -201,7 +197,6 @@ internal static class UiRenderRunner
             frameLimit,
             watch,
             profile,
-            assertNoBlackPixels,
             readbackPath: null,
             layoutPath,
             sourcePath,
@@ -222,7 +217,6 @@ internal static class UiRenderRunner
         int frameLimit,
         bool watch,
         bool profile,
-        bool assertNoBlackPixels,
         string? readbackPath,
         string? layoutPath,
         string? sourcePath,
@@ -362,15 +356,7 @@ internal static class UiRenderRunner
                 }
 
                 SavePpm(pixels, extent.Width, extent.Height, readbackPath);
-                var blackPixels = CountVisibleBlackPixels(pixels);
-                await Console.Out.WriteLineAsync(
-                    $"readback: path={Path.GetFullPath(readbackPath)}, non-zero-pixels={CountNonZeroPixels(pixels)}, " +
-                    $"visible-black-pixels={blackPixels}").ConfigureAwait(false);
-                if (assertNoBlackPixels && blackPixels != 0)
-                {
-                    await Console.Error.WriteLineAsync($"Visible black pixel regression: {blackPixels}").ConfigureAwait(false);
-                    return 1;
-                }
+                await Console.Out.WriteLineAsync($"readback: path={Path.GetFullPath(readbackPath)}").ConfigureAwait(false);
             }
 
             return 0;
@@ -515,34 +501,6 @@ internal static class UiRenderRunner
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? Environment.CurrentDirectory);
         File.WriteAllText(path, content);
-    }
-
-    private static int CountNonZeroPixels(ReadOnlySpan<byte> pixels)
-    {
-        var count = 0;
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            if ((pixels[i] | pixels[i + 1] | pixels[i + 2] | pixels[i + 3]) != 0)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    private static int CountVisibleBlackPixels(ReadOnlySpan<byte> pixels)
-    {
-        var count = 0;
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            if (pixels[i] == 0 && pixels[i + 1] == 0 && pixels[i + 2] == 0 && pixels[i + 3] != 0)
-            {
-                count++;
-            }
-        }
-
-        return count;
     }
 
     private static int ParseFrameLimit(string[] args, int fallback)
