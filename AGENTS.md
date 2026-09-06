@@ -1,27 +1,22 @@
-# DeltaRender agent guide
+# DeltaRender agent router
 
-Scope: renderer-neutral draw/resource contracts, Vulkan implementation and
-SDL3 surface/window integration. Engine owns event polling and frame policy.
+Scope: renderer-neutral draw/resource contracts, the Vulkan implementation and
+SDL3 surface/window integration. DeltaEngine owns event polling and frame
+policy. Vulkan is the only supported renderer backend.
 
-- [docs/README.md](docs/README.md) — stable renderer boundaries and supported paths.
-- [docs/CONTRACT.md](docs/CONTRACT.md) — complete cross-project renderer
-  contract; declarations are part of the `Delta.Render` assembly in
-  `src/DeltaRender`.
-- [docs/MIGRATION.md](docs/MIGRATION.md) — mandatory removal order for every legacy GPU
-  submission path; do not replace those paths with compatibility facades.
-- [TODO.md](TODO.md) — selected renderer work.
-- [IDEAS.md](IDEAS.md) — deferred renderer hypotheses.
-- [WORKFLOW.md](WORKFLOW.md) — builds, contract tests and native smokes.
-- Read [docs/adr/0001-vulkan-sdl3-moltenvk-stack.md](docs/adr/0001-vulkan-sdl3-moltenvk-stack.md)
-  for platform decisions and tool-local READMEs only when changing those tools.
-- Read [../CONTRACTS.md](../CONTRACTS.md) for canonical contract ownership, and
-  [../DeltaShader/AGENTS.md](../DeltaShader/AGENTS.md) before changing artifact
-  consumption.
+## Map — open only as needed
+
+- ../CODE_STYLE.md — technical ownership, lifetime, batching and low-level evidence rules.
+- ../CONTRACTS.md — canonical cross-project ownership; open only for a boundary task.
+- IDEAS.md — renderer research/options only when requested.
+- WORKFLOW.md — builds, contract checks and bounded native smokes.
+- docs/CONTRACT.md — complete frozen renderer contract; declarations live in src/DeltaRender.
+- docs/USER_API.md — user-facing renderer usage; open only for public API/documentation work.
+- docs/INTERNAL.md and docs/MIGRATION.md — Vulkan implementation and legacy-removal order.
+- src/DeltaRender and src/DeltaRender.* — production contract and implementation siblings.
+- tests, samples, tools — verification, runnable examples and developer tools.
 
 Do not poll input, parse XAML/C#, shape strings or define a second shader ABI.
-
-Skills: `gpu-memory-model` for Vulkan synchronization/resources,
-`shader-dev` for pipeline/stage integration, `abi-and-calling-conventions` for
-binary ABI validation and migration, `performance-speedup` and
-`memory-hierarchy-and-caches` for measured batching/upload work,
-`apple-silicon` for MoltenVK setup, and `lldb` for native macOS crashes.
+Use gpu-memory-model, shader-dev, abi-and-calling-conventions,
+performance-speedup, memory-hierarchy-and-caches, apple-silicon and lldb only
+for the corresponding bounded area.
