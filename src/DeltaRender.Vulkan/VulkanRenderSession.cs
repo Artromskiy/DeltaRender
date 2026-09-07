@@ -545,6 +545,10 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
 
     private int CurrentFrameSlot => _frameSlots.CurrentIndex;
 
+    internal int FrameSlotCount => _frameSlots.Count;
+    internal int CurrentFrameSlotIndex => CurrentFrameSlot;
+    internal ulong CurrentFrameNumber => _frameSlots.CurrentFrameNumber;
+
     private void ActivateFrameSlot(int index)
     {
         var slot = _frameResources[index];

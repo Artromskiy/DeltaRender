@@ -15,27 +15,31 @@ internal readonly record struct VulkanGraphBinding(
 
 internal sealed unsafe class VulkanGraphDescriptorState
 {
+    private const uint DescriptorSetChunkCapacity = 64;
+    private readonly VulkanRenderSession _session;
     private readonly DescriptorSetLayout[] _layouts;
-    private readonly DescriptorPool _pool;
-    private readonly DescriptorSet[] _descriptorSets;
+    private readonly List<DescriptorPool>[] _pools;
     private readonly VulkanGraphBinding[] _bindings;
     private readonly bool[]? _bound;
     private readonly ulong _requiredMask;
     private readonly bool[] _descriptorCacheValid;
     private readonly DescriptorBufferInfo[] _cachedBuffers;
     private readonly DescriptorImageInfo[] _cachedImages;
+    private DescriptorSet[] _descriptorSets = [];
     private ulong _boundMask;
+    private int _activeFrameSlot = -1;
+    private ulong _activeFrameNumber;
     private bool _disposed;
 
     private VulkanGraphDescriptorState(
+        VulkanRenderSession session,
         DescriptorSetLayout[] layouts,
-        DescriptorPool pool,
-        DescriptorSet[] descriptorSets,
+        List<DescriptorPool>[] pools,
         VulkanGraphBinding[] bindings)
     {
+        _session = session;
         _layouts = layouts;
-        _pool = pool;
-        _descriptorSets = descriptorSets;
+        _pools = pools;
         _bindings = bindings;
         _bound = bindings.Length > sizeof(ulong) * 8 ? new bool[bindings.Length] : null;
         _requiredMask = bindings.Length == sizeof(ulong) * 8
@@ -89,33 +93,53 @@ internal sealed unsafe class VulkanGraphDescriptorState
         }
 
         var layouts = new DescriptorSetLayout[setCount];
-        var pool = default(DescriptorPool);
-        var descriptorSets = Array.Empty<DescriptorSet>();
+        var pools = new List<DescriptorPool>[session.FrameSlotCount];
+        for (var index = 0; index < pools.Length; index++)
+        {
+            pools[index] = [];
+        }
+
         try
         {
             CreateLayouts(session, bindings, layouts);
-            if (bindings.Length != 0)
-            {
-                pool = CreatePool(session, bindings, setCount);
-                descriptorSets = AllocateSets(session, layouts, pool);
-            }
 
-            return new VulkanGraphDescriptorState(layouts, pool, descriptorSets, bindings);
+            return new VulkanGraphDescriptorState(session, layouts, pools, bindings);
         }
         catch
         {
-            Destroy(session, layouts, pool);
+            Destroy(session, layouts, pools);
             throw;
         }
     }
 
     internal void BeginBindings()
     {
+        if (_bindings.Length != 0)
+        {
+            var frameSlot = _session.CurrentFrameSlotIndex;
+            if ((uint)frameSlot >= (uint)_pools.Length)
+            {
+                throw new InvalidOperationException("Descriptor bindings require an active frame slot.");
+            }
+
+            var frameNumber = _session.CurrentFrameNumber;
+            if (_activeFrameSlot != frameSlot || _activeFrameNumber != frameNumber)
+            {
+                ResetPools(frameSlot);
+                _activeFrameSlot = frameSlot;
+                _activeFrameNumber = frameNumber;
+            }
+
+            _descriptorSets = AllocateSnapshot(frameSlot);
+        }
+
         _boundMask = 0;
         if (_bound is not null)
         {
             Array.Clear(_bound);
         }
+
+        Array.Clear(_descriptorCacheValid);
     }
 
     internal void BindBuffer(
@@ -204,7 +228,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
         }
 
         _disposed = true;
-        Destroy(session, _layouts, _pool);
+        Destroy(session, _layouts, _pools);
     }
 
     private void WriteDescriptor(
@@ -248,7 +272,6 @@ internal sealed unsafe class VulkanGraphDescriptorState
             PImageInfo = imageInfo
         };
         graph.Session.Api.UpdateDescriptorSets(graph.Session.Device, 1, &write, 0, null);
-        graph.CommandWriter.InvalidateDescriptorSetCache();
         if (bufferInfo != null)
         {
             _cachedBuffers.RefAt(index) = *bufferInfo;
@@ -343,7 +366,7 @@ internal sealed unsafe class VulkanGraphDescriptorState
         var sizeIndex = 0;
         foreach (var pair in counts)
         {
-            sizes[sizeIndex++] = new DescriptorPoolSize { Type = pair.Key, DescriptorCount = pair.Value };
+            sizes[sizeIndex++] = new DescriptorPoolSize { Type = pair.Key, DescriptorCount = checked(pair.Value * DescriptorSetChunkCapacity) };
         }
 
         fixed (DescriptorPoolSize* pointer = sizes)
@@ -351,12 +374,42 @@ internal sealed unsafe class VulkanGraphDescriptorState
             var info = new DescriptorPoolCreateInfo
             {
                 SType = StructureType.DescriptorPoolCreateInfo,
-                MaxSets = (uint)setCount,
+                MaxSets = checked((uint)setCount * DescriptorSetChunkCapacity),
                 PoolSizeCount = (uint)sizes.Length,
                 PPoolSizes = pointer
             };
             VulkanCall.Ensure(session.Api.CreateDescriptorPool(session.Device, info, null, out var pool), "CreateDescriptorPool");
             return pool;
+        }
+    }
+
+    private DescriptorSet[] AllocateSnapshot(int frameSlot)
+    {
+        var pools = _pools[frameSlot];
+        while (true)
+        {
+            if (pools.Count == 0)
+            {
+                pools.Add(CreatePool(_session, _bindings, _layouts.Length));
+            }
+
+            try
+            {
+                return AllocateSets(_session, _layouts, pools[^1]);
+            }
+            catch (VulkanOperationException exception) when (exception.Result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
+            {
+                pools.Add(CreatePool(_session, _bindings, _layouts.Length));
+            }
+        }
+    }
+
+    private void ResetPools(int frameSlot)
+    {
+        var pools = _pools[frameSlot];
+        for (var index = 0; index < pools.Count; index++)
+        {
+            VulkanCall.Ensure(_session.Api.ResetDescriptorPool(_session.Device, pools[index], 0), "ResetDescriptorPool");
         }
     }
 
@@ -385,11 +438,18 @@ internal sealed unsafe class VulkanGraphDescriptorState
     private static void Destroy(
         VulkanRenderSession session,
         DescriptorSetLayout[] layouts,
-        DescriptorPool pool)
+        List<DescriptorPool>[] pools)
     {
-        if (pool.Handle != default)
+        for (var slot = 0; slot < pools.Length; slot++)
         {
-            session.Api.DestroyDescriptorPool(session.Device, pool, null);
+            var slotPools = pools[slot];
+            for (var index = slotPools.Count - 1; index >= 0; index--)
+            {
+                if (slotPools[index].Handle != default)
+                {
+                    session.Api.DestroyDescriptorPool(session.Device, slotPools[index], null);
+                }
+            }
         }
 
         for (var index = layouts.Length - 1; index >= 0; index--)
