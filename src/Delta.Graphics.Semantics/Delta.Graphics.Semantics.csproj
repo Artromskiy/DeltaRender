@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;netstandard2.0</TargetFrameworks>
+    <RootNamespace>Delta.Graphics.Semantics</RootNamespace>
+    <AssemblyName>Delta.Graphics.Semantics</AssemblyName>
+    <PackageId>Delta.Graphics.Semantics</PackageId>
+    <Version>0.0.1</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <Description>Minimal common graphics stage semantics.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../DeltaMaths/src/DeltaMaths/DeltaMaths.csproj" />
+  </ItemGroup>
+</Project>

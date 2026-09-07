@@ -1,4 +1,5 @@
 using Delta;
+using Delta.Graphics.Semantics;
 using Delta.Shader;
 
 namespace Delta.Render.UIShaders;

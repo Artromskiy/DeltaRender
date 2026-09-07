@@ -14,8 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Uv0 is a DeltaShader semantic wrapper, not a renderer-local type. -->
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.SemanticTypes/DeltaShader.SemanticTypes.csproj" />
+    <ProjectReference Include="../../src/Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
     <PackageReference Include="DeltaShader.Compiler" PrivateAssets="all" />
     <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />

@@ -2,13 +2,13 @@ using Delta.Render.RenderGraph;
 using Delta.Render.Text;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Shader.Text;
-using Delta.Shader.UI;
+using Delta.Render.Text;
+using Delta.Render.UIShaders;
 using Delta.Text.Contract;
 using Delta.XAML;
 using Delta.XAML.Contract;
-using TextShaders = Delta.Shader.Text.Shaders;
-using UiShaders = Delta.Shader.UI.Shaders;
+using TextShaders = Delta.Render.Text.Shaders;
+using UiShaders = Delta.Render.UIShaders.Shaders;
 
 namespace Delta.Render.UI;
 

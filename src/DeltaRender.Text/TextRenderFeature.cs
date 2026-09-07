@@ -8,7 +8,8 @@ using Delta.Diagnostics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
-using Delta.Shader.Text;
+using Delta.Render.Text;
+using Delta.Render.Text.Shaders;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;

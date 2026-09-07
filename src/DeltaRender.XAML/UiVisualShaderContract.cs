@@ -1,7 +1,8 @@
 using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
-using Delta.Shader.UI;
+using Delta.Render.UIShaders;
+using Delta.Render.UIShaders.Shaders;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
@@ -57,7 +58,7 @@ internal static class UiVisualShaderContract
                 expectedFragment = RoundedFragmentAbi;
                 break;
             default:
-                diagnostic = $"Visual kind {visualKind} has no supported generated DeltaShader.UI artifact.";
+                diagnostic = $"Visual kind {visualKind} has no supported generated DeltaRender.UIShaders artifact.";
                 return false;
         }
 

@@ -7,7 +7,7 @@
     <Version>0.0.15</Version>
     <IsPackable>true</IsPackable>
     <Authors>Artromskiy</Authors>
-    <Description>Reusable DeltaXAML UI rendering bundle with DeltaRender and generated DeltaShader UI/text programs.</Description>
+    <Description>Reusable UI rendering provider with DeltaRender and generated UI/text shader programs.</Description>
     <PackageTags>rendering;vulkan;xaml;ui;text;shaders</PackageTags>
     <RepositoryUrl>https://github.com/Artromskiy/DeltaRender</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -34,37 +34,16 @@
 
   <ItemGroup>
     <!-- These source-only adapters are bundled here so consumers do not reference samples or checkout-relative projects. -->
-    <ProjectReference Include="../DeltaRender.Text/DeltaRender.Text.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../DeltaRender.XAML/DeltaRender.XAML.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Text/DeltaShader.Text.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../DeltaRender.Text/DeltaRender.Text.csproj" />
+    <ProjectReference Include="../DeltaRender.XAML/DeltaRender.XAML.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
   </ItemGroup>
-
   <PropertyGroup>
-    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaRenderUiBundleFiles</TargetsForTfmSpecificContentInPackage>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaXamlGeneratorFiles</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
-  <Target Name="CollectDeltaRenderUiBundleFiles" Returns="@(TfmSpecificPackageFile)">
+  <Target Name="CollectDeltaXamlGeneratorFiles" Returns="@(TfmSpecificPackageFile)">
     <ItemGroup>
-      <TfmSpecificPackageFile Include="$(MSBuildProjectDirectory)/../DeltaRender.Text/bin/$(Configuration)/$(TargetFramework)/DeltaRender.Text.dll;
-        $(MSBuildProjectDirectory)/../DeltaRender.XAML/bin/$(Configuration)/$(TargetFramework)/DeltaRender.XAML.dll;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/$(TargetFramework)/DeltaShader.dll;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.SemanticTypes/bin/$(Configuration)/$(TargetFramework)/DeltaShader.SemanticTypes.dll;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.UI/bin/$(Configuration)/$(TargetFramework)/DeltaShader.UI.dll;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.Text/bin/$(Configuration)/$(TargetFramework)/DeltaShader.Text.dll">
-        <PackagePath>lib/$(TargetFramework)/</PackagePath>
-      </TfmSpecificPackageFile>
-      <_DeltaRenderUiShaderFile Include="$(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.UI/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.UI/**/*.spv;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.UI/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.UI/**/*.glsl;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.UI/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.UI/**/*.shader.json;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.UI/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.UI/**/*.abi.json;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.Text/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.Text/**/*.spv;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.Text/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.Text/**/*.glsl;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.Text/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.Text/**/*.shader.json;
-        $(MSBuildProjectDirectory)/../../../DeltaShader/src/DeltaShader.Text/bin/$(Configuration)/$(TargetFramework)/DeltaShader/DeltaShader.Text/**/*.abi.json" />
-      <TfmSpecificPackageFile Include="@(_DeltaRenderUiShaderFile)">
-        <PackagePath>contentFiles/any/any/DeltaShader/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
-      </TfmSpecificPackageFile>
       <_DeltaXamlGeneratorFile Include="$(PkgDeltaXAML_Generator)/analyzers/dotnet/cs/**/*.dll" />
       <TfmSpecificPackageFile Include="@(_DeltaXamlGeneratorFile)">
         <PackagePath>analyzers/dotnet/cs/%(Filename)%(Extension)</PackagePath>

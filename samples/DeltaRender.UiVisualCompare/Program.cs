@@ -6,7 +6,7 @@ using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Shader.UI;
+using Delta.Render.UIShaders;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.UiVisualCompare;

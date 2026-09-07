@@ -4,7 +4,7 @@ using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Vulkan;
 using Delta.Shader.Contract;
-using Delta.Shader.Mesh;
+using Delta.Render.Mesh;
 
 namespace Delta.Render.MeshSample;
 
@@ -78,17 +78,17 @@ internal static class Program
 
     private static string ResolveProducerShaderDirectory()
     {
-        var producerRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../DeltaShader/src/DeltaShader.Mesh/bin"));
+        var producerRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../src/DeltaRender.Mesh/bin"));
         foreach (var configuration in new[] { "Release", "Debug" })
         {
-            var directory = Path.Combine(producerRoot, configuration, "net10.0", "DeltaShader", "DeltaShader.Mesh");
+            var directory = Path.Combine(producerRoot, configuration, "net10.0", "DeltaShader", "DeltaRender.Mesh");
             if (File.Exists(Path.Combine(directory, "Mesh.vert.spv")) && File.Exists(Path.Combine(directory, "Fragment.frag.spv")))
             {
                 return directory;
             }
         }
 
-        return Path.Combine(producerRoot, "Release", "net10.0", "DeltaShader", "DeltaShader.Mesh");
+        return Path.Combine(producerRoot, "Release", "net10.0", "DeltaShader", "DeltaRender.Mesh");
     }
 
     private static string? GetOption(string[] args, string option)

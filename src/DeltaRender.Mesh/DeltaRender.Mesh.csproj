@@ -1,12 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>Delta.Render.Text</RootNamespace>
-    <AssemblyName>DeltaRender.Text</AssemblyName>
-    <PackageId>DeltaRender.Text</PackageId>
+    <RootNamespace>Delta.Render.Mesh</RootNamespace>
+    <AssemblyName>DeltaRender.Mesh</AssemblyName>
+    <PackageId>DeltaRender.Mesh</PackageId>
     <Version>0.0.1</Version>
-    <IsPackable>true</IsPackable>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
     <DeltaShaderEnabled>true</DeltaShaderEnabled>
   </PropertyGroup>
 
@@ -15,7 +16,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DeltaRender" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" PrivateAssets="all" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
@@ -24,18 +24,18 @@
     <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Backend.Glsl/bin/$(Configuration)/netstandard2.0/DeltaShader.Backend.Glsl.dll" />
+    <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaShader.Tool" PrivateAssets="all" />
-    <PackageReference Include="DeltaText" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectTextShaderArtifacts</TargetsForTfmSpecificContentInPackage>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectMeshShaderArtifacts</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
-  <Target Name="CollectTextShaderArtifacts" Returns="@(TfmSpecificPackageFile)">
+  <Target Name="CollectMeshShaderArtifacts" Returns="@(TfmSpecificPackageFile)">
     <ItemGroup>
-      <_TextShaderArtifact Include="$(OutputPath)DeltaShader/$(AssemblyName)/**/*.spv;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.glsl;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.shader.json;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.abi.json" />
-      <TfmSpecificPackageFile Include="@(_TextShaderArtifact)">
+      <_MeshShaderArtifact Include="$(OutputPath)DeltaShader/$(AssemblyName)/**/*.spv;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.glsl;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.shader.json;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.abi.json" />
+      <TfmSpecificPackageFile Include="@(_MeshShaderArtifact)">
         <PackagePath>contentFiles/any/any/DeltaShader/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
       </TfmSpecificPackageFile>
     </ItemGroup>

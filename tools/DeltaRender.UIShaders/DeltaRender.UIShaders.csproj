@@ -3,7 +3,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Delta.Render.UIShaders</RootNamespace>
     <AssemblyName>DeltaRender.UIShaders</AssemblyName>
-    <IsPackable>false</IsPackable>
+    <PackageId>DeltaRender.UIShaders</PackageId>
+    <Version>0.0.1</Version>
+    <IsPackable>true</IsPackable>
     <DeltaShaderEnabled>true</DeltaShaderEnabled>
   </PropertyGroup>
 
@@ -17,5 +19,19 @@
     <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />
     <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaShader.Tool" PrivateAssets="all" />
+    <ProjectReference Include="../../src/Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectUiShaderArtifacts</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="CollectUiShaderArtifacts" Returns="@(TfmSpecificPackageFile)">
+    <ItemGroup>
+      <_UiShaderArtifact Include="$(OutputPath)DeltaShader/$(AssemblyName)/**/*.spv;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.glsl;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.shader.json;$(OutputPath)DeltaShader/$(AssemblyName)/**/*.abi.json" />
+      <TfmSpecificPackageFile Include="@(_UiShaderArtifact)">
+        <PackagePath>contentFiles/any/any/DeltaShader/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
 </Project>

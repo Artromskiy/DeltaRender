@@ -83,7 +83,7 @@ intentionally not duplicated here. The slice belongs in
   and one raster pass per contiguous text segment or visual command. GPU
   material/dirty upload reuse remains a separate shader/resource milestone.
 - [x] Pack solid/rounded/border rectangle bounds, fill, stroke, corner radius
-  and resolution through generated `DeltaShader.UI` typed helpers, using the
+  and resolution through generated `DeltaRender.UIShaders` typed helpers, using the
   producer's cached ABI accessors and reusable feature-owned storage. A
   mismatched or unknown program is rejected with a deterministic diagnostic.
 - [x] Support the current solid/rounded/text path when the matching generated
@@ -104,7 +104,7 @@ This audit compares the values emitted by `DeltaXAML` with the actual branches i
 to duplicate XAML state or silently fall back to a solid rectangle.
 
 - [x] Solid rectangles, rounded rectangles and local border/stroke data are
-  accepted by the matching generated `DeltaShader.UI` artifacts. Independent
+  accepted by the matching generated `DeltaRender.UIShaders` artifacts. Independent
   corner radii are preserved in the packed instance payload; the rounded-slice
   path is covered by headless readback evidence.
 - [ ] Complete `UiVisualKind.Image`: `DeltaXAML` emits an image resource identity

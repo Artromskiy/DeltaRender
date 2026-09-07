@@ -15,7 +15,7 @@
     <!-- The XAML adapter and generated UI shader project are not yet publishable packages. -->
     <ProjectReference Include="../../src/DeltaRender.XAML/DeltaRender.XAML.csproj" />
     <PackageReference Include="Delta.Diagnostics.Contract" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>
 </Project>

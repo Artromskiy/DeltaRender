@@ -3,7 +3,8 @@ using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Shader.UI;
+using Delta.Render.UIShaders;
+using Delta.Render.UIShaders.Shaders;
 using Delta.XAML.Contract;
 using Xunit;
 
@@ -58,7 +59,7 @@ public sealed class UiVisualShaderContractTests
             out _,
             out var diagnostic));
         Assert.Equal(
-            "Visual kind SolidRectangle requires the matching generated DeltaShader.UI solid-rectangle ABI.",
+            "Visual kind SolidRectangle requires the matching generated DeltaRender.UIShaders solid-rectangle ABI.",
             diagnostic);
     }
 

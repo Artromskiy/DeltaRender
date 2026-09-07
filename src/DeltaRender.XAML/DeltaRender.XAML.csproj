@@ -5,13 +5,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Delta.Render.XAML</RootNamespace>
     <AssemblyName>DeltaRender.XAML</AssemblyName>
-    <IsPackable>false</IsPackable>
+    <PackageId>DeltaRender.XAML</PackageId>
+    <Version>0.0.1</Version>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DeltaRender" />
     <ProjectReference Include="..\DeltaRender.Text\DeltaRender.Text.csproj" />
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.UI/DeltaShader.UI.csproj" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>
 </Project>

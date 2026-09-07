@@ -76,7 +76,7 @@ require_literal src/DeltaRender.UI/DeltaRender.UI.csproj \
     'DeltaRender.XAML/DeltaRender.XAML.csproj' \
     'DeltaRender.UI must bundle the XAML feature adapter'
 require_literal src/DeltaRender.UI/DeltaRender.UI.csproj \
-    'DeltaShader.UI/DeltaShader.UI.csproj' \
+    'DeltaRender.UIShaders/DeltaRender.UIShaders.csproj' \
     'DeltaRender.UI must bundle the generated UI shader assembly'
 
 require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
@@ -86,7 +86,7 @@ require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
     '<PackageReference Include="DeltaRender" />' \
     'DeltaRender.Text must consume the base package'
 require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
-    'DeltaShader.Text/DeltaShader.Text.csproj' \
+    'DeltaRender.Text/DeltaRender.Text.csproj' \
     'DeltaRender.Text must retain its source-only shader producer edge'
 
 require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
@@ -99,7 +99,7 @@ require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
     'DeltaRender.Text\DeltaRender.Text.csproj' \
     'DeltaRender.XAML must retain its internal text adapter edge'
 require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
-    'DeltaShader.UI/DeltaShader.UI.csproj' \
+    'DeltaRender.UIShaders/DeltaRender.UIShaders.csproj' \
     'DeltaRender.XAML must retain its source-only shader producer edge'
 
 source_package_refs="$(

@@ -13,7 +13,6 @@
     <PackageReference Include="DeltaRender" />
     <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="DeltaShader.Contract" />
-    <!-- The generated mesh shader project remains a source-only producer dependency. -->
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Mesh/DeltaShader.Mesh.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Mesh/DeltaRender.Mesh.csproj" />
   </ItemGroup>
 </Project>

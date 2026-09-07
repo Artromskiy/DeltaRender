@@ -14,10 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Semantic wrapper types are source-owned by DeltaShader and are needed
-         by this source-only fixture producer (the generated artifact still
-         belongs to DeltaShader). -->
-    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.SemanticTypes/DeltaShader.SemanticTypes.csproj" />
+    <ProjectReference Include="../../src/Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
     <PackageReference Include="DeltaShader.Compiler" PrivateAssets="all" />
     <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />
