@@ -15,7 +15,8 @@ internal sealed record MismatchDetail(
     double? RelativeError,
     long? UlpDistance,
     string? CpuValue,
-    string? GpuValue);
+    string? GpuValue,
+    int OutputIndex = 0);
 
 internal static class ValueComparer
 {
@@ -40,22 +41,17 @@ internal static class ValueComparer
             return new ComparisonResult(true, mismatches);
         }
 
-        var isFloat = expected.Type.StartsWith("float", StringComparison.Ordinal) ||
+        var isHalf = expected.Type.StartsWith("half", StringComparison.Ordinal);
+        var isFloat = isHalf || expected.Type.StartsWith("float", StringComparison.Ordinal) ||
             expected.Type.StartsWith("double", StringComparison.Ordinal);
         double? absolute = null;
         double? relative = null;
         long? ulp = null;
         for (var lane = 0; lane < expected.Words.Length; lane++)
         {
-            if (isFloat && AcceptFloat(
-                    expected.Words[lane],
-                    actual[lane],
-                    absoluteTolerance,
-                    relativeTolerance,
-                    maxUlps,
-                    out absolute,
-                    out relative,
-                    out ulp))
+            if (isFloat && (isHalf
+                    ? AcceptHalf(expected.Words[lane], actual[lane], absoluteTolerance, relativeTolerance, Math.Max(maxUlps, 1), out absolute, out relative, out ulp)
+                    : AcceptFloat(expected.Words[lane], actual[lane], absoluteTolerance, relativeTolerance, maxUlps, out absolute, out relative, out ulp)))
             {
                 continue;
             }
@@ -150,10 +146,49 @@ internal static class ValueComparer
         return absolute <= absoluteTolerance || relative <= relativeTolerance || ulp <= maxUlps;
     }
 
+    private static bool AcceptHalf(
+        uint cpuWord,
+        uint gpuWord,
+        double absoluteTolerance,
+        double relativeTolerance,
+        long maxUlps,
+        out double? absolute,
+        out double? relative,
+        out long? ulp)
+    {
+        var cpu = (float)BitConverter.UInt16BitsToHalf((ushort)cpuWord);
+        var gpu = (float)BitConverter.UInt16BitsToHalf((ushort)gpuWord);
+        absolute = Maths.Abs((double)cpu - gpu);
+        relative = absolute / Maths.Max(Maths.Abs((double)cpu), Maths.Abs((double)gpu));
+        if (float.IsNaN(cpu) || float.IsNaN(gpu))
+        {
+            ulp = null;
+            return float.IsNaN(cpu) && float.IsNaN(gpu);
+        }
+
+        if (float.IsInfinity(cpu) || float.IsInfinity(gpu))
+        {
+            ulp = null;
+            return cpu == gpu;
+        }
+
+        var cpuBits = (ushort)cpuWord;
+        var gpuBits = (ushort)gpuWord;
+        var ulpDistance = OrderedHalf(cpuBits) - OrderedHalf(gpuBits);
+        ulp = ulpDistance >= 0 ? ulpDistance : -ulpDistance;
+        return cpuBits == gpuBits || absolute <= absoluteTolerance || relative <= relativeTolerance || ulp <= maxUlps;
+    }
+
     private static long Ordered(uint bits)
     {
         var signed = (int)bits;
         return signed < 0 ? (long)int.MinValue - signed : signed;
+    }
+
+    private static int OrderedHalf(ushort bits)
+    {
+        var signed = (short)bits;
+        return signed < 0 ? short.MinValue - signed : signed;
     }
 
     private static string Decode(uint bits)

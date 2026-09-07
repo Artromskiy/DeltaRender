@@ -42,6 +42,8 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     public bool IsInitialized { get; private set; }
 
+    internal ShaderCapabilities EnabledShaderCapabilities => _enabledShaderCapabilities;
+
     public Instance Instance { get; private set; }
     public Device Device { get; private set; }
 
@@ -57,6 +59,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
 
     private PhysicalDevice _physicalDevice;
+    private ShaderCapabilities _enabledShaderCapabilities;
     private uint _graphicsFamily = uint.MaxValue;
     private uint _computeFamily = uint.MaxValue;
     private uint _transferFamily = uint.MaxValue;
@@ -537,12 +540,14 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 includePresentFamily: true,
                 deviceExtensions.ToArray(),
                 diagnostics,
-                out var device))
+                out var device,
+                out var shaderCapabilities))
         {
             return false;
         }
 
         Device = device;
+        _enabledShaderCapabilities = shaderCapabilities;
         _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
         _computeQueue = Api.GetDeviceQueue(Device, _computeFamily, 0);
         _transferQueue = Api.GetDeviceQueue(Device, _transferFamily, 0);
@@ -581,12 +586,14 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 includePresentFamily: false,
                 deviceExtensions.ToArray(),
                 diagnostics,
-                out var device))
+                out var device,
+                out var shaderCapabilities))
         {
             return false;
         }
 
         Device = device;
+        _enabledShaderCapabilities = shaderCapabilities;
         _graphicsQueue = Api.GetDeviceQueue(Device, _graphicsFamily, 0);
         _computeQueue = Api.GetDeviceQueue(Device, _computeFamily, 0);
         _transferQueue = Api.GetDeviceQueue(Device, _transferFamily, 0);
@@ -617,9 +624,11 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
         bool includePresentFamily,
         string[] deviceExtensions,
         RenderDiagnosticBag diagnostics,
-        out Device device)
+        out Device device,
+        out ShaderCapabilities shaderCapabilities)
     {
         device = default;
+        shaderCapabilities = ShaderCapabilities.None;
         Span<uint> queueFamilies = stackalloc uint[4];
         var queueFamilyCount = 0;
         AddQueueFamily(queueFamilies, ref queueFamilyCount, graphicsFamily);
@@ -637,6 +646,46 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         try
         {
+            var availableFeatures = new PhysicalDeviceFeatures2
+            {
+                SType = StructureType.PhysicalDeviceFeatures2,
+            };
+            var availableFloat16Features = new PhysicalDeviceShaderFloat16Int8Features
+            {
+                SType = StructureType.PhysicalDeviceShaderFloat16Int8Features,
+            };
+            var availableStorage16Features = new PhysicalDevice16BitStorageFeatures
+            {
+                SType = StructureType.PhysicalDevice16BitStorageFeatures,
+            };
+            availableStorage16Features.PNext = &availableFloat16Features;
+            availableFeatures.PNext = &availableStorage16Features;
+            Api.GetPhysicalDeviceFeatures2(physicalDevice, &availableFeatures);
+
+            var enabledFeatures = default(PhysicalDeviceFeatures);
+            var enabledFloat16Features = new PhysicalDeviceShaderFloat16Int8Features
+            {
+                SType = StructureType.PhysicalDeviceShaderFloat16Int8Features,
+            };
+            var enabledStorage16Features = new PhysicalDevice16BitStorageFeatures
+            {
+                SType = StructureType.PhysicalDevice16BitStorageFeatures,
+                PNext = &enabledFloat16Features,
+            };
+
+            if (availableFeatures.Features.ShaderFloat64)
+            {
+                enabledFeatures.ShaderFloat64 = true;
+                shaderCapabilities |= ShaderCapabilities.DoublePrecisionFloatingPoint;
+            }
+
+            if (availableFloat16Features.ShaderFloat16 && availableStorage16Features.StorageBuffer16BitAccess)
+            {
+                enabledFloat16Features.ShaderFloat16 = true;
+                enabledStorage16Features.StorageBuffer16BitAccess = true;
+                shaderCapabilities |= ShaderCapabilities.HalfPrecisionFloatingPoint;
+            }
+
             fixed (float* priorityPointer = queuePriorities)
             fixed (DeviceQueueCreateInfo* queueCreateInfoPointer = queueCreateInfos)
             {
@@ -654,9 +703,10 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 var createInfo = new DeviceCreateInfo
                 {
                     SType = StructureType.DeviceCreateInfo,
+                    PNext = &enabledStorage16Features,
                     QueueCreateInfoCount = (uint)queueFamilyCount,
                     PQueueCreateInfos = queueCreateInfoPointer,
-                    PEnabledFeatures = null,
+                    PEnabledFeatures = &enabledFeatures,
                     EnabledExtensionCount = (uint)deviceExtensions.Length,
                     PpEnabledExtensionNames = extensionPointers,
                     EnabledLayerCount = 0,
@@ -665,6 +715,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
                 var result = Api.CreateDevice(physicalDevice, createInfo, null, out device);
                 if (result == Result.Success)
                 {
+                    diagnostics.Add(RenderDiagnosticSeverity.Info, "VK-FEATURES", $"Enabled shader capabilities: {shaderCapabilities}.");
                     return true;
                 }
 

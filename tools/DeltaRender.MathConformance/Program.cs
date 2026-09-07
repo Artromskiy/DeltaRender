@@ -102,7 +102,7 @@ internal static class ConformanceOrchestrator
         var session = renderer.CreateComputeSession();
         await using var sessionScope = session.ConfigureAwait(false);
         report.Device = new DeviceReport(session.Capabilities);
-        var runner = new VulkanCaseRunner(session, report);
+        var runner = new VulkanCaseRunner(session, report, renderer.EnabledShaderCapabilities);
         foreach (var assignment in assignments)
         {
             foreach (var testCase in assignment.Cases)
@@ -183,6 +183,7 @@ internal sealed record ConformanceCase(
     string Id,
     string Operation,
     IReadOnlyList<CaseValue> Inputs,
+    IReadOnlyList<CaseValue> Outputs,
     CaseValue Expected,
     ComparisonProfile Comparison,
     double AbsoluteTolerance,
@@ -218,12 +219,17 @@ internal sealed record CaseBundle(
                 inputs[inputIndex++] = ParseValue(input);
             }
 
+            var outputs = value.TryGetProperty("outputs", out var outputsElement)
+                ? ParseValues(outputsElement, "outputs")
+                : [];
+
             var operation = RequiredObject(value, "operation");
             var comparison = RequiredObject(value, "comparison");
             cases.Add(new ConformanceCase(
                 RequiredString(value, "id"),
                 RequiredString(operation, "identity"),
                 inputs,
+                outputs,
                 ParseValue(RequiredObject(value, "expected")),
                 ParseProfile(RequiredString(comparison, "name")),
                 OptionalDouble(comparison, "absoluteTolerance"),
@@ -258,6 +264,23 @@ internal sealed record CaseBundle(
         }
 
         return new CaseValue(RequiredString(value, "type"), words);
+    }
+
+    private static CaseValue[] ParseValues(JsonElement values, string propertyName)
+    {
+        if (values.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException($"Property '{propertyName}' must be an array.");
+        }
+
+        var result = new CaseValue[values.GetArrayLength()];
+        var index = 0;
+        foreach (var value in values.EnumerateArray())
+        {
+            result[index++] = ParseValue(value);
+        }
+
+        return result;
     }
 
     private static ComparisonProfile ParseProfile(string value) => value switch
@@ -440,18 +463,23 @@ internal sealed class VulkanCaseRunner
 {
     private readonly IRenderFrameSession _session;
     private readonly ConformanceReport _report;
+    private readonly ShaderCapabilities _supportedCapabilities;
 
-    public VulkanCaseRunner(IRenderFrameSession session, ConformanceReport report)
+    public VulkanCaseRunner(
+        IRenderFrameSession session,
+        ConformanceReport report,
+        ShaderCapabilities supportedCapabilities)
     {
         _session = session;
         _report = report;
+        _supportedCapabilities = supportedCapabilities;
     }
 
     public async Task ExecuteAsync(CaseAssignment assignment)
     {
         var artifact = assignment.Artifact;
         var cases = assignment.Cases;
-        if (!Validate(artifact, cases))
+        if (!Validate(artifact, cases, out var inputResourceIndices, out var outputResourceIndices))
         {
             return;
         }
@@ -465,6 +493,7 @@ internal sealed class VulkanCaseRunner
             var countPushConstants = BuildCountPushConstants(artifact.Artifact);
             buffers = new RenderBufferHandle[resources.Count];
             var uploads = new byte[]?[resources.Count];
+            var inputIndex = 0;
             for (var resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
             {
                 var resource = resources[resourceIndex];
@@ -480,13 +509,15 @@ internal sealed class VulkanCaseRunner
                     RenderBufferUsage.Storage | RenderBufferUsage.TransferDestination | RenderBufferUsage.TransferSource);
                 buffers[resourceIndex] = _session.CreateBuffer(in description);
                 createdBufferCount++;
-                if (resourceIndex < resources.Count - 1)
+                if (inputIndex < inputResourceIndices.Length && inputResourceIndices[inputIndex] == resourceIndex)
                 {
                     uploads[resourceIndex] = new byte[bytes];
                     for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
                     {
-                        ShaderAbiValueCodec.Pack(cases[caseIndex].Inputs[resourceIndex], resource.Layout, uploads[resourceIndex].AsSpan(checked((int)((ulong)caseIndex * stride)), checked((int)stride)));
+                        ShaderAbiValueCodec.Pack(cases[caseIndex].Inputs[inputIndex], resource.Layout, uploads[resourceIndex].AsSpan(checked((int)((ulong)caseIndex * stride)), checked((int)stride)));
                     }
+
+                    inputIndex++;
                 }
             }
 
@@ -506,34 +537,40 @@ internal sealed class VulkanCaseRunner
                 throw new InvalidOperationException($"RenderGraph execution failed with status {execution.Status}.");
             }
 
-            var outputResource = resources[0];
-            for (var resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
+            var outputData = new byte[outputResourceIndices.Length][];
+            for (var outputIndex = 0; outputIndex < outputResourceIndices.Length; outputIndex++)
             {
-                if ((resources[resourceIndex].Access & ShaderResourceAccess.Write) != 0)
+                var outputResource = resources[outputResourceIndices[outputIndex]];
+                var outputStride = outputResource.Layout.ArrayStride == 0 ? outputResource.Layout.Size : outputResource.Layout.ArrayStride;
+                outputData[outputIndex] = new byte[checked((int)(outputStride * (ulong)cases.Count))];
+                if (graph.CopyReadback(feature.Readbacks[outputIndex], outputData[outputIndex]) != outputData[outputIndex].Length)
                 {
-                    outputResource = resources[resourceIndex];
-                    break;
+                    throw new InvalidOperationException("Output readback failed.");
                 }
-            }
-
-            if ((outputResource.Access & ShaderResourceAccess.Write) == 0)
-            {
-                throw new InvalidDataException("The artifact must declare a writable return output storage buffer.");
-            }
-            var outputStride = outputResource.Layout.ArrayStride == 0 ? outputResource.Layout.Size : outputResource.Layout.ArrayStride;
-            var readback = feature.Readback;
-            var outputData = new byte[checked((int)(outputStride * (ulong)cases.Count))];
-            if (graph.CopyReadback(readback, outputData) != outputData.Length)
-            {
-                throw new InvalidOperationException("Output readback failed.");
             }
 
             _report.ExecutedGpuCaseCount += cases.Count;
             for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
             {
                 var testCase = cases[caseIndex];
-                var actual = ShaderAbiValueCodec.Read(testCase.Expected, outputResource.Layout, outputData.AsSpan(checked((int)((ulong)caseIndex * outputStride)), checked((int)outputStride)));
-                _report.AddComparison(testCase, artifact.Path, ValueComparer.Compare(testCase.Expected, actual, testCase.Comparison, testCase.AbsoluteTolerance, testCase.RelativeTolerance, testCase.MaxUlps));
+                var expectedOutputs = GetExpectedOutputs(testCase, outputResourceIndices.Length);
+                var mismatches = new List<MismatchDetail>();
+                for (var outputIndex = 0; outputIndex < outputResourceIndices.Length; outputIndex++)
+                {
+                    var outputResource = resources[outputResourceIndices[outputIndex]];
+                    var outputStride = outputResource.Layout.ArrayStride == 0 ? outputResource.Layout.Size : outputResource.Layout.ArrayStride;
+                    var actual = ShaderAbiValueCodec.Read(
+                        expectedOutputs[outputIndex],
+                        outputResource.Layout,
+                        outputData[outputIndex].AsSpan(checked((int)((ulong)caseIndex * outputStride)), checked((int)outputStride)));
+                    var comparison = ValueComparer.Compare(expectedOutputs[outputIndex], actual, testCase.Comparison, testCase.AbsoluteTolerance, testCase.RelativeTolerance, testCase.MaxUlps);
+                    foreach (var mismatch in comparison.Mismatches)
+                    {
+                        mismatches.Add(mismatch with { OutputIndex = outputIndex });
+                    }
+                }
+
+                _report.AddComparison(testCase, artifact.Path, new ComparisonResult(mismatches.Count == 0, mismatches));
             }
         }
         catch (Exception exception) when (RunnerFailure.IsReportable(exception))
@@ -552,19 +589,36 @@ internal sealed class VulkanCaseRunner
         }
     }
 
-    private bool Validate(LoadedArtifact artifact, IReadOnlyList<ConformanceCase> cases)
+    private bool Validate(
+        LoadedArtifact artifact,
+        IReadOnlyList<ConformanceCase> cases,
+        out int[] inputResourceIndices,
+        out int[] outputResourceIndices)
     {
         var abi = artifact.Artifact.Abi;
-        if (abi.RequiredCapabilities != ShaderCapabilities.None)
+        var resources = abi.Resources;
+        inputResourceIndices = GetResourceIndices(resources, includeWrites: false);
+        outputResourceIndices = GetResourceIndices(resources, includeWrites: true);
+        var missingCapabilities = abi.RequiredCapabilities & ~_supportedCapabilities;
+        if (missingCapabilities != ShaderCapabilities.None)
         {
-            ReportCapabilityExcluded(cases, artifact.Path, "Required shader capabilities are not available in the current render session.");
+            ReportCapabilityExcluded(cases, artifact.Path, $"Missing Vulkan shader capabilities: {missingCapabilities}.");
             return false;
         }
 
-        var resources = abi.Resources;
-        if (resources.Count < 2 || cases.Any(testCase => testCase.Inputs.Count != resources.Count - 1))
+        var invalidCasePayload = false;
+        foreach (var testCase in cases)
         {
-            ReportCompilerBlocked(cases, artifact.Path, "The artifact must declare input storage buffers followed by one output storage buffer per case.");
+            if (testCase.Inputs.Count < inputResourceIndices.Length || GetExpectedOutputCount(testCase) != outputResourceIndices.Length)
+            {
+                invalidCasePayload = true;
+                break;
+            }
+        }
+
+        if (inputResourceIndices.Length == 0 || outputResourceIndices.Length == 0 || invalidCasePayload)
+        {
+            ReportCompilerBlocked(cases, artifact.Path, "The artifact storage buffers do not match the case input/output payloads.");
             return false;
         }
 
@@ -576,6 +630,46 @@ internal sealed class VulkanCaseRunner
         }
 
         return true;
+    }
+
+    private static int[] GetResourceIndices(IReadOnlyList<ShaderResourceBinding> resources, bool includeWrites)
+    {
+        var result = new List<int>(resources.Count);
+        for (var index = 0; index < resources.Count; index++)
+        {
+            var hasWrites = resources[index].Access.HasFlag(ShaderResourceAccess.Write);
+            if (hasWrites == includeWrites)
+            {
+                result.Add(index);
+            }
+        }
+
+        return result.ToArray();
+    }
+
+    private static int GetExpectedOutputCount(ConformanceCase testCase)
+        => (string.Equals(testCase.Expected.Type, "void", StringComparison.Ordinal) ? 0 : 1) + testCase.Outputs.Count;
+
+    private static CaseValue[] GetExpectedOutputs(ConformanceCase testCase, int outputCount)
+    {
+        if (GetExpectedOutputCount(testCase) != outputCount)
+        {
+            throw new InvalidDataException($"Case '{testCase.Id}' does not provide the expected number of output values.");
+        }
+
+        var result = new CaseValue[outputCount];
+        var index = 0;
+        if (!string.Equals(testCase.Expected.Type, "void", StringComparison.Ordinal))
+        {
+            result[index++] = testCase.Expected;
+        }
+
+        foreach (var output in testCase.Outputs)
+        {
+            result[index++] = output;
+        }
+
+        return result;
     }
 
     private static (byte[] Data, uint Offset) BuildCountPushConstants(ShaderArtifact artifact)

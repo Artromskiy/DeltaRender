@@ -32,7 +32,7 @@ internal sealed class GraphConformanceFeature : IRenderFeature
         _pushConstantOffset = pushConstantOffset;
     }
 
-    internal RenderGraphReadbackHandle Readback { get; private set; }
+    internal RenderGraphReadbackHandle[] Readbacks { get; private set; } = [];
 
     public void AddPasses(IRenderGraphBuilder graph, ulong frameNumber)
     {
@@ -59,23 +59,32 @@ internal sealed class GraphConformanceFeature : IRenderFeature
             graph.UseBuffer(compute, graphBuffers[index], ToRenderAccess(_resources[index].Access), RenderPipelineStages.Compute);
         }
 
-        var outputIndex = 0;
+        var outputCount = 0;
         for (var index = 0; index < _resources.Count; index++)
         {
             if (_resources[index].Access.HasFlag(ShaderResourceAccess.Write))
             {
-                outputIndex = index;
-                break;
+                outputCount++;
             }
         }
 
-        if (!_resources[outputIndex].Access.HasFlag(ShaderResourceAccess.Write))
+        if (outputCount == 0)
         {
             throw new InvalidOperationException("The artifact must declare a writable return output storage buffer.");
         }
 
-        var output = _resources[outputIndex].Layout.ArrayStride == 0 ? _resources[outputIndex].Layout.Size : _resources[outputIndex].Layout.ArrayStride;
-        Readback = graph.ReadbackBuffer(graphBuffers[outputIndex], new BufferRange(0, checked(output * (ulong)_caseCount)));
+        Readbacks = new RenderGraphReadbackHandle[outputCount];
+        var readbackIndex = 0;
+        for (var index = 0; index < _resources.Count; index++)
+        {
+            if (!_resources[index].Access.HasFlag(ShaderResourceAccess.Write))
+            {
+                continue;
+            }
+
+            var output = _resources[index].Layout.ArrayStride == 0 ? _resources[index].Layout.Size : _resources[index].Layout.ArrayStride;
+            Readbacks[readbackIndex++] = graph.ReadbackBuffer(graphBuffers[index], new BufferRange(0, checked(output * (ulong)_caseCount)));
+        }
     }
 
     private static RenderResourceAccess ToRenderAccess(ShaderResourceAccess access)
