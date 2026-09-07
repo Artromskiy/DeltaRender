@@ -389,6 +389,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
             else
             {
+                Array.Fill(_textRunIndices, -1, 0, _orderCount);
                 var textRunCount = 0;
                 var previousWasText = false;
                 for (var index = 0; index < _orderCount; index++)
@@ -478,20 +479,27 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var draw = _order.RefAt(index);
             if (draw.Kind == UiDrawKind.Text)
             {
-                if (!textPrepared || _textFeature is null)
+                if (!textPrepared || _textFeature is null ||
+                    _commandClips.RefAt(index).IsEmpty || _textRunIndices.RefAt(index) < 0)
                 {
                     continue;
                 }
 
+                var firstRun = _textRunIndices.RefAt(index);
+                var runCount = 1;
                 var end = index + 1;
-                while (end < _orderCount && _order.RefAt(end).Kind == UiDrawKind.Text)
+                var lastRun = firstRun;
+                while (end < _orderCount &&
+                       _order.RefAt(end).Kind == UiDrawKind.Text &&
+                       !_commandClips.RefAt(end).IsEmpty &&
+                       _textRunIndices.RefAt(end) == lastRun + 1)
                 {
+                    lastRun++;
+                    runCount++;
                     end++;
                 }
 
-                var firstRun = _textRunIndices.RefAt(index);
-                var lastRun = _textRunIndices.RefAt(end - 1);
-                var textFeaturePass = GetTextPass(firstRun, checked(lastRun - firstRun + 1));
+                var textFeaturePass = GetTextPass(firstRun, runCount);
                 var textPass = graph.AddRasterPass(textFeaturePass.Description, textFeaturePass);
                 graph.UseColorAttachment(
                     textPass,

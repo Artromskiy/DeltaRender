@@ -120,12 +120,13 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         var profiler = _session.ProfilerState;
         long acquireStart = profiler is null ? 0L : VulkanRenderProfiler.StartPhase();
         var firstRole = QueueRoleFor(_passes[_order.RefAt(0)].Kind);
+        VulkanOperationException? beginFailure = null;
         try
         {
-            if (!_session.BeginGraphFrame(firstRole))
+            if (!_session.BeginGraphFrame(firstRole, out beginFailure))
             {
                 profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
-                return Failed();
+                return Failed(beginFailure);
             }
         }
         catch (VulkanOperationException exception)
@@ -303,7 +304,7 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             {
                 profiler?.EndSubmitAndPresent(submitStart);
                 profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
-                return Failed();
+                return Failed(new VulkanOperationException("EndGraphFrame failed: no graph frame was recording."));
             }
             profiler?.EndSubmitAndPresent(submitStart);
 
@@ -323,12 +324,12 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
             profiler?.Complete(ClassifyFailure(exception), _resources.Count);
             return Failed(exception);
         }
-        catch
+        catch (Exception exception)
         {
             _session.AbortGraphFrame();
             profiler?.EndRecord(recordStart);
             profiler?.Complete(RenderGraphExecutionStatus.Failed, _resources.Count);
-            return Failed();
+            return Failed(exception);
         }
     }
 
@@ -938,10 +939,27 @@ internal sealed unsafe partial class VulkanRenderGraph : IRenderGraph, IRenderGr
         }
         return result;
     }
-    private static RenderGraphExecutionResult Failed(VulkanOperationException? exception = null)
-        => new(
-            ClassifyFailure(exception),
-            ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
+    private static RenderGraphExecutionResult Failed(Exception? exception = null)
+    {
+        VulkanOperationException? vulkanException = exception as VulkanOperationException;
+        if (exception is null)
+        {
+            return new(
+                ClassifyFailure(vulkanException),
+                ReadOnlyMemory<Delta.Diagnostics.Diagnostic>.Empty);
+        }
+
+        return new(
+            ClassifyFailure(vulkanException),
+            new[]
+            {
+                new Delta.Diagnostics.Diagnostic(
+                    new Delta.Diagnostics.DiagnosticCode("VK-EXECUTE"),
+                    Delta.Diagnostics.DiagnosticSeverity.Error,
+                    $"RenderGraph.Execute failed with {exception.GetType().Name}: {exception.Message}",
+                    null),
+            });
+    }
 
     internal static RenderGraphExecutionStatus ClassifyFailure(VulkanOperationException? exception)
         => exception?.Result == Result.ErrorDeviceLost ? RenderGraphExecutionStatus.DeviceLost : RenderGraphExecutionStatus.Failed;

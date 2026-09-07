@@ -820,13 +820,15 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         => _resources.TryGetSampler(handle, out sampler);
 
     internal bool BeginGraphFrame()
-        => BeginGraphFrame(VulkanQueueRole.Graphics);
+        => BeginGraphFrame(VulkanQueueRole.Graphics, out _);
 
-    internal bool BeginGraphFrame(VulkanQueueRole firstRole)
+    internal bool BeginGraphFrame(VulkanQueueRole firstRole, out VulkanOperationException? failure)
     {
+        failure = null;
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_recording)
         {
+            failure = new VulkanOperationException("BeginGraphFrame failed: a graph frame is already recording.");
             return false;
         }
 
@@ -841,6 +843,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
             }
             if (result is not Result.Success and not Result.SuboptimalKhr)
             {
+                failure = new VulkanOperationException(result, "AcquireNextImage");
                 return false;
             }
 
@@ -855,6 +858,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
         _hasSubmittedQueueSegment = false;
         if (!BeginGraphCommand(firstRole))
         {
+            failure = new VulkanOperationException($"BeginGraphCommand failed for {firstRole}.");
             return false;
         }
 
@@ -934,7 +938,7 @@ internal sealed unsafe partial class VulkanRenderSession : IRenderFrameSession
                 }
                 if (result is not Result.Success and not Result.SuboptimalKhr and not Result.ErrorOutOfDateKhr)
                 {
-                    throw new InvalidOperationException($"QueuePresent failed: {result}.");
+                    throw new VulkanOperationException(result, "QueuePresent");
                 }
             }
 
