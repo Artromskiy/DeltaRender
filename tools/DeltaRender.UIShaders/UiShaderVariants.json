@@ -98,6 +98,22 @@
       "textRepresentation": "None",
       "effects": "Stroke|Glow",
       "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Solid",
+      "textRepresentation": "None",
+      "effects": "None",
+      "quality": "Analytic",
+      "material": "LinearGradient"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Solid",
+      "textRepresentation": "None",
+      "effects": "None",
+      "quality": "Analytic",
+      "material": "Image"
     }
   ],
   "entries": [
@@ -364,6 +380,50 @@
       "vertexEntryPoint": "rounded-stroke-glow",
       "fragmentEntryPoint": "rounded-stroke-glow",
       "layerSetIdentity": "visual.rounded.stroke.glow"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Solid",
+        "textRepresentation": "None",
+        "effects": "None",
+        "quality": "Analytic",
+        "material": "LinearGradient"
+      },
+      "producerSource": "Shaders/UiResourceShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidLinearGradientGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SolidLinearGradientVertex.vert.spv",
+      "fragmentSpirv": "SolidLinearGradientFragment.frag.spv",
+      "generatedProgramType": "SolidLinearGradientGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidLinearGradientVertexInstancesElements",
+      "fragmentPacker": "PackSolidLinearGradientVertexFrame",
+      "vertexEntryPoint": "solid-linear-gradient",
+      "fragmentEntryPoint": "solid-linear-gradient",
+      "layerSetIdentity": "visual.solid.linear-gradient"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Solid",
+        "textRepresentation": "None",
+        "effects": "None",
+        "quality": "Analytic",
+        "material": "Image"
+      },
+      "producerSource": "Shaders/UiResourceShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidImageGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SolidImageRectangleVertex.vert.spv",
+      "fragmentSpirv": "SolidImageRectangleFragment.frag.spv",
+      "generatedProgramType": "SolidImageGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidImageRectangleVertexInstancesElements",
+      "fragmentPacker": "PackSolidImageRectangleVertexFrame",
+      "vertexEntryPoint": "solid-image",
+      "fragmentEntryPoint": "solid-image",
+      "layerSetIdentity": "visual.solid.image"
     }
   ]
 }

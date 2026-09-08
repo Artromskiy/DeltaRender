@@ -23,6 +23,8 @@ internal enum UiRectangleShaderKind : byte
     RoundedStrokeGlow,
     AnalyticRounded,
     CachedMaskRounded,
+    SolidLinearGradient,
+    SolidImage,
 }
 
 internal static class UiVisualShaderContract
@@ -51,10 +53,15 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi AnalyticFragmentAbi = AnalyticRoundedRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi CachedMaskVertexAbi = CachedMaskRoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi CachedMaskFragmentAbi = CachedMaskRoundedRectangleGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi LinearGradientVertexAbi = SolidLinearGradientGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi LinearGradientFragmentAbi = SolidLinearGradientGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi ImageVertexAbi = SolidImageGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi ImageFragmentAbi = SolidImageGraphicsShaderProgram.FragmentAbi;
 
     internal static int MaxPushConstantSize { get; } = GetMaxPushConstantSize();
 
     internal static ShaderBinding CachedMaskTextureBinding { get; } = GetCachedMaskTextureBinding();
+    internal static ShaderBinding ImageTextureBinding { get; } = GetImageTextureBinding();
 
     private static int GetMaxPushConstantSize()
     {
@@ -70,6 +77,8 @@ internal static class UiVisualShaderContract
         size = Maths.Max(size, RoundedStrokeGlowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, AnalyticVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, CachedMaskVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, LinearGradientVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, ImageVertexAbi.PushConstants[0].Size);
         return checked((int)size);
     }
 
@@ -85,6 +94,20 @@ internal static class UiVisualShaderContract
         }
 
         throw new InvalidOperationException("The cached-mask fragment ABI must expose a sampled fragment texture.");
+    }
+
+    private static ShaderBinding GetImageTextureBinding()
+    {
+        foreach (var resource in ImageFragmentAbi.Resources)
+        {
+            if (resource.Kind == ShaderResourceKind.SampledTexture &&
+                resource.Stages.HasFlag(ShaderStageMask.Fragment))
+            {
+                return resource.Binding;
+            }
+        }
+
+        throw new InvalidOperationException("The image fragment ABI must expose a sampled fragment texture.");
     }
 
     internal static bool TryDescribe(
@@ -138,6 +161,28 @@ internal static class UiVisualShaderContract
                     expectedVertex = SolidOuterShadowVertexAbi;
                     expectedFragment = SolidOuterShadowFragmentAbi;
                 }
+            }
+        }
+        else if (path is UiVisualShaderPath.SolidLinearGradient or UiVisualShaderPath.SolidImage)
+        {
+            var expectedKind = path == UiVisualShaderPath.SolidImage ? UiVisualKind.Image : UiVisualKind.SolidRectangle;
+            if (visualKind != expectedKind)
+            {
+                diagnostic = $"Visual kind {visualKind} cannot use the selected generated resource artifact.";
+                return false;
+            }
+
+            if (path == UiVisualShaderPath.SolidLinearGradient)
+            {
+                shaderKind = UiRectangleShaderKind.SolidLinearGradient;
+                expectedVertex = LinearGradientVertexAbi;
+                expectedFragment = LinearGradientFragmentAbi;
+            }
+            else
+            {
+                shaderKind = UiRectangleShaderKind.SolidImage;
+                expectedVertex = ImageVertexAbi;
+                expectedFragment = ImageFragmentAbi;
             }
         }
         else if (path is UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.GlowEffect or UiVisualShaderPath.OuterShadowEffect or UiVisualShaderPath.InsetShadowEffect or UiVisualShaderPath.RoundedStrokeOuterShadowEffect or UiVisualShaderPath.RoundedStrokeGlowEffect or UiVisualShaderPath.CachedMask)
@@ -233,6 +278,8 @@ internal static class UiVisualShaderContract
                 UiRectangleShaderKind.RoundedStrokeGlow => "rounded-stroke-glow",
                 UiRectangleShaderKind.AnalyticRounded => "analytic-rounded-effect",
                 UiRectangleShaderKind.CachedMaskRounded => "cached-mask-rounded",
+                UiRectangleShaderKind.SolidLinearGradient => "solid-linear-gradient",
+                UiRectangleShaderKind.SolidImage => "solid-image",
                 _ => "unknown",
             };
             diagnostic = $"Visual kind {visualKind} requires the matching generated DeltaShader.UI {shaderName}-rectangle ABI.";
@@ -362,6 +409,9 @@ internal static class UiVisualShaderContract
                     visual.Paint.StrokeColor,
                     visual.Paint.CornerRadii,
                     visual.Paint.StrokeWidth),
+                destination),
+            UiRectangleShaderKind.SolidImage => SolidImageGraphicsShaderProgram.PackSolidImageRectangleVertexInstancesElement(
+                new SolidImageRectangleParameters(visual.Bounds, visual.Paint.FillColor, new float4(0f, 0f, 1f, 1f)),
                 destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
@@ -519,6 +569,44 @@ internal static class UiVisualShaderContract
     internal static int PackInstance(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        float dpiScale,
+        UiLinearGradientResource? gradientResource,
+        Span<byte> destination)
+    {
+        if (shaderKind == UiRectangleShaderKind.SolidLinearGradient)
+        {
+            if (gradientResource is not { } gradient || gradient.Stops.Count is < 2 or > 4)
+            {
+                throw new InvalidOperationException("A linear-gradient visual requires a registered two-to-four-stop resource.");
+            }
+
+            var stop0 = gradient.Stops[0];
+            var stop1 = gradient.Stops[1];
+            var stop2 = gradient.Stops.Count > 2 ? gradient.Stops[2] : stop1;
+            var stop3 = gradient.Stops.Count > 3 ? gradient.Stops[3] : stop2;
+            var start = ToPhysical(gradient.Start, gradient.Units, dpiScale);
+            var end = ToPhysical(gradient.End, gradient.Units, dpiScale);
+            return SolidLinearGradientGraphicsShaderProgram.PackSolidLinearGradientVertexInstancesElement(
+                new SolidLinearGradientParameters(
+                    visual.Bounds,
+                    new float4(start.x, start.y, end.x, end.y),
+                    stop0.Color,
+                    stop1.Color,
+                    stop2.Color,
+                    stop3.Color,
+                    new float4(stop0.Position, stop1.Position, stop2.Position, stop3.Position),
+                    gradient.Stops.Count),
+                destination);
+        }
+
+        return PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, dpiScale, destination);
+    }
+
+    internal static int PackInstance(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
         in PixelRect clip,
         Span<byte> destination)
         => PackInstance(shaderKind, in visual, destination);
@@ -591,6 +679,18 @@ internal static class UiVisualShaderContract
         Span<byte> destination)
         => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, dpiScale, destination);
 
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in PixelRect clip,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        float dpiScale,
+        UiLinearGradientResource? gradientResource,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, dpiScale, gradientResource, destination);
+
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
         PixelExtent viewport,
@@ -611,6 +711,8 @@ internal static class UiVisualShaderContract
             UiRectangleShaderKind.RoundedStrokeGlow => RoundedStrokeGlowGraphicsShaderProgram.PackRoundedStrokeGlowVertexFrame(in frame, destination),
             UiRectangleShaderKind.AnalyticRounded => AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.CachedMaskRounded => CachedMaskRoundedRectangleGraphicsShaderProgram.PackCachedMaskRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.SolidLinearGradient => SolidLinearGradientGraphicsShaderProgram.PackSolidLinearGradientVertexFrame(in frame, destination),
+            UiRectangleShaderKind.SolidImage => SolidImageGraphicsShaderProgram.PackSolidImageRectangleVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }
@@ -633,6 +735,9 @@ internal static class UiVisualShaderContract
             layer.Spread * scale,
             layer.Intensity);
     }
+
+    private static float2 ToPhysical(float2 value, PaintUnits units, float dpiScale)
+        => units == PaintUnits.Logical ? value * dpiScale : value;
 
 
 

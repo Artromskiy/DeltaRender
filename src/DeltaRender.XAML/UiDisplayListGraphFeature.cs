@@ -23,6 +23,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
     private readonly IGraphicsShaderProgram? _solidVisualProgram;
     private readonly IGraphicsShaderProgram? _roundedSliceVisualProgram;
+    private readonly IGraphicsShaderProgram? _linearGradientVisualProgram;
+    private readonly IGraphicsShaderProgram? _imageVisualProgram;
     private readonly UiDisplayListResourceRegistry _registry;
     private readonly TextRenderFeature? _textFeature;
     private readonly UiTextVisualUploadPass _textVisualUploadPass;
@@ -58,6 +60,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
+    private UiLinearGradientResource?[] _visualGradientResources = [];
     private RenderGraphTextureHandle?[] _visualMaskTextures = [];
     private RenderTextureHandle[] _visualMaskResources = [];
     private RenderSamplerHandle[] _visualMaskSamplers = [];
@@ -103,7 +106,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     /// <summary>Creates a headless planning adapter without a graph submission owner.</summary>
     public UiDisplayListGraphFeature(PixelExtent viewport)
-        : this(null, null, viewport, null, null, null, null, false)
+        : this(null, null, viewport, null, null, null, null, null, null, false)
     {
     }
 
@@ -118,8 +121,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         UiDisplayListResourceRegistry? registry = null,
         TextRenderFeature? textFeature = null,
         IGraphicsShaderProgram? solidVisualProgram = null,
-        IGraphicsShaderProgram? roundedSliceVisualProgram = null)
-        : this(session, visualProgram, viewport, registry, textFeature, solidVisualProgram, roundedSliceVisualProgram, true)
+        IGraphicsShaderProgram? roundedSliceVisualProgram = null,
+        IGraphicsShaderProgram? linearGradientVisualProgram = null,
+        IGraphicsShaderProgram? imageVisualProgram = null)
+        : this(session, visualProgram, viewport, registry, textFeature, solidVisualProgram, roundedSliceVisualProgram, linearGradientVisualProgram, imageVisualProgram, true)
     {
     }
 
@@ -131,6 +136,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         TextRenderFeature? textFeature,
         IGraphicsShaderProgram? solidVisualProgram,
         IGraphicsShaderProgram? roundedSliceVisualProgram,
+        IGraphicsShaderProgram? linearGradientVisualProgram,
+        IGraphicsShaderProgram? imageVisualProgram,
         bool validate)
     {
         if (validate && viewport.IsEmpty)
@@ -148,6 +155,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _defaultVisualProgram = visualProgram;
         _solidVisualProgram = solidVisualProgram;
         _roundedSliceVisualProgram = roundedSliceVisualProgram;
+        _linearGradientVisualProgram = linearGradientVisualProgram;
+        _imageVisualProgram = imageVisualProgram;
         _viewport = viewport;
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
@@ -265,6 +274,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualImageTextures, displayList.Order.Length);
         EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualGradientResources, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskTextures, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskResources, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskSamplers, displayList.Order.Length);
@@ -728,6 +738,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualImageTextures.RefAt(orderIndex) = null;
         _visualImageSamplers.RefAt(orderIndex) = default;
         _visualImageBindings.RefAt(orderIndex) = null;
+        _visualGradientResources.RefAt(orderIndex) = null;
         _visualMaskTextures.RefAt(orderIndex) = null;
         _visualMaskResources.RefAt(orderIndex) = default;
         _visualMaskSamplers.RefAt(orderIndex) = default;
@@ -744,6 +755,18 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualImageTextures.RefAt(orderIndex) = graph.ImportTexture(imageTexture);
             _visualImageSamplers.RefAt(orderIndex) = imageSampler;
             _visualImageBindings.RefAt(orderIndex) = imageBinding;
+        }
+
+        if (shaderPath == UiVisualShaderPath.SolidLinearGradient)
+        {
+            if (!_registry.TryResolveLinearGradient(visual.Resource, out var gradient))
+            {
+                AddDiagnostic($"Linear-gradient resource {visual.Resource.Value} is not registered.");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            _visualGradientResources.RefAt(orderIndex) = gradient;
         }
 
         if (shaderPath == UiVisualShaderPath.CachedMask)
@@ -814,6 +837,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in _visualEffectResources.RefAt(orderIndex),
                 in _visualMaskUvRects.RefAt(orderIndex),
                 _dpiScale,
+                _visualGradientResources.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -862,6 +886,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in _visualEffectResources.RefAt(orderIndex),
                 in _visualMaskUvRects.RefAt(orderIndex),
                 _dpiScale,
+                _visualGradientResources.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1079,6 +1104,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
+        if (_visualShaderPaths.RefAt(firstOrderIndex) == UiVisualShaderPath.SolidImage)
+        {
+            return _visualImageTextures.RefAt(firstOrderIndex) == _visualImageTextures.RefAt(nextOrderIndex) &&
+                   _visualImageSamplers.RefAt(firstOrderIndex) == _visualImageSamplers.RefAt(nextOrderIndex);
+        }
+
         if (_visualShaderPaths.RefAt(firstOrderIndex) != UiVisualShaderPath.CachedMask)
         {
             return true;
@@ -1118,6 +1149,16 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 UiVisualShaderContract.CachedMaskTextureBinding,
                 maskTexture,
                 _visualMaskSamplers.RefAt(firstOrderIndex));
+        }
+
+        if (_visualShaderKinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.SolidImage)
+        {
+            var imageTexture = _visualImageTextures.RefAt(firstOrderIndex)
+                ?? throw new InvalidOperationException("The image graph resource was not imported.");
+            commands.BindTexture(
+                UiVisualShaderContract.ImageTextureBinding,
+                imageTexture,
+                _visualImageSamplers.RefAt(firstOrderIndex));
         }
 
         if (UiVisualShaderContract.UsesShaderClip(_visualShaderKinds.RefAt(firstOrderIndex)))
@@ -1200,6 +1241,18 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         shaderVisualKind = visual.Kind;
         shaderPath = UiVisualShaderPath.Standard;
         effectResource = default;
+        if (visual.Kind == UiVisualKind.Image)
+        {
+            shaderPath = UiVisualShaderPath.SolidImage;
+            return _imageVisualProgram ?? _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");
+        }
+
+        if (visual.Kind == UiVisualKind.SolidRectangle && visual.Resource.IsValid &&
+            _registry.TryResolveLinearGradient(visual.Resource, out _))
+        {
+            shaderPath = UiVisualShaderPath.SolidLinearGradient;
+            return _linearGradientVisualProgram ?? _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");
+        }
         if (visual.Paint.EffectSet.IsValid &&
             _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out var effectVariant, out effectResource))
         {
@@ -1297,6 +1350,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         switch (visual.Kind)
         {
             case UiVisualKind.SolidRectangle:
+                if (visual.Resource.IsValid && !_registry.TryResolveLinearGradient(visual.Resource, out _))
+                {
+                    AddDiagnostic($"Solid visual at Order[{orderIndex}] has an unknown resource identity.");
+                    return false;
+                }
+
                 return true;
             case UiVisualKind.Image:
                 if (!visual.Resource.IsValid || !_registry.TryResolveImage(visual.Resource, out _, out _, out _))

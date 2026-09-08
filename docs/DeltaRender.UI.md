@@ -36,6 +36,14 @@ return await UiRenderHost.RunAsync(
     (textService, _) => new MyRenderContent(textService, fonts));
 ```
 
+Visual resources are registered by the renderer owner. `RegisterImage` stores
+opaque session-owned texture/sampler handles without taking ownership. A
+`UiLinearGradientResource` copies two to four validated stops at registration;
+its identity is the `UiVisualDraw.Resource` value. The prepared image and
+linear-gradient programs consume only generated ABI packers. Unregistering or
+clearing a registration does not release session resources; the session owns
+their lifetime.
+
 `IUiRenderHostContent` exposes only one `UiDocument`, `AdvanceFrame()` and
 neutral `UiInputEvent` delivery. It does not expose Vulkan resources or create
 a second retained tree. The host package copies its generated shader assets to

@@ -17,6 +17,7 @@ public sealed class UiDisplayListResourceRegistry
 {
     private readonly Dictionary<UiVisualTypeId, IGraphicsShaderProgram> _visualTypes = [];
     private readonly Dictionary<UiResourceId, ImageRegistration> _images = [];
+    private readonly Dictionary<UiResourceId, LinearGradientRegistration> _linearGradients = [];
     private readonly Dictionary<UiResourceId, MaskRegistration> _masks = [];
     private readonly Dictionary<UiResourceId, VisualEffectSetRegistration> _visualEffectSets = [];
     private readonly Dictionary<UiResourceId, TextEffectSetRegistration> _textEffectSets = [];
@@ -51,6 +52,19 @@ public sealed class UiDisplayListResourceRegistry
         }
 
         _images[resource] = new ImageRegistration(texture, sampler, fragmentBinding);
+    }
+
+    /// <summary>Registers an immutable, renderer-owned two-to-four-stop linear gradient.</summary>
+    public void RegisterLinearGradient(UiLinearGradientResource resource)
+    {
+        ValidateLinearGradient(resource);
+        var stops = new UiLinearGradientStop[resource.Stops.Count];
+        for (var index = 0; index < stops.Length; index++)
+        {
+            stops[index] = resource.Stops[index];
+        }
+
+        _linearGradients[resource.Resource] = new(resource.Start, resource.End, resource.Units, stops);
     }
 
     /// <summary>Associates a cached-mask identity with session-owned texture resources and its normalized UV rectangle.</summary>
@@ -273,6 +287,9 @@ public sealed class UiDisplayListResourceRegistry
     /// <summary>Removes one image identity without releasing its session-owned resources.</summary>
     public bool UnregisterImage(UiResourceId resource) => _images.Remove(resource);
 
+    /// <summary>Removes a gradient identity without affecting session-owned resources.</summary>
+    public bool UnregisterLinearGradient(UiResourceId resource) => _linearGradients.Remove(resource);
+
     /// <summary>Removes a mask identity without releasing its session-owned resources.</summary>
     public bool UnregisterMask(UiResourceId resource) => _masks.Remove(resource);
 
@@ -287,6 +304,7 @@ public sealed class UiDisplayListResourceRegistry
     {
         _visualTypes.Clear();
         _images.Clear();
+        _linearGradients.Clear();
         _masks.Clear();
         _visualEffectSets.Clear();
         _textEffectSets.Clear();
@@ -351,6 +369,23 @@ public sealed class UiDisplayListResourceRegistry
         return false;
     }
 
+    internal bool TryResolveLinearGradient(UiResourceId resource, out UiLinearGradientResource gradient)
+    {
+        if (_linearGradients.TryGetValue(resource, out var registration))
+        {
+            gradient = new UiLinearGradientResource(
+                resource,
+                registration.Start,
+                registration.End,
+                registration.Units,
+                registration.Stops);
+            return true;
+        }
+
+        gradient = default;
+        return false;
+    }
+
     internal bool TryResolveMask(
         UiResourceId resource,
         out RenderTextureHandle texture,
@@ -376,6 +411,12 @@ public sealed class UiDisplayListResourceRegistry
         RenderSamplerHandle Sampler,
         ShaderBinding? FragmentBinding);
 
+    private readonly record struct LinearGradientRegistration(
+        float2 Start,
+        float2 End,
+        PaintUnits Units,
+        UiLinearGradientStop[] Stops);
+
     private readonly record struct MaskRegistration(
         RenderTextureHandle Texture,
         RenderSamplerHandle Sampler,
@@ -396,4 +437,42 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException($"The typed effect resource must be valid and target {expectedTarget}.", nameof(effectResource));
         }
     }
+
+    private static void ValidateLinearGradient(UiLinearGradientResource resource)
+    {
+        if (!resource.Resource.IsValid)
+        {
+            throw new ArgumentException("A linear-gradient resource must have a non-empty identity.", nameof(resource));
+        }
+
+        if (resource.Stops is null || resource.Units is not (PaintUnits.Logical or PaintUnits.Device) ||
+            !float.IsFinite(resource.Start.x) || !float.IsFinite(resource.Start.y) ||
+            !float.IsFinite(resource.End.x) || !float.IsFinite(resource.End.y) ||
+            resource.Stops.Count is < 2 or > 4)
+        {
+            throw new ArgumentException("A linear gradient requires finite coordinates, valid units, and two to four stops.", nameof(resource));
+        }
+
+        var previousPosition = -1f;
+        foreach (var stop in resource.Stops)
+        {
+            if (!float.IsFinite(stop.Position) || stop.Position < 0f || stop.Position > 1f ||
+                stop.Position < previousPosition || !float.IsFinite(stop.Color.x) ||
+                !float.IsFinite(stop.Color.y) || !float.IsFinite(stop.Color.z) || !float.IsFinite(stop.Color.w))
+            {
+                throw new ArgumentException("Gradient stops must have finite colors and non-decreasing positions in [0, 1].", nameof(resource));
+            }
+
+            previousPosition = stop.Position;
+        }
+    }
 }
+
+public readonly record struct UiLinearGradientStop(float Position, float4 Color);
+
+public readonly record struct UiLinearGradientResource(
+    UiResourceId Resource,
+    float2 Start,
+    float2 End,
+    PaintUnits Units,
+    IReadOnlyList<UiLinearGradientStop> Stops);

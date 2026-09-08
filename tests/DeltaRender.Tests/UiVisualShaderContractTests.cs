@@ -12,6 +12,94 @@ namespace Delta.Render.Tests;
 public sealed class UiVisualShaderContractTests
 {
     [Fact]
+    public void GeneratedLinearGradientArtifactAcceptsAndPacksCopiedStops()
+    {
+        var program = SolidLinearGradientGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = new UiVisualDraw(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 20, 30, 40),
+            new float4(1, 1, 1, 1),
+            UiClipId.None,
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000011")));
+        var stops = new[]
+        {
+            new UiLinearGradientStop(0f, new float4(1, 0, 0, 1)),
+            new UiLinearGradientStop(0.5f, new float4(0, 1, 0, 1)),
+            new UiLinearGradientStop(1f, new float4(0, 0, 1, 1)),
+        };
+        var resource = new UiLinearGradientResource(
+            visual.Resource,
+            new float2(0, 0),
+            new float2(40, 0),
+            PaintUnits.Device,
+            stops);
+        var registry = new UiDisplayListResourceRegistry();
+        registry.RegisterLinearGradient(resource);
+
+        Assert.True(UiVisualShaderContract.TryDescribe(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.SolidLinearGradient,
+            out var shaderKind,
+            out var pushConstantSize,
+            out var diagnostic), diagnostic);
+        Assert.Equal(UiRectangleShaderKind.SolidLinearGradient, shaderKind);
+        Assert.Equal(8u, pushConstantSize);
+
+        stops[0] = new UiLinearGradientStop(0f, new float4(0, 0, 0, 1));
+        Span<byte> packed = stackalloc byte[128];
+        var effect = default(UiEffectResource);
+        var mask = default(float4);
+        Assert.Equal(128, UiVisualShaderContract.PackInstance(
+            shaderKind,
+            in visual,
+            in effect,
+            in mask,
+            1f,
+            new UiLinearGradientResource(
+                resource.Resource,
+                resource.Start,
+                resource.End,
+                resource.Units,
+                new[]
+                {
+                    new UiLinearGradientStop(0f, new float4(1, 0, 0, 1)),
+                    new UiLinearGradientStop(0.5f, new float4(0, 1, 0, 1)),
+                    new UiLinearGradientStop(1f, new float4(0, 0, 1, 1)),
+                }),
+            packed));
+        Assert.Equal(1f, ReadFloat(packed, 32));
+    }
+
+    [Fact]
+    public void GeneratedImageArtifactAcceptsAndPacksFullUvRect()
+    {
+        var program = SolidImageGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = new UiVisualDraw(
+            UiVisualKind.Image,
+            default,
+            new float4(10, 20, 30, 40),
+            new float4(1, 1, 1, 1),
+            UiClipId.None,
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000012")));
+
+        Assert.True(UiVisualShaderContract.TryDescribe(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.SolidImage,
+            out var shaderKind,
+            out var pushConstantSize,
+            out var diagnostic), diagnostic);
+        Assert.Equal(UiRectangleShaderKind.SolidImage, shaderKind);
+        Assert.Equal(8u, pushConstantSize);
+
+        Span<byte> packed = stackalloc byte[48];
+        Assert.Equal(48, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Assert.Equal(1f, ReadFloat(packed, 44));
+    }
+
+    [Fact]
     public void GeneratedSolidRectangleArtifactIsAcceptedAndPacked()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);

@@ -79,7 +79,9 @@ public static class UiRenderHost
             viewport,
             textFeature: textFeature,
             solidVisualProgram: CreateSolidRectangleProgram(),
-            roundedSliceVisualProgram: rounded);
+            roundedSliceVisualProgram: rounded,
+            linearGradientVisualProgram: CreateLinearGradientProgram(),
+            imageVisualProgram: CreateImageProgram());
     }
 
     /// <summary>Creates the generated solid-rectangle graphics program.</summary>
@@ -97,6 +99,22 @@ public static class UiRenderHost
             UiShaders.Spv.UiRectangleShaders.RoundedRectangle.Fragment(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Fragment());
+
+    /// <summary>Creates the generated linear-gradient graphics program.</summary>
+    public static GraphicsShaderProgram CreateLinearGradientProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiResourceShaders.SolidLinearGradient.Vertex(),
+            UiShaders.Spv.UiResourceShaders.SolidLinearGradient.Fragment(),
+            UiShaders.Abi.UiResourceShaders.SolidLinearGradient.Vertex(),
+            UiShaders.Abi.UiResourceShaders.SolidLinearGradient.Fragment());
+
+    /// <summary>Creates the generated sampled-image graphics program.</summary>
+    public static GraphicsShaderProgram CreateImageProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiResourceShaders.SolidImage.Vertex(),
+            UiShaders.Spv.UiResourceShaders.SolidImage.Fragment(),
+            UiShaders.Abi.UiResourceShaders.SolidImage.Vertex(),
+            UiShaders.Abi.UiResourceShaders.SolidImage.Fragment());
 
     /// <summary>Creates the generated SDF text graphics program.</summary>
     public static GraphicsShaderProgram CreateTextProgram() =>

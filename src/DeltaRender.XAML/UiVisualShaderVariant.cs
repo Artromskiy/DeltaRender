@@ -17,6 +17,8 @@ public enum UiVisualShaderPath : byte
     OuterShadowEffect,
     InsetShadowEffect,
     CachedMask,
+    SolidLinearGradient,
+    SolidImage,
 }
 
 /// <summary>Describes a prepared visual shader and the renderer-owned payload it packs.</summary>
