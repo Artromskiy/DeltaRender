@@ -272,13 +272,22 @@ internal static class UiVisualShaderContract
         in UiVisualDraw visual,
         in UiEffectResource effectResource,
         Span<byte> destination)
-        => PackInstance(shaderKind, in visual, in effectResource, default, destination);
+        => PackInstance(shaderKind, in visual, in effectResource, default, 1f, destination);
 
     internal static int PackInstance(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
         in UiEffectResource effectResource,
         in float4 maskUvRect,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, 1f, destination);
+
+    internal static int PackInstance(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        float dpiScale,
         Span<byte> destination)
     {
         if (shaderKind == UiRectangleShaderKind.CachedMaskRounded)
@@ -298,10 +307,10 @@ internal static class UiVisualShaderContract
 
         var parameters = effectResource.Parameters;
         var effects = new ShaderEffectParameters(
-            ToShaderEffectLayer(parameters.StrokeOrOutline),
-            ToShaderEffectLayer(parameters.OuterShadow),
-            ToShaderEffectLayer(parameters.InsetShadow),
-            ToShaderEffectLayer(parameters.Glow));
+            ToShaderEffectLayer(parameters.StrokeOrOutline, parameters.Units, dpiScale),
+            ToShaderEffectLayer(parameters.OuterShadow, parameters.Units, dpiScale),
+            ToShaderEffectLayer(parameters.InsetShadow, parameters.Units, dpiScale),
+            ToShaderEffectLayer(parameters.Glow, parameters.Units, dpiScale));
         return AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexInstancesElement(
             new AnalyticRoundedRectangleParameters(
                 visual.Bounds,
@@ -375,6 +384,17 @@ internal static class UiVisualShaderContract
         Span<byte> destination)
         => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, destination);
 
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in PixelRect clip,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        float dpiScale,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, dpiScale, destination);
+
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
         PixelExtent viewport,
@@ -393,8 +413,22 @@ internal static class UiVisualShaderContract
 
     internal static bool UsesShaderClip(UiRectangleShaderKind shaderKind) => false;
 
-    private static ShaderEffectLayer ToShaderEffectLayer(UiEffectLayer layer)
-        => new(layer.Color, layer.Offset, layer.Width, layer.BlurRadius, layer.Spread, layer.Intensity);
+    private static ShaderEffectLayer ToShaderEffectLayer(UiEffectLayer layer, PaintUnits units, float dpiScale)
+    {
+        var scale = units switch
+        {
+            PaintUnits.Logical => dpiScale,
+            PaintUnits.Device => 1f,
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
+        };
+        return new(
+            layer.Color,
+            layer.Offset * scale,
+            layer.Width * scale,
+            layer.BlurRadius * scale,
+            layer.Spread * scale,
+            layer.Intensity);
+    }
 
 
 

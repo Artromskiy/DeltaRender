@@ -428,7 +428,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         }
 
                         shaderVariant = registeredVariant;
-                        effectValues = ToTextEffectValues(effectResource);
+                        effectValues = ToTextEffectValues(effectResource, _dpiScale);
                     }
 
                     var color = text.Paint.FillColor;
@@ -813,6 +813,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in clip,
                 in _visualEffectResources.RefAt(orderIndex),
                 in _visualMaskUvRects.RefAt(orderIndex),
+                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -860,6 +861,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in clip,
                 in _visualEffectResources.RefAt(orderIndex),
                 in _visualMaskUvRects.RefAt(orderIndex),
+                _dpiScale,
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1361,22 +1363,28 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border &&
             variantKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border;
 
-    private static TextEffectValues ToTextEffectValues(UiEffectResource effectResource)
+    private static TextEffectValues ToTextEffectValues(UiEffectResource effectResource, float dpiScale)
     {
+        var scale = effectResource.Parameters.Units switch
+        {
+            PaintUnits.Logical => dpiScale,
+            PaintUnits.Device => 1f,
+            _ => throw new ArgumentOutOfRangeException(nameof(effectResource), effectResource.Parameters.Units, "Unknown paint unit system."),
+        };
         var outline = effectResource.Parameters.StrokeOrOutline;
         var glow = effectResource.Parameters.Glow;
         var outerShadow = effectResource.Parameters.OuterShadow;
         return new TextEffectValues(
             new Vector4(outline.Color.x, outline.Color.y, outline.Color.z, outline.Color.w),
-            outline.Width,
+            outline.Width * scale,
             new Vector4(glow.Color.x, glow.Color.y, glow.Color.z, glow.Color.w),
-            glow.BlurRadius,
+            glow.BlurRadius * scale,
             glow.Intensity,
             new Vector4(outerShadow.Color.x, outerShadow.Color.y, outerShadow.Color.z, outerShadow.Color.w),
-            new Vector2(outerShadow.Offset.x, outerShadow.Offset.y),
-            outerShadow.Width,
-            outerShadow.BlurRadius,
-            outerShadow.Spread,
+            new Vector2(outerShadow.Offset.x * scale, outerShadow.Offset.y * scale),
+            outerShadow.Width * scale,
+            outerShadow.BlurRadius * scale,
+            outerShadow.Spread * scale,
             outerShadow.Intensity);
     }
 
