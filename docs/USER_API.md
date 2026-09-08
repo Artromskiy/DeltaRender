@@ -63,11 +63,21 @@ or infer effect parameters from a CLR object.
 
 The generated analytic rounded artifact accepts typed stroke/outline,
 outer-shadow, inset-shadow and glow layers through its producer-owned packer.
-Cached-mask resources are rejected because this graph path has no sampled-mask
-ABI. No local CLR ABI or fallback packer is used. A registered visual effect
-program must therefore expose the matching prepared ABI before it can be
-submitted; a different ABI is rejected with a diagnostic until its generated
-packer/adapter is available. The generated text outline/glow artifact also
+A cached-mask visual uses the separate generated
+`CachedMaskRoundedRectangle` artifact. Register its session-owned texture,
+sampler and normalized UV rectangle first:
+
+```csharp
+registry.RegisterMask(maskResource, maskTexture, maskSampler, uvRect);
+registry.RegisterVisualEffectResource(cachedMaskResource, cachedMaskVariant);
+```
+
+The adapter binds the sampled mask according to the generated `ShaderAbi` and
+uses the generated instance packer. Missing mask registration is rejected; no
+analytic or solid fallback is used. A registered visual effect program must
+therefore expose the matching prepared ABI before it can be submitted; a
+different ABI is rejected with a diagnostic until its generated packer/adapter
+is available. The generated text outline/glow artifact also
 accepts typed outer-shadow values. A text variant is accepted only when its
 mode and resolved bindings, stride and
 push-constant range match the configured `TextRenderFeature`; adjacent runs

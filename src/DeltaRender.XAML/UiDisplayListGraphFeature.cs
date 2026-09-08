@@ -58,6 +58,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
+    private RenderGraphTextureHandle?[] _visualMaskTextures = [];
+    private RenderSamplerHandle[] _visualMaskSamplers = [];
+    private float4[] _visualMaskUvRects = [];
     private int[] _visualSeenEpochs = [];
     private int[] _textSeenEpochs = [];
     private int[] _textRunIndices = [];
@@ -261,6 +264,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualImageTextures, displayList.Order.Length);
         EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualMaskTextures, displayList.Order.Length);
+        EnsureCapacity(ref _visualMaskSamplers, displayList.Order.Length);
+        EnsureCapacity(ref _visualMaskUvRects, displayList.Order.Length);
         EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
 
         displayList.Visuals.CopyTo(_visuals);
@@ -579,6 +585,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     var graphTexture = _visualImageTextures.RefAt(visualIndex) ?? throw new InvalidOperationException("The image graph resource was not imported.");
                     graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
                 }
+
+                if (_visualMaskTextures.RefAt(visualIndex).HasValue)
+                {
+                    var graphTexture = _visualMaskTextures.RefAt(visualIndex) ?? throw new InvalidOperationException("The mask graph resource was not imported.");
+                    graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+                }
             }
 
             index = visualEnd - 1;
@@ -714,6 +726,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualImageTextures.RefAt(orderIndex) = null;
         _visualImageSamplers.RefAt(orderIndex) = default;
         _visualImageBindings.RefAt(orderIndex) = null;
+        _visualMaskTextures.RefAt(orderIndex) = null;
+        _visualMaskSamplers.RefAt(orderIndex) = default;
+        _visualMaskUvRects.RefAt(orderIndex) = default;
         if (visual.Kind == UiVisualKind.Image)
         {
             if (!_registry.TryResolveImage(visual.Resource, out var imageTexture, out var imageSampler, out var imageBinding) || !imageBinding.HasValue)
@@ -726,6 +741,24 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualImageTextures.RefAt(orderIndex) = graph.ImportTexture(imageTexture);
             _visualImageSamplers.RefAt(orderIndex) = imageSampler;
             _visualImageBindings.RefAt(orderIndex) = imageBinding;
+        }
+
+        if (shaderPath == UiVisualShaderPath.CachedMask)
+        {
+            if (!_registry.TryResolveMask(
+                    effectResource.Parameters.CachedMask,
+                    out var maskTexture,
+                    out var maskSampler,
+                    out var maskUvRect))
+            {
+                AddDiagnostic($"Cached mask resource {effectResource.Parameters.CachedMask.Value} is not registered.");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            _visualMaskTextures.RefAt(orderIndex) = graph.ImportTexture(maskTexture);
+            _visualMaskSamplers.RefAt(orderIndex) = maskSampler;
+            _visualMaskUvRects.RefAt(orderIndex) = maskUvRect;
         }
 
         return true;
@@ -775,6 +808,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in physicalVisual,
                 in clip,
                 in _visualEffectResources.RefAt(orderIndex),
+                in _visualMaskUvRects.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -821,6 +855,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 in physicalVisual,
                 in clip,
                 in _visualEffectResources.RefAt(orderIndex),
+                in _visualMaskUvRects.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1029,10 +1064,23 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     }
 
     private bool CanJoinVisualSegment(int firstOrderIndex, int nextOrderIndex)
-        => ReferenceEquals(_visualPrograms.RefAt(firstOrderIndex), _visualPrograms.RefAt(nextOrderIndex)) &&
-           _visualPushConstantSizes.RefAt(firstOrderIndex) == _visualPushConstantSizes.RefAt(nextOrderIndex) &&
-           _visualInstanceStrides.RefAt(firstOrderIndex) == _visualInstanceStrides.RefAt(nextOrderIndex) &&
-           _visualInstanceBindings.RefAt(firstOrderIndex) == _visualInstanceBindings.RefAt(nextOrderIndex);
+    {
+        if (!ReferenceEquals(_visualPrograms.RefAt(firstOrderIndex), _visualPrograms.RefAt(nextOrderIndex)) ||
+            _visualPushConstantSizes.RefAt(firstOrderIndex) != _visualPushConstantSizes.RefAt(nextOrderIndex) ||
+            _visualInstanceStrides.RefAt(firstOrderIndex) != _visualInstanceStrides.RefAt(nextOrderIndex) ||
+            _visualInstanceBindings.RefAt(firstOrderIndex) != _visualInstanceBindings.RefAt(nextOrderIndex))
+        {
+            return false;
+        }
+
+        if (_visualShaderPaths.RefAt(firstOrderIndex) != UiVisualShaderPath.CachedMask)
+        {
+            return true;
+        }
+
+        return _visualMaskTextures.RefAt(firstOrderIndex) == _visualMaskTextures.RefAt(nextOrderIndex) &&
+               _visualMaskSamplers.RefAt(firstOrderIndex) == _visualMaskSamplers.RefAt(nextOrderIndex);
+    }
 
     internal void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount, ulong segmentInstanceCount)
     {
@@ -1054,6 +1102,16 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualInstanceGraphHandle,
                 checked((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)),
                 checked((ulong)stride * segmentInstanceCount));
+        }
+
+        if (_visualShaderKinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.CachedMaskRounded)
+        {
+            var maskTexture = _visualMaskTextures.RefAt(firstOrderIndex)
+                ?? throw new InvalidOperationException("The cached-mask graph resource was not imported.");
+            commands.BindTexture(
+                UiVisualShaderContract.CachedMaskTextureBinding,
+                maskTexture,
+                _visualMaskSamplers.RefAt(firstOrderIndex));
         }
 
         if (UiVisualShaderContract.UsesShaderClip(_visualShaderKinds.RefAt(firstOrderIndex)))
@@ -1213,11 +1271,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (visual.Paint.EffectSet.IsValid && visualVariant.Path == UiVisualShaderPath.AnalyticEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Quality == UiEffectQuality.CachedMask))
+        if (visual.Paint.EffectSet.IsValid &&
+            ((visualVariant.Path == UiVisualShaderPath.AnalyticEffect &&
+              effectResource.Set.Quality != UiEffectQuality.Analytic) ||
+             (visualVariant.Path == UiVisualShaderPath.CachedMask &&
+              effectResource.Set.Quality != UiEffectQuality.CachedMask)))
         {
-            AddDiagnostic($"Visual at Order[{orderIndex}] requests an effect layer not supported by the analytic rounded UI ABI.");
+            AddDiagnostic($"Visual at Order[{orderIndex}] requests an effect layer incompatible with its registered UI shader ABI.");
             return false;
         }
 
@@ -1422,7 +1482,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                previous.Clip.Equals(current.Clip) &&
                previous.Resource.Equals(current.Resource) &&
                previous.Paint.CornerRadii.Equals(current.Paint.CornerRadii) &&
-               previous.Paint.StrokeWidth == current.Paint.StrokeWidth;
+               previous.Paint.StrokeWidth == current.Paint.StrokeWidth &&
+               previous.Paint.EffectSet.Equals(current.Paint.EffectSet);
     }
 
     private void ClearFrameStorage(bool preserveVisualInstanceLayout = false)

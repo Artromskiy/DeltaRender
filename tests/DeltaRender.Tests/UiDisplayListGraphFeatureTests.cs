@@ -968,7 +968,7 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
-    public void AnalyticVisualEffectAcceptsInsetShadowAndRejectsCachedMask()
+    public void VisualEffectRegistryAcceptsCachedMaskOnlyWithRegisteredMask()
     {
         var registry = new UiDisplayListResourceRegistry();
         var program = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
@@ -1002,6 +1002,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiEffectCapabilities.Stroke,
             UiEffectQuality.CachedMask,
             default);
+        var maskResource = new UiResourceId(Guid.NewGuid());
         var cachedResource = new UiEffectResource(
             cachedSet,
             new XamlEffectParameters(
@@ -1009,10 +1010,35 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default,
                 default,
-                new UiResourceId(Guid.NewGuid())));
+                maskResource));
         var cachedError = Assert.Throws<ArgumentException>(() =>
-            registry.RegisterVisualEffectResource(cachedResource, variant));
-        Assert.Contains("CachedMask", cachedError.Message, StringComparison.Ordinal);
+            registry.RegisterVisualEffectResource(
+                cachedResource,
+                new UiVisualShaderVariant(
+                    CachedMaskRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                    UiVisualKind.RoundedRectangle,
+                    UiVisualShaderPath.CachedMask)));
+        Assert.Contains("registered mask resource", cachedError.Message, StringComparison.Ordinal);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => registry.RegisterMask(
+            maskResource,
+            new RenderTextureHandle(20, 2),
+            new RenderSamplerHandle(21, 2),
+            new float4(0.75f, 0, 0.5f, 1)));
+        registry.RegisterMask(
+            maskResource,
+            new RenderTextureHandle(20, 2),
+            new RenderSamplerHandle(21, 2),
+            new float4(0, 0, 1, 1));
+        var cachedVariant = new UiVisualShaderVariant(
+            CachedMaskRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            UiVisualKind.RoundedRectangle,
+            UiVisualShaderPath.CachedMask);
+        registry.RegisterVisualEffectResource(cachedResource, cachedVariant);
+        Assert.True(registry.TryResolveVisualEffectSet(cachedSet, out var resolvedCachedVariant, out var resolvedCachedResource));
+        Assert.Equal(cachedVariant, resolvedCachedVariant);
+        Assert.Equal(cachedResource, resolvedCachedResource);
+        Assert.True(registry.UnregisterMask(maskResource));
     }
 
     [Fact]

@@ -14,6 +14,7 @@ internal enum UiRectangleShaderKind : byte
     Solid,
     Rounded,
     AnalyticRounded,
+    CachedMaskRounded,
 }
 
 internal static class UiVisualShaderContract
@@ -24,15 +25,34 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi RoundedFragmentAbi = RoundedRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi AnalyticVertexAbi = AnalyticRoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi AnalyticFragmentAbi = AnalyticRoundedRectangleGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi CachedMaskVertexAbi = CachedMaskRoundedRectangleGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi CachedMaskFragmentAbi = CachedMaskRoundedRectangleGraphicsShaderProgram.FragmentAbi;
 
     internal static int MaxPushConstantSize { get; } = GetMaxPushConstantSize();
+
+    internal static ShaderBinding CachedMaskTextureBinding { get; } = GetCachedMaskTextureBinding();
 
     private static int GetMaxPushConstantSize()
     {
         var size = SolidVertexAbi.PushConstants[0].Size;
         size = Maths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, AnalyticVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, CachedMaskVertexAbi.PushConstants[0].Size);
         return checked((int)size);
+    }
+
+    private static ShaderBinding GetCachedMaskTextureBinding()
+    {
+        foreach (var resource in CachedMaskFragmentAbi.Resources)
+        {
+            if (resource.Kind == ShaderResourceKind.SampledTexture &&
+                resource.Stages.HasFlag(ShaderStageMask.Fragment))
+            {
+                return resource.Binding;
+            }
+        }
+
+        throw new InvalidOperationException("The cached-mask fragment ABI must expose a sampled fragment texture.");
     }
 
     internal static bool TryDescribe(
@@ -58,17 +78,26 @@ internal static class UiVisualShaderContract
 
         ShaderAbi expectedVertex;
         ShaderAbi expectedFragment;
-        if (path == UiVisualShaderPath.AnalyticEffect)
+        if (path is UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.CachedMask)
         {
             if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
             {
-                diagnostic = $"Visual kind {visualKind} cannot use the analytic effect UI artifact.";
+                diagnostic = $"Visual kind {visualKind} cannot use the selected effect UI artifact.";
                 return false;
             }
 
-            shaderKind = UiRectangleShaderKind.AnalyticRounded;
-            expectedVertex = AnalyticVertexAbi;
-            expectedFragment = AnalyticFragmentAbi;
+            if (path == UiVisualShaderPath.CachedMask)
+            {
+                shaderKind = UiRectangleShaderKind.CachedMaskRounded;
+                expectedVertex = CachedMaskVertexAbi;
+                expectedFragment = CachedMaskFragmentAbi;
+            }
+            else
+            {
+                shaderKind = UiRectangleShaderKind.AnalyticRounded;
+                expectedVertex = AnalyticVertexAbi;
+                expectedFragment = AnalyticFragmentAbi;
+            }
         }
         else
         {
@@ -103,6 +132,7 @@ internal static class UiVisualShaderContract
                 UiRectangleShaderKind.Solid => "solid",
                 UiRectangleShaderKind.Rounded => "rounded",
                 UiRectangleShaderKind.AnalyticRounded => "analytic-rounded-effect",
+                UiRectangleShaderKind.CachedMaskRounded => "cached-mask-rounded",
                 _ => "unknown",
             };
             diagnostic = $"Visual kind {visualKind} requires the matching generated DeltaShader.UI {shaderName}-rectangle ABI.";
@@ -242,7 +272,25 @@ internal static class UiVisualShaderContract
         in UiVisualDraw visual,
         in UiEffectResource effectResource,
         Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, default, destination);
+
+    internal static int PackInstance(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        Span<byte> destination)
     {
+        if (shaderKind == UiRectangleShaderKind.CachedMaskRounded)
+        {
+            return CachedMaskRoundedRectangleGraphicsShaderProgram.PackCachedMaskRoundedRectangleVertexInstancesElement(
+                new CachedMaskRoundedRectangleParameters(
+                    visual.Bounds,
+                    maskUvRect,
+                    visual.Paint.FillColor),
+                destination);
+        }
+
         if (shaderKind != UiRectangleShaderKind.AnalyticRounded)
         {
             return PackInstance(shaderKind, in visual, destination);
@@ -292,6 +340,15 @@ internal static class UiVisualShaderContract
     internal static int PackInstances(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, destination);
+
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
         in PixelRect clip,
         uint instanceStride,
         Span<byte> destination)
@@ -308,6 +365,16 @@ internal static class UiVisualShaderContract
         Span<byte> destination)
         => PackInstance(shaderKind, in visual, in effectResource, destination);
 
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in PixelRect clip,
+        in UiEffectResource effectResource,
+        in float4 maskUvRect,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, destination);
+
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
         PixelExtent viewport,
@@ -319,6 +386,7 @@ internal static class UiVisualShaderContract
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.AnalyticRounded => AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.CachedMaskRounded => CachedMaskRoundedRectangleGraphicsShaderProgram.PackCachedMaskRoundedRectangleVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }
