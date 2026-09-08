@@ -422,7 +422,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
         using var session = new RecordingSession();
-        var textProgram = SdfTextOutlineGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SdfTextStrokeOuterGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         var standardTextProgram = SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var textFeature = new TextRenderFeature(
             session,
@@ -432,7 +432,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var effectSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
-            UiEffectCapabilities.Outline | UiEffectCapabilities.Glow,
+            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow,
             UiEffectQuality.Analytic,
             default);
         var effectResource = new UiEffectResource(
@@ -442,11 +442,12 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default,
                 new UiEffectLayer(new float4(0.2f, 0.4f, 1, 1), default, 2, 3, 0, 0.8f),
+                default,
                 default));
         var registry = new UiDisplayListResourceRegistry();
         registry.RegisterTextEffectResource(
             effectResource,
-            new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.OutlineGlow));
+            new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.StrokeOuterGlow));
         using var feature = new UiDisplayListGraphFeature(
             session,
             SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
@@ -497,7 +498,7 @@ public sealed class UiDisplayListGraphFeatureTests
                 EffectSet = new UiEffectSet(
                     new UiResourceId(Guid.NewGuid()),
                     UiEffectTarget.Text,
-                    UiEffectCapabilities.Outline,
+                    UiEffectCapabilities.Stroke,
                     UiEffectQuality.Analytic,
                     default)
             },
@@ -538,7 +539,7 @@ public sealed class UiDisplayListGraphFeatureTests
                 EffectSet = new UiEffectSet(
                     new UiResourceId(Guid.NewGuid()),
                     UiEffectTarget.Text,
-                    UiEffectCapabilities.Outline,
+                    UiEffectCapabilities.Stroke,
                     UiEffectQuality.CachedMask,
                     default)
             },
@@ -550,7 +551,7 @@ public sealed class UiDisplayListGraphFeatureTests
             new[] { text },
             new[] { new UiDrawRef(UiDrawKind.Text, 0) })));
         Assert.Equal(
-            "Text at Order[0] requests unsupported CachedMask text rendering; use the generated outline/glow text artifact.",
+            "Text at Order[0] requests unsupported CachedMask text rendering; use the generated stroke/outer-glow text artifact.",
             feature.Diagnostics.Single());
     }
 
@@ -934,11 +935,11 @@ public sealed class UiDisplayListGraphFeatureTests
         var textEffect = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
-            UiEffectCapabilities.Outline,
+            UiEffectCapabilities.Stroke,
             UiEffectQuality.Analytic,
             default);
         var visualProgram = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
-        var textProgram = SdfTextOutlineGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SdfTextStrokeOuterGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
 
         var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.AnalyticEffect);
         var visualResource = new UiEffectResource(
@@ -948,8 +949,27 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default,
                 default,
+                default,
                 default));
         registry.RegisterVisualEffectResource(visualResource, visualVariant);
+        var visualInnerGlowSet = visualEffect with
+        {
+            Resource = new UiResourceId(Guid.NewGuid()),
+            Capabilities = UiEffectCapabilities.InnerGlow,
+        };
+        var visualInnerGlowError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterVisualEffectResource(
+                new UiEffectResource(
+                    visualInnerGlowSet,
+                    new XamlEffectParameters(
+                        default,
+                        default,
+                        default,
+                        default,
+                        new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                        default)),
+                visualVariant));
+        Assert.Contains("without InnerGlow", visualInnerGlowError.Message, StringComparison.Ordinal);
         var standardError = Assert.Throws<ArgumentException>(() =>
             registry.RegisterVisualEffectResource(
                 visualResource,
@@ -957,7 +977,7 @@ public sealed class UiDisplayListGraphFeatureTests
                     RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                     UiVisualKind.RoundedRectangle)));
         Assert.Contains("analytic effect UI artifact", standardError.Message, StringComparison.Ordinal);
-        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.OutlineGlow);
+        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.StrokeOuterGlow);
         var textResource = new UiEffectResource(
             textEffect,
             new XamlEffectParameters(
@@ -965,8 +985,27 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default,
                 default,
+                default,
                 default));
         registry.RegisterTextEffectResource(textResource, textVariant);
+        var textInnerGlowSet = textEffect with
+        {
+            Resource = new UiResourceId(Guid.NewGuid()),
+            Capabilities = UiEffectCapabilities.InnerGlow,
+        };
+        var textInnerGlowError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterTextEffectResource(
+                new UiEffectResource(
+                    textInnerGlowSet,
+                    new XamlEffectParameters(
+                        default,
+                        default,
+                        default,
+                        default,
+                        new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                        default)),
+                textVariant));
+        Assert.Contains("InnerGlow", textInnerGlowError.Message, StringComparison.Ordinal);
         var outerTextSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
@@ -978,6 +1017,7 @@ public sealed class UiDisplayListGraphFeatureTests
             new XamlEffectParameters(
                 default,
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                default,
                 default,
                 default,
                 default));
@@ -1030,12 +1070,14 @@ public sealed class UiDisplayListGraphFeatureTests
                     default,
                     default,
                     default,
+                    default,
                     default)),
             variant);
         var updated = new UiEffectResource(
             effectSet,
             new XamlEffectParameters(
                 new UiEffectLayer(new float4(0, 1, 0, 1), default, 2, 0, 0, 1),
+                default,
                 default,
                 default,
                 default,
@@ -1048,7 +1090,7 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(updated, resolvedResource);
         Assert.Throws<ArgumentException>(() => registry.UpdateVisualEffectResource(
             new UiEffectResource(
-                effectSet with { Capabilities = UiEffectCapabilities.Glow },
+                effectSet with { Capabilities = UiEffectCapabilities.OuterGlow },
                 updated.Parameters)));
     }
 
@@ -1059,10 +1101,10 @@ public sealed class UiDisplayListGraphFeatureTests
         var effectSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Visual,
-            UiEffectCapabilities.Glow,
+            UiEffectCapabilities.OuterGlow,
             UiEffectQuality.Analytic,
             default);
-        var effectProgram = RoundedGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var effectProgram = RoundedOuterGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         registry.RegisterVisualEffectResource(
             new UiEffectResource(
                 effectSet,
@@ -1071,8 +1113,9 @@ public sealed class UiDisplayListGraphFeatureTests
                     default,
                     default,
                     new UiEffectLayer(new float4(0, 0, 1, 1), default, 0, 4, 0, 1),
+                    default,
                     default)),
-            new UiVisualShaderVariant(effectProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.GlowEffect));
+            new UiVisualShaderVariant(effectProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.OuterGlowEffect));
 
         using var session = new RecordingSession();
         using var feature = new UiDisplayListGraphFeature(
@@ -1114,6 +1157,7 @@ public sealed class UiDisplayListGraphFeatureTests
                     default,
                     default,
                     new UiEffectLayer(new float4(0, 1, 0, 1), default, 0, 8, 0, 2),
+                    default,
                     default)));
 
         Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
@@ -1138,7 +1182,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var insetSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Visual,
-            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.InsetShadow | UiEffectCapabilities.Glow,
+            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.InnerShadow | UiEffectCapabilities.OuterGlow,
             UiEffectQuality.Analytic,
             default);
         var insetResource = new UiEffectResource(
@@ -1148,6 +1192,7 @@ public sealed class UiDisplayListGraphFeatureTests
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
                 default));
         registry.RegisterVisualEffectResource(insetResource, variant);
         Assert.True(registry.TryResolveVisualEffectSet(insetSet, out var insetVariant, out var resolvedInsetResource));
@@ -1165,6 +1210,7 @@ public sealed class UiDisplayListGraphFeatureTests
             cachedSet,
             new XamlEffectParameters(
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
                 default,
                 default,
                 default,
@@ -1218,6 +1264,7 @@ public sealed class UiDisplayListGraphFeatureTests
                 effectSet,
                 new XamlEffectParameters(
                     new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                    default,
                     default,
                     default,
                     default,

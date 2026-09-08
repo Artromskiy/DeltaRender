@@ -128,17 +128,17 @@ names or duplicate ShaderAbi declarations.
 The producer also publishes deterministic graphics variants for analytic text
 effects without changing shaping, glyph metrics or atlas encoding:
 
-- `sdf-text-outline-glow` uses the existing SDF alpha channel;
-- `msdf-text-outline-glow` uses the existing MSDF median-of-RGB distance;
+- `sdf-text-stroke-outer-glow` uses the existing SDF alpha channel;
+- `msdf-text-stroke-outer-glow` uses the existing MSDF median-of-RGB distance;
 - both variants expose `TextEffectParameters` as one shared 144-byte push
   constant root and retain the glyph storage buffer at set `0`, binding `0`;
-- `GlowColor`, `GlowRadius` and `GlowIntensity` use the same distance-field
-  units as `DistanceRange` and `OutlineWidth`;
+- `OuterGlowColor`, `OuterGlowRadius` and `OuterGlowIntensity` use the same distance-field
+  units as `DistanceRange` and `StrokeWidth`;
 - `OuterShadowColor`, `OuterShadowOffset`, `OuterShadowWidth`,
   `OuterShadowBlurRadius`, `OuterShadowSpread` and `OuterShadowIntensity` are
   packed in the same root; offset is converted to atlas UV using the generated
   glyph pixel/UV-size interstage values;
-- fragment application order is outer shadow, glow, outline, then fill;
+- fragment application order is outer shadow, outer glow, stroke, then fill;
 - the generated program exposes the corresponding typed root packers and
   `VertexAbi`/`FragmentAbi`; consumers must use those generated members rather
   than recreate the layout.
@@ -151,9 +151,9 @@ follow-up work; backdrop blur is intentionally not part of the analytic path.
 
 The current `DeltaRender.Text` catalog has 12 exact identities:
 
-- SDF: standard, outline, glow, outer shadow and outline + outer shadow + glow;
-- MSDF: standard, outline, glow, outer shadow, outline + glow and outline +
-  outer shadow + glow.
+- SDF: standard, stroke, outer glow, outer shadow and stroke + outer shadow + outer glow;
+- MSDF: standard, stroke, outer glow, outer shadow, stroke + outer glow and stroke +
+  outer shadow + outer glow.
 
 Each identity maps to its own generated graphics program and typed instance
 and parameter packers. `UiDisplayListResourceRegistry` accepts a text entry

@@ -21,9 +21,9 @@ pack helpers are authoritative for both resources. The mask is sampled in
 `MaskUv` space and multiplied by the typed instance color. This is a fixed
 artifact, not runtime shader composition or file probing.
 
-The analytic rounded-rectangle source also publishes `InsetShadow` in the
-typed `UiEffectParameters` payload. Its fragment order is outer shadow, glow,
-fill, inset shadow, then stroke; the generated instance packer remains the
+The analytic rounded-rectangle source also publishes `InnerShadow` in the
+typed `UiEffectParameters` payload. Its fragment order is outer shadow, outer
+glow, fill, inner shadow, then stroke; the generated instance packer remains the
 single ABI authority. Cached-mask and backdrop-blur effects are intentionally
 not represented by this analytic artifact because they require a separate
 texture/readback path.

@@ -1436,15 +1436,15 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             PaintUnits.Device => 1f,
             _ => throw new ArgumentOutOfRangeException(nameof(effectResource), effectResource.Parameters.Units, "Unknown paint unit system."),
         };
-        var outline = effectResource.Parameters.StrokeOrOutline;
-        var glow = effectResource.Parameters.Glow;
+        var stroke = effectResource.Parameters.Stroke;
+        var outerGlow = effectResource.Parameters.OuterGlow;
         var outerShadow = effectResource.Parameters.OuterShadow;
         return new TextEffectValues(
-            new Vector4(outline.Color.x, outline.Color.y, outline.Color.z, outline.Color.w),
-            outline.Width * scale,
-            new Vector4(glow.Color.x, glow.Color.y, glow.Color.z, glow.Color.w),
-            glow.BlurRadius * scale,
-            glow.Intensity,
+            new Vector4(stroke.Color.x, stroke.Color.y, stroke.Color.z, stroke.Color.w),
+            stroke.Width * scale,
+            new Vector4(outerGlow.Color.x, outerGlow.Color.y, outerGlow.Color.z, outerGlow.Color.w),
+            outerGlow.BlurRadius * scale,
+            outerGlow.Intensity,
             new Vector4(outerShadow.Color.x, outerShadow.Color.y, outerShadow.Color.z, outerShadow.Color.w),
             new Vector2(outerShadow.Offset.x * scale, outerShadow.Offset.y * scale),
             outerShadow.Width * scale,
@@ -1462,7 +1462,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) || !UiDisplayListGeometry.IsFinite(text.Paint.FillColor) ||
-            !UiDisplayListGeometry.IsFinite(text.Paint.OutlineColor) || !float.IsFinite(text.Paint.OutlineWidth) ||
+            !UiDisplayListGeometry.IsFinite(text.Paint.StrokeColor) || !float.IsFinite(text.Paint.StrokeWidth) ||
             text.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid shaped value or paint.");
@@ -1478,7 +1478,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         if (text.Paint.EffectSet.Quality == UiEffectQuality.CachedMask)
         {
-            AddDiagnostic($"Text at Order[{orderIndex}] requests unsupported CachedMask text rendering; use the generated outline/glow text artifact.");
+            AddDiagnostic($"Text at Order[{orderIndex}] requests unsupported CachedMask text rendering; use the generated stroke/outer-glow text artifact.");
             return false;
         }
 
@@ -1498,10 +1498,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
         }
 
-        if ((text.Paint.OutlineWidth != 0 || text.Paint.EffectResource.IsValid) &&
+        if ((text.Paint.StrokeWidth != 0 || text.Paint.EffectResource.IsValid) &&
             !text.Paint.EffectSet.IsValid)
         {
-            AddDiagnostic($"Text at Order[{orderIndex}] requests outline/effect data without a registered text effect shader.");
+            AddDiagnostic($"Text at Order[{orderIndex}] requests stroke/effect data without a registered text effect shader.");
             return false;
         }
 

@@ -105,13 +105,13 @@ public static class UiRenderHost
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Fragment());
 
-    /// <summary>Creates the generated rounded stroke-and-glow graphics program.</summary>
-    public static GraphicsShaderProgram CreateRoundedStrokeGlowProgram() =>
+    /// <summary>Creates the generated rounded stroke-and-outer-glow graphics program.</summary>
+    public static GraphicsShaderProgram CreateRoundedStrokeOuterGlowProgram() =>
         CreateProgram(
-            UiShaders.Spv.UiRectangleShaders.RoundedStrokeGlow.Vertex(),
-            UiShaders.Spv.UiRectangleShaders.RoundedStrokeGlow.Fragment(),
-            UiShaders.Abi.UiRectangleShaders.RoundedStrokeGlow.Vertex(),
-            UiShaders.Abi.UiRectangleShaders.RoundedStrokeGlow.Fragment());
+            UiShaders.Spv.UiRectangleShaders.RoundedStrokeOuterGlow.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedStrokeOuterGlow.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Fragment());
 
     /// <summary>Creates the generated linear-gradient graphics program.</summary>
     public static GraphicsShaderProgram CreateLinearGradientProgram() =>
@@ -150,14 +150,14 @@ public static class UiRenderHost
         {
             if (effect.Set.Target == UiEffectTarget.Visual &&
                 effect.Set.Quality == UiEffectQuality.Analytic &&
-                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.Glow))
+                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow))
             {
                 registry.RegisterVisualEffectResource(
                     effect,
                     new UiVisualShaderVariant(
-                        CreateRoundedStrokeGlowProgram(),
+                        CreateRoundedStrokeOuterGlowProgram(),
                         UiVisualKind.RoundedRectangle,
-                        UiVisualShaderPath.RoundedStrokeGlowEffect));
+                        UiVisualShaderPath.RoundedStrokeOuterGlowEffect));
             }
         }
 

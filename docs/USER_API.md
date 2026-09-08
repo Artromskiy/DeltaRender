@@ -50,7 +50,7 @@ registry.RegisterTextEffectResource(
     new TextShaderVariant(
         preparedTextProgram,
         GlyphImageMode.Sdf,
-        TextShaderPath.OutlineGlow));
+        TextShaderPath.StrokeOuterGlow));
 ```
 
 The registry does not own or dispose the program. During display-list
@@ -61,8 +61,10 @@ identity with different metadata is rejected; it cannot silently reuse another
 prepared variant. The registry does not compose shader layers, inspect files,
 or infer effect parameters from a CLR object.
 
-The generated analytic rounded artifact accepts typed stroke/outline,
-outer-shadow, inset-shadow and glow layers through its producer-owned packer.
+The generated analytic rounded artifact accepts typed stroke, outer-shadow,
+inner-shadow and outer-glow layers through its producer-owned packer. The
+canonical `InnerGlow` capability is diagnosed until a matching generated
+artifact is registered.
 A cached-mask visual uses the separate generated
 `CachedMaskRoundedRectangle` artifact. Register its session-owned texture,
 sampler and normalized UV rectangle first:
@@ -77,7 +79,7 @@ uses the generated instance packer. Missing mask registration is rejected; no
 analytic or solid fallback is used. A registered visual effect program must
 therefore expose the matching prepared ABI before it can be submitted; a
 different ABI is rejected with a diagnostic until its generated packer/adapter
-is available. The generated text outline/glow artifact also
+is available. The generated text stroke/outer-glow artifact also
 accepts typed outer-shadow values. A text variant is accepted only when its
 mode and resolved bindings, stride and
 push-constant range match the configured `TextRenderFeature`; adjacent runs
@@ -104,18 +106,18 @@ producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 
 The current prepared catalog contains 12 visual identities:
-`visual.solid`, `visual.solid.stroke`, `visual.solid.glow`,
-`visual.solid.outer-shadow`, `visual.rounded`, `visual.rounded.glow`,
-`visual.rounded.outer-shadow`, `visual.rounded.inset-shadow`,
+`visual.solid`, `visual.solid.stroke`, `visual.solid.outer-glow`,
+`visual.solid.outer-shadow`, `visual.rounded`, `visual.rounded.outer-glow`,
+`visual.rounded.outer-shadow`, `visual.rounded.inner-shadow`,
 `visual.rounded.outer-shadow.cached-mask`,
-`visual.rounded.stroke.outer-shadow`, `visual.rounded.stroke.glow` and
-`visual.rounded.stroke.outer-shadow.glow`.
+`visual.rounded.stroke.outer-shadow`, `visual.rounded.stroke.outer-glow` and
+`visual.rounded.stroke.outer-shadow.outer-glow`.
 It contains 12 text identities:
-`text.sdf`, `text.msdf`, `text.sdf.outline`, `text.msdf.outline`,
-`text.sdf.glow`, `text.msdf.glow`, `text.sdf.outline.glow`,
-`text.msdf.outline.glow`, `text.sdf.outer-shadow`, `text.msdf.outer-shadow`,
-`text.sdf.outline.outer-shadow.glow` and
-`text.msdf.outline.outer-shadow.glow`.
+`text.sdf`, `text.msdf`, `text.sdf.stroke`, `text.msdf.stroke`,
+`text.sdf.outer-glow`, `text.msdf.outer-glow`, `text.sdf.stroke.outer-glow`,
+`text.msdf.stroke.outer-glow`, `text.sdf.outer-shadow`, `text.msdf.outer-shadow`,
+`text.sdf.stroke.outer-shadow.outer-glow` and
+`text.msdf.stroke.outer-shadow.outer-glow`.
 The catalog is metadata for exact lookup, not a request to compose effects at
 runtime. Text `CachedMask` is not in the prepared catalog and remains an
 explicit unsupported text path.

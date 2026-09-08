@@ -123,17 +123,18 @@ public sealed class UiDisplayListResourceRegistry
         }
 
         if (variant.Path == UiVisualShaderPath.AnalyticEffect &&
-            effectResource.Set.Quality != UiEffectQuality.Analytic)
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Has(UiEffectCapabilities.InnerGlow)))
         {
             throw new ArgumentException(
-                "The analytic rounded UI artifact requires an Analytic effect set.",
+                "The analytic rounded UI artifact requires an Analytic effect set without InnerGlow.",
                 nameof(effectResource));
         }
 
-        if (variant.Path is UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.SolidGlowEffect &&
+        if (variant.Path is UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.SolidOuterGlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
              (variant.Path == UiVisualShaderPath.SolidStrokeEffect && effectResource.Set.Capabilities != UiEffectCapabilities.Stroke) ||
-             (variant.Path == UiVisualShaderPath.SolidGlowEffect && effectResource.Set.Capabilities != UiEffectCapabilities.Glow)))
+             (variant.Path == UiVisualShaderPath.SolidOuterGlowEffect && effectResource.Set.Capabilities != UiEffectCapabilities.OuterGlow)))
         {
             throw new ArgumentException(
                 "The solid visual effect artifact requires an Analytic effect set with exactly its declared effect.",
@@ -158,21 +159,21 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        if (variant.Path == UiVisualShaderPath.RoundedStrokeGlowEffect &&
+        if (variant.Path == UiVisualShaderPath.RoundedStrokeOuterGlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.Glow)))
+             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow)))
         {
             throw new ArgumentException(
-                "The rounded stroke/glow UI artifact requires an Analytic effect set with Stroke and Glow only.",
+                "The rounded stroke/outer-glow UI artifact requires an Analytic effect set with Stroke and OuterGlow only.",
                 nameof(effectResource));
         }
 
-        if (variant.Path == UiVisualShaderPath.GlowEffect &&
+        if (variant.Path == UiVisualShaderPath.OuterGlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.Glow))
+             effectResource.Set.Capabilities != UiEffectCapabilities.OuterGlow))
         {
             throw new ArgumentException(
-                "The rounded glow UI artifact requires an Analytic effect set with Glow only.",
+                "The rounded outer-glow UI artifact requires an Analytic effect set with OuterGlow only.",
                 nameof(effectResource));
         }
 
@@ -185,12 +186,12 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        if (variant.Path == UiVisualShaderPath.InsetShadowEffect &&
+        if (variant.Path == UiVisualShaderPath.InnerShadowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.InsetShadow))
+             effectResource.Set.Capabilities != UiEffectCapabilities.InnerShadow))
         {
             throw new ArgumentException(
-                "The rounded inset-shadow UI artifact requires an Analytic effect set with InsetShadow only.",
+                "The rounded inner-shadow UI artifact requires an Analytic effect set with InnerShadow only.",
                 nameof(effectResource));
         }
 
@@ -265,24 +266,25 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException("A text effect set requires a valid generated text shader variant.", nameof(variant));
         }
 
-        if (variant.Path != TextShaderPath.OutlineGlow ||
+        if (variant.Path != TextShaderPath.StrokeOuterGlow ||
             effectResource.Set.Quality != UiEffectQuality.Analytic ||
-            effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
+            effectResource.Set.Has(UiEffectCapabilities.InnerShadow) ||
+            effectResource.Set.Has(UiEffectCapabilities.InnerGlow) ||
             effectResource.Set.Quality == UiEffectQuality.CachedMask)
         {
-            if (variant.Path == TextShaderPath.Outline &&
+            if (variant.Path == TextShaderPath.Stroke &&
                 variant.Mode == GlyphImageMode.Sdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == UiEffectCapabilities.Outline)
+                effectResource.Set.Capabilities == UiEffectCapabilities.Stroke)
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;
             }
 
-            if (variant.Path == TextShaderPath.Glow &&
+            if (variant.Path == TextShaderPath.OuterGlow &&
                 variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == UiEffectCapabilities.Glow)
+                effectResource.Set.Capabilities == UiEffectCapabilities.OuterGlow)
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;
@@ -297,17 +299,17 @@ public sealed class UiDisplayListResourceRegistry
                 return;
             }
 
-            if (variant.Path == TextShaderPath.OutlineOuterShadowGlow &&
+            if (variant.Path == TextShaderPath.StrokeOuterShadowOuterGlow &&
                 variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == (UiEffectCapabilities.Outline | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.Glow))
+                effectResource.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow))
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;
             }
 
             throw new ArgumentException(
-                "The text outline/glow artifact supports analytic OuterShadow, Outline and Glow layers only; InsetShadow and CachedMask are unsupported.",
+                "The text stroke/outer-glow artifact supports analytic Stroke, OuterShadow and OuterGlow layers only; InnerShadow, InnerGlow and CachedMask are unsupported.",
                 nameof(effectResource));
         }
 

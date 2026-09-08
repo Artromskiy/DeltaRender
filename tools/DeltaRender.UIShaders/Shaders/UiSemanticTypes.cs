@@ -80,40 +80,40 @@ public readonly struct EffectOuterShadowFalloff
     public EffectOuterShadowFalloff(float2 value) => Value = value;
 }
 
-public readonly struct EffectInsetShadowColor
+public readonly struct EffectInnerShadowColor
 {
     public readonly float4 Value;
-    public EffectInsetShadowColor(float4 value) => Value = value;
+    public EffectInnerShadowColor(float4 value) => Value = value;
 }
 
-public readonly struct EffectInsetShadowGeometry
+public readonly struct EffectInnerShadowGeometry
 {
     public readonly float4 Value;
-    public EffectInsetShadowGeometry(float4 value) => Value = value;
+    public EffectInnerShadowGeometry(float4 value) => Value = value;
 }
 
-public readonly struct EffectInsetShadowFalloff
+public readonly struct EffectInnerShadowFalloff
 {
     public readonly float2 Value;
-    public EffectInsetShadowFalloff(float2 value) => Value = value;
+    public EffectInnerShadowFalloff(float2 value) => Value = value;
 }
 
-public readonly struct EffectGlowColor
+public readonly struct EffectOuterGlowColor
 {
     public readonly float4 Value;
-    public EffectGlowColor(float4 value) => Value = value;
+    public EffectOuterGlowColor(float4 value) => Value = value;
 }
 
-public readonly struct EffectGlowGeometry
+public readonly struct EffectOuterGlowGeometry
 {
     public readonly float4 Value;
-    public EffectGlowGeometry(float4 value) => Value = value;
+    public EffectOuterGlowGeometry(float4 value) => Value = value;
 }
 
-public readonly struct EffectGlowFalloff
+public readonly struct EffectOuterGlowFalloff
 {
     public readonly float2 Value;
-    public EffectGlowFalloff(float2 value) => Value = value;
+    public EffectOuterGlowFalloff(float2 value) => Value = value;
 }
 
 #pragma warning restore CA2225

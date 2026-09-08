@@ -8,20 +8,20 @@ namespace Delta.Render.Text;
 public enum TextShaderPath : byte
 {
     Standard,
-    Outline,
-    Glow,
+    Stroke,
+    OuterGlow,
     OuterShadow,
-    OutlineOuterShadowGlow,
-    OutlineGlow,
+    StrokeOuterShadowOuterGlow,
+    StrokeOuterGlow,
 }
 
-/// <summary>Neutral outline, outer-shadow and glow values selected from a typed UI effect resource.</summary>
+/// <summary>Neutral stroke, outer-shadow and outer-glow values selected from a typed UI effect resource.</summary>
 public readonly record struct TextEffectValues(
-    Vector4 OutlineColor,
-    float OutlineWidth,
-    Vector4 GlowColor,
-    float GlowRadius,
-    float GlowIntensity,
+    Vector4 StrokeColor,
+    float StrokeWidth,
+    Vector4 OuterGlowColor,
+    float OuterGlowRadius,
+    float OuterGlowIntensity,
     Vector4 OuterShadowColor,
     Vector2 OuterShadowOffset,
     float OuterShadowWidth,
@@ -32,9 +32,9 @@ public readonly record struct TextEffectValues(
     /// <summary>Gets an empty no-effect payload.</summary>
     public static TextEffectValues Empty => default;
 
-    internal bool IsValid => IsFinite(OutlineColor) && float.IsFinite(OutlineWidth) && OutlineWidth >= 0 &&
-        IsFinite(GlowColor) && float.IsFinite(GlowRadius) && GlowRadius >= 0 &&
-        float.IsFinite(GlowIntensity) && GlowIntensity >= 0 &&
+    internal bool IsValid => IsFinite(StrokeColor) && float.IsFinite(StrokeWidth) && StrokeWidth >= 0 &&
+        IsFinite(OuterGlowColor) && float.IsFinite(OuterGlowRadius) && OuterGlowRadius >= 0 &&
+        float.IsFinite(OuterGlowIntensity) && OuterGlowIntensity >= 0 &&
         IsFinite(OuterShadowColor) && IsFinite(OuterShadowOffset) &&
         float.IsFinite(OuterShadowWidth) && OuterShadowWidth >= 0 &&
         float.IsFinite(OuterShadowBlurRadius) && OuterShadowBlurRadius >= 0 &&
@@ -56,5 +56,5 @@ public readonly record struct TextShaderVariant(
     /// <summary>Gets whether the descriptor can use the generated text packer path.</summary>
     public bool IsValid => Program is not null &&
         ((Mode is (GlyphImageMode.Sdf or GlyphImageMode.Msdf) &&
-          Path is (TextShaderPath.Standard or TextShaderPath.OutlineGlow or TextShaderPath.Glow or TextShaderPath.Outline or TextShaderPath.OuterShadow or TextShaderPath.OutlineOuterShadowGlow)));
+          Path is (TextShaderPath.Standard or TextShaderPath.StrokeOuterGlow or TextShaderPath.OuterGlow or TextShaderPath.Stroke or TextShaderPath.OuterShadow or TextShaderPath.StrokeOuterShadowOuterGlow)));
 }

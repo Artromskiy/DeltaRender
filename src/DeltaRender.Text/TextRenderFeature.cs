@@ -272,7 +272,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             (shaderVariant is null && effectValues != TextEffectValues.Empty) ||
             (shaderVariant is { Path: TextShaderPath.Standard } && effectValues != TextEffectValues.Empty))
         {
-            throw new ArgumentException("Text effects require a valid generated outline/glow shader variant.", nameof(effectValues));
+            throw new ArgumentException("Text effects require a valid generated stroke/outer-glow shader variant.", nameof(effectValues));
         }
 
         EnsureArrayCapacity(ref _pendingRuns, _pendingRunCount + 1);

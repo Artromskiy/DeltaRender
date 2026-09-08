@@ -24,7 +24,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Sdf",
-      "effects": "Outline|Glow",
+      "effects": "Stroke|OuterGlow",
       "quality": "Analytic"
     },
     {
@@ -32,7 +32,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Msdf",
-      "effects": "Outline|Glow",
+      "effects": "Stroke|OuterGlow",
       "quality": "Analytic"
     },
     {
@@ -40,7 +40,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Sdf",
-      "effects": "Outline",
+      "effects": "Stroke",
       "quality": "Analytic"
     },
     {
@@ -48,7 +48,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Sdf",
-      "effects": "Glow",
+      "effects": "OuterGlow",
       "quality": "Analytic"
     },
     {
@@ -56,7 +56,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Msdf",
-      "effects": "Glow",
+      "effects": "OuterGlow",
       "quality": "Analytic"
     },
     {
@@ -64,7 +64,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Msdf",
-      "effects": "Outline",
+      "effects": "Stroke",
       "quality": "Analytic"
     },
     {
@@ -88,7 +88,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Sdf",
-      "effects": "Outline|OuterShadow|Glow",
+      "effects": "Stroke|OuterShadow|OuterGlow",
       "quality": "Analytic"
     },
     {
@@ -96,7 +96,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Msdf",
-      "effects": "Outline|OuterShadow|Glow",
+      "effects": "Stroke|OuterShadow|OuterGlow",
       "quality": "Analytic"
     }
   ],
@@ -151,21 +151,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Sdf",
-        "effects": "Outline|Glow",
+        "effects": "Stroke|OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextStrokeOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextStrokeOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextStrokeOuterGlowFragment.frag.spv",
+      "generatedProgramType": "SdfTextStrokeOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSdfTextOutlineGlowVertexGlyphsElements",
-      "fragmentPacker": "PackSdfTextOutlineGlowFragmentParameters",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow",
-      "layerSetIdentity": "text.sdf.outline.glow"
+      "vertexPacker": "PackSdfTextStrokeOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackSdfTextStrokeOuterGlowFragmentParameters",
+      "vertexEntryPoint": "sdf-text-stroke-outer-glow",
+      "fragmentEntryPoint": "sdf-text-stroke-outer-glow",
+      "layerSetIdentity": "text.sdf.stroke.outer-glow"
     },
     {
       "key": {
@@ -173,21 +173,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Msdf",
-        "effects": "Outline|Glow",
+        "effects": "Stroke|OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextStrokeOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextStrokeOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextStrokeOuterGlowFragment.frag.spv",
+      "generatedProgramType": "MsdfTextStrokeOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackMsdfTextOutlineGlowVertexGlyphsElements",
-      "fragmentPacker": "PackMsdfTextOutlineGlowFragmentParameters",
-      "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow",
-      "layerSetIdentity": "text.msdf.outline.glow"
+      "vertexPacker": "PackMsdfTextStrokeOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextStrokeOuterGlowFragmentParameters",
+      "vertexEntryPoint": "msdf-text-stroke-outer-glow",
+      "fragmentEntryPoint": "msdf-text-stroke-outer-glow",
+      "layerSetIdentity": "text.msdf.stroke.outer-glow"
     },
     {
       "key": {
@@ -195,21 +195,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Sdf",
-        "effects": "Outline",
+        "effects": "Stroke",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextStrokeGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextStrokeVertex.vert.spv",
+      "fragmentSpirv": "SdfTextStrokeFragment.frag.spv",
+      "generatedProgramType": "SdfTextStrokeGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSdfTextOutlineVertexGlyphsElements",
-      "fragmentPacker": "PackSdfTextOutlineFragmentParameters",
-      "vertexEntryPoint": "sdf-text-outline",
-      "fragmentEntryPoint": "sdf-text-outline",
-      "layerSetIdentity": "text.sdf.outline"
+      "vertexPacker": "PackSdfTextStrokeVertexGlyphsElements",
+      "fragmentPacker": "PackSdfTextStrokeFragmentParameters",
+      "vertexEntryPoint": "sdf-text-stroke",
+      "fragmentEntryPoint": "sdf-text-stroke",
+      "layerSetIdentity": "text.sdf.stroke"
     },
     {
       "key": {
@@ -217,21 +217,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Sdf",
-        "effects": "Glow",
+        "effects": "OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextOuterGlowFragment.frag.spv",
+      "generatedProgramType": "SdfTextOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSdfTextGlowVertexGlyphsElements",
-      "fragmentPacker": "PackSdfTextGlowVertexParameters",
-      "vertexEntryPoint": "sdf-text-glow",
-      "fragmentEntryPoint": "sdf-text-glow",
-      "layerSetIdentity": "text.sdf.glow"
+      "vertexPacker": "PackSdfTextOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackSdfTextOuterGlowVertexParameters",
+      "vertexEntryPoint": "sdf-text-outer-glow",
+      "fragmentEntryPoint": "sdf-text-outer-glow",
+      "layerSetIdentity": "text.sdf.outer-glow"
     },
     {
       "key": {
@@ -239,21 +239,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Msdf",
-        "effects": "Glow",
+        "effects": "OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextOuterGlowFragment.frag.spv",
+      "generatedProgramType": "MsdfTextOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackMsdfTextGlowVertexGlyphsElements",
-      "fragmentPacker": "PackMsdfTextGlowFragmentParameters",
-      "vertexEntryPoint": "msdf-text-glow",
-      "fragmentEntryPoint": "msdf-text-glow",
-      "layerSetIdentity": "text.msdf.glow"
+      "vertexPacker": "PackMsdfTextOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextOuterGlowFragmentParameters",
+      "vertexEntryPoint": "msdf-text-outer-glow",
+      "fragmentEntryPoint": "msdf-text-outer-glow",
+      "layerSetIdentity": "text.msdf.outer-glow"
     },
     {
       "key": {
@@ -261,21 +261,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Msdf",
-        "effects": "Outline",
+        "effects": "Stroke",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextStrokeGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextStrokeVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextStrokeFragment.frag.spv",
+      "generatedProgramType": "MsdfTextStrokeGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackMsdfTextOutlineVertexGlyphsElements",
-      "fragmentPacker": "PackMsdfTextOutlineFragmentParameters",
-      "vertexEntryPoint": "msdf-text-outline",
-      "fragmentEntryPoint": "msdf-text-outline",
-      "layerSetIdentity": "text.msdf.outline"
+      "vertexPacker": "PackMsdfTextStrokeVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextStrokeFragmentParameters",
+      "vertexEntryPoint": "msdf-text-stroke",
+      "fragmentEntryPoint": "msdf-text-stroke",
+      "layerSetIdentity": "text.msdf.stroke"
     },
     {
       "key": {
@@ -327,21 +327,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Sdf",
-        "effects": "Outline|OuterShadow|Glow",
+        "effects": "Stroke|OuterShadow|OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineOuterShadowGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineOuterShadowGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineOuterShadowGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineOuterShadowGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextStrokeOuterShadowOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextStrokeOuterShadowOuterGlowFragment.frag.spv",
+      "generatedProgramType": "SdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSdfTextOutlineOuterShadowGlowVertexGlyphsElements",
-      "fragmentPacker": "PackSdfTextOutlineOuterShadowGlowFragmentParameters",
-      "vertexEntryPoint": "sdf-text-outline-outer-shadow-glow",
-      "fragmentEntryPoint": "sdf-text-outline-outer-shadow-glow",
-      "layerSetIdentity": "text.sdf.outline.outer-shadow.glow"
+      "vertexPacker": "PackSdfTextStrokeOuterShadowOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackSdfTextStrokeOuterShadowOuterGlowFragmentParameters",
+      "vertexEntryPoint": "sdf-text-stroke-outer-shadow-outer-glow",
+      "fragmentEntryPoint": "sdf-text-stroke-outer-shadow-outer-glow",
+      "layerSetIdentity": "text.sdf.stroke.outer-shadow.outer-glow"
     },
     {
       "key": {
@@ -349,21 +349,21 @@
         "primitive": "Solid",
         "material": "DistanceField",
         "textRepresentation": "Msdf",
-        "effects": "Outline|OuterShadow|Glow",
+        "effects": "Stroke|OuterShadow|OuterGlow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineOuterShadowGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineOuterShadowGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineOuterShadowGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineOuterShadowGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextStrokeOuterShadowOuterGlowVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextStrokeOuterShadowOuterGlowFragment.frag.spv",
+      "generatedProgramType": "MsdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackMsdfTextOutlineOuterShadowGlowVertexGlyphsElements",
-      "fragmentPacker": "PackMsdfTextOutlineOuterShadowGlowFragmentParameters",
-      "vertexEntryPoint": "msdf-text-outline-outer-shadow-glow",
-      "fragmentEntryPoint": "msdf-text-outline-outer-shadow-glow",
-      "layerSetIdentity": "text.msdf.outline.outer-shadow.glow"
+      "vertexPacker": "PackMsdfTextStrokeOuterShadowOuterGlowVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextStrokeOuterShadowOuterGlowFragmentParameters",
+      "vertexEntryPoint": "msdf-text-stroke-outer-shadow-outer-glow",
+      "fragmentEntryPoint": "msdf-text-stroke-outer-shadow-outer-glow",
+      "layerSetIdentity": "text.msdf.stroke.outer-shadow.outer-glow"
     }
   ]
 }
