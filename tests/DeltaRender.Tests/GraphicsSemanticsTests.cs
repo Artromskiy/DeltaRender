@@ -16,7 +16,7 @@ public sealed class GraphicsSemanticsTests
             typeof(VertexColor)
         ];
 
-        Assert.All(types, type => Assert.Equal("Delta.Graphics.Semantics", type.Assembly.GetName().Name));
+        Assert.All(types, type => Assert.Equal("DeltaRender.Graphics.Semantics", type.Assembly.GetName().Name));
         Assert.Single(types.Select(type => type.Assembly).Distinct());
     }
 

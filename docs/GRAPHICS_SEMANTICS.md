@@ -2,7 +2,8 @@
 
 The shader package `Delta.Shader` owns the default graphics builtins
 `Position` and `FragmentColor`. The independent common package
-`Delta.Graphics.Semantics` contains only cross-domain stage values: `Uv0`,
+The `DeltaRender.Graphics.Semantics` package contains only cross-domain stage
+values in the existing `Delta.Graphics.Semantics` namespace: `Uv0`,
 `Uv1`, and `VertexColor`. It has no dependency on the shader compiler or
 Vulkan runtime.
 

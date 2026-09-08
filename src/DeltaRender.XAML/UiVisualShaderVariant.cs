@@ -8,12 +8,9 @@ public enum UiVisualShaderPath : byte
 {
     Standard,
     SolidStrokeEffect,
-    SolidOuterShadowEffect,
-    RoundedStrokeOuterShadowEffect,
     RoundedStrokeEffect,
     OuterShadowOnlyEffect,
     OuterGlowOnlyEffect,
-    OuterShadowEffect,
     InnerShadowEffect,
     CachedMask,
     SolidLinearGradient,
@@ -29,5 +26,5 @@ public readonly record struct UiVisualShaderVariant(
     /// <summary>Gets whether the descriptor names a supported generated UI payload.</summary>
     public bool IsValid => Program is not null &&
         Kind is (UiVisualKind.SolidRectangle or UiVisualKind.RoundedRectangle or UiVisualKind.Border) &&
-        Path is UiVisualShaderPath.Standard or UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.SolidOuterShadowEffect or UiVisualShaderPath.RoundedStrokeOuterShadowEffect or UiVisualShaderPath.RoundedStrokeEffect or UiVisualShaderPath.OuterShadowOnlyEffect or UiVisualShaderPath.OuterGlowOnlyEffect or UiVisualShaderPath.OuterShadowEffect or UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.CachedMask;
+        Path is UiVisualShaderPath.Standard or UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.RoundedStrokeEffect or UiVisualShaderPath.OuterShadowOnlyEffect or UiVisualShaderPath.OuterGlowOnlyEffect or UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.CachedMask;
 }

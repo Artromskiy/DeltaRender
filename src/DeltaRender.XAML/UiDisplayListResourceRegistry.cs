@@ -131,33 +131,6 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        if (variant.Path == UiVisualShaderPath.SolidOuterShadowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.OuterShadow))
-        {
-            throw new ArgumentException(
-                "The solid outer-shadow UI artifact requires an Analytic effect set with OuterShadow only.",
-                nameof(effectResource));
-        }
-
-        if (variant.Path == UiVisualShaderPath.RoundedStrokeOuterShadowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow)))
-        {
-            throw new ArgumentException(
-                "The rounded stroke/outer-shadow UI artifact requires an Analytic effect set with Stroke and OuterShadow only.",
-                nameof(effectResource));
-        }
-
-        if (variant.Path == UiVisualShaderPath.OuterShadowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.OuterShadow))
-        {
-            throw new ArgumentException(
-                "The rounded outer-shadow UI artifact requires an Analytic effect set with OuterShadow only.",
-                nameof(effectResource));
-        }
-
         if (variant.Path == UiVisualShaderPath.InnerShadowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
              effectResource.Set.Capabilities != UiEffectCapabilities.InnerShadow))

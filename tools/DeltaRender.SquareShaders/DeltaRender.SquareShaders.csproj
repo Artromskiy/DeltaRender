@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Graphics.Semantics/DeltaRender.Graphics.Semantics.csproj" />
     <PackageReference Include="DeltaShader.Contract" />
     <PackageReference Include="DeltaShader.Compiler" PrivateAssets="all" />
     <PackageReference Include="DeltaShader.Analyzers" PrivateAssets="all" OutputItemType="Analyzer" />

@@ -23,7 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\..\\src\\DeltaRender.XAML\\DeltaRender.XAML.csproj" />
-    <ProjectReference Include="../../src/Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
+    <ProjectReference Include="../../src/DeltaRender.Graphics.Semantics/DeltaRender.Graphics.Semantics.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>
 

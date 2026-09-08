@@ -19,7 +19,7 @@
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Contract/DeltaShader.Contract.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" PrivateAssets="all" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../Delta.Graphics.Semantics/Delta.Graphics.Semantics.csproj" />
+    <ProjectReference Include="../DeltaRender.Graphics.Semantics/DeltaRender.Graphics.Semantics.csproj" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Analyzers/bin/$(Configuration)/netstandard2.0/DeltaShader.Analyzers.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader/bin/$(Configuration)/netstandard2.0/DeltaShader.dll" />
     <Analyzer Include="../../../DeltaShader/src/DeltaShader.Compiler/bin/$(Configuration)/netstandard2.0/DeltaShader.Compiler.dll" />

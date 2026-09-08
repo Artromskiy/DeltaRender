@@ -31,7 +31,7 @@
     <PackageVersion Include="DeltaRender.Vulkan" Version="*" />
     <PackageVersion Include="DeltaRender.Platform.SDL3" Version="*" />
     <PackageVersion Include="DeltaRender.UI" Version="*" />
-    <PackageVersion Include="Delta.Graphics.Semantics" Version="*" />
+    <PackageVersion Include="DeltaRender.Graphics.Semantics" Version="*" />
     <PackageVersion Include="DeltaRender.UIShaders" Version="*" />
     <PackageVersion Include="DeltaRender.Text" Version="*" />
     <PackageVersion Include="DeltaRender.Mesh" Version="*" />

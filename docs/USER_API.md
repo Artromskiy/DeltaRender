@@ -157,7 +157,7 @@ pipeline and instance layout. A future effect shape must provide a
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 
-The current prepared catalog contains 15 visual entries: base and effect-layer
+The current prepared catalog contains 12 visual entries: base and effect-layer
 entries for solid, rounded, gradient and image rendering, plus the
 `solid.outer-shadow.shadow-only` and
 `rounded.outer-shadow.shadow-only` layer artifacts. It contains 12 text

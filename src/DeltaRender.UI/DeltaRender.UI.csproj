@@ -55,7 +55,7 @@
 
   <Target Name="CollectUiBundleFiles" Returns="@(TfmSpecificPackageFile)">
     <ItemGroup>
-      <_UiBundleAssembly Include="$(TargetDir)Delta.Graphics.Semantics.dll;$(TargetDir)DeltaShader.dll;$(TargetDir)DeltaRender.Text.dll;$(TargetDir)DeltaRender.XAML.dll;$(TargetDir)DeltaRender.UIShaders.dll" />
+      <_UiBundleAssembly Include="$(TargetDir)DeltaRender.Graphics.Semantics.dll;$(TargetDir)DeltaShader.dll;$(TargetDir)DeltaRender.Text.dll;$(TargetDir)DeltaRender.XAML.dll;$(TargetDir)DeltaRender.UIShaders.dll" />
       <TfmSpecificPackageFile Include="@(_UiBundleAssembly)">
         <PackagePath>lib/$(TargetFramework)/%(Filename)%(Extension)</PackagePath>
       </TfmSpecificPackageFile>

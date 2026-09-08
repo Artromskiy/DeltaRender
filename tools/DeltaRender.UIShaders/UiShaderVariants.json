@@ -56,31 +56,7 @@
       "primitive": "Rounded",
       "material": "FlatColor",
       "textRepresentation": "None",
-      "effects": "OuterShadow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Visual",
-      "primitive": "Rounded",
-      "material": "FlatColor",
-      "textRepresentation": "None",
       "effects": "InnerShadow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Visual",
-      "primitive": "Solid",
-      "material": "FlatColor",
-      "textRepresentation": "None",
-      "effects": "OuterShadow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Visual",
-      "primitive": "Rounded",
-      "material": "FlatColor",
-      "textRepresentation": "None",
-      "effects": "Stroke|OuterShadow",
       "quality": "Analytic"
     },
     {
@@ -263,28 +239,6 @@
         "primitive": "Rounded",
         "material": "FlatColor",
         "textRepresentation": "None",
-        "effects": "OuterShadow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/UiRectangleShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedOuterShadowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "OuterShadowRoundedRectangleVertex.vert.spv",
-      "fragmentSpirv": "OuterShadowRoundedRectangleFragment.frag.spv",
-      "generatedProgramType": "RoundedOuterShadowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackOuterShadowRoundedRectangleVertexInstancesElements",
-      "fragmentPacker": "PackOuterShadowRoundedRectangleVertexFrame",
-      "vertexEntryPoint": "rounded-outer-shadow",
-      "fragmentEntryPoint": "rounded-outer-shadow",
-      "layerSetIdentity": "visual.rounded.outer-shadow"
-    },
-    {
-      "key": {
-        "target": "Visual",
-        "primitive": "Rounded",
-        "material": "FlatColor",
-        "textRepresentation": "None",
         "effects": "InnerShadow",
         "quality": "Analytic"
       },
@@ -300,50 +254,6 @@
       "vertexEntryPoint": "rounded-inner-shadow",
       "fragmentEntryPoint": "rounded-inner-shadow",
       "layerSetIdentity": "visual.rounded.inner-shadow"
-    },
-    {
-      "key": {
-        "target": "Visual",
-        "primitive": "Solid",
-        "material": "FlatColor",
-        "textRepresentation": "None",
-        "effects": "OuterShadow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/UiRectangleShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidOuterShadowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SolidOuterShadowRectangleVertex.vert.spv",
-      "fragmentSpirv": "SolidOuterShadowRectangleFragment.frag.spv",
-      "generatedProgramType": "SolidOuterShadowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSolidOuterShadowRectangleVertexInstancesElements",
-      "fragmentPacker": "PackSolidOuterShadowRectangleVertexFrame",
-      "vertexEntryPoint": "solid-outer-shadow",
-      "fragmentEntryPoint": "solid-outer-shadow",
-      "layerSetIdentity": "visual.solid.outer-shadow"
-    },
-    {
-      "key": {
-        "target": "Visual",
-        "primitive": "Rounded",
-        "material": "FlatColor",
-        "textRepresentation": "None",
-        "effects": "Stroke|OuterShadow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/UiRectangleShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedStrokeOuterShadowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "RoundedStrokeOuterShadowVertex.vert.spv",
-      "fragmentSpirv": "RoundedStrokeOuterShadowFragment.frag.spv",
-      "generatedProgramType": "RoundedStrokeOuterShadowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackRoundedStrokeOuterShadowVertexInstancesElements",
-      "fragmentPacker": "PackRoundedStrokeOuterShadowVertexFrame",
-      "vertexEntryPoint": "rounded-stroke-outer-shadow",
-      "fragmentEntryPoint": "rounded-stroke-outer-shadow",
-      "layerSetIdentity": "visual.rounded.stroke.outer-shadow"
     },
     {
       "key": {
