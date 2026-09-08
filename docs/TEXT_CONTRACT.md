@@ -147,6 +147,22 @@ These are fixed producer artifacts, not runtime shader composition. A general
 ordered effect chain and cached-mask/backdrop-blur paths remain explicit
 follow-up work; backdrop blur is intentionally not part of the analytic path.
 
+## Prepared variant matrix
+
+The current `DeltaRender.Text` catalog has 12 exact identities:
+
+- SDF: standard, outline, glow, outer shadow and outline + outer shadow + glow;
+- MSDF: standard, outline, glow, outer shadow, outline + glow and outline +
+  outer shadow + glow.
+
+Each identity maps to its own generated graphics program and typed instance
+and parameter packers. `UiDisplayListResourceRegistry` accepts a text entry
+only when the `TextShaderVariant` mode/path and the immutable effect capability
+set match that identity. `TextShaderPacking` then selects the corresponding
+generated packer; it does not duplicate ShaderAbi layout or infer a different
+variant. Text `CachedMask` has no prepared entry and is intentionally rejected
+until a producer-owned text artifact and matching atlas contract exist.
+
 ## Deliberate exclusions
 
 This project does not own:

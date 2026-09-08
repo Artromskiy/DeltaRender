@@ -90,6 +90,29 @@ selected generated ABI and packer before it reaches graph submission. A future e
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 
+The current prepared catalog contains 12 visual identities:
+`visual.solid`, `visual.solid.stroke`, `visual.solid.glow`,
+`visual.solid.outer-shadow`, `visual.rounded`, `visual.rounded.glow`,
+`visual.rounded.outer-shadow`, `visual.rounded.inset-shadow`,
+`visual.rounded.outer-shadow.cached-mask`,
+`visual.rounded.stroke.outer-shadow`, `visual.rounded.stroke.glow` and
+`visual.rounded.stroke.outer-shadow.glow`.
+It contains 12 text identities:
+`text.sdf`, `text.msdf`, `text.sdf.outline`, `text.msdf.outline`,
+`text.sdf.glow`, `text.msdf.glow`, `text.sdf.outline.glow`,
+`text.msdf.outline.glow`, `text.sdf.outer-shadow`, `text.msdf.outer-shadow`,
+`text.sdf.outline.outer-shadow.glow` and
+`text.msdf.outline.outer-shadow.glow`.
+The catalog is metadata for exact lookup, not a request to compose effects at
+runtime. Text `CachedMask` is not in the prepared catalog and remains an
+explicit unsupported text path.
+
+For every prepared entry, the registry resolves one producer-owned program;
+the runtime validates its entry points and exact `VertexAbi`/`FragmentAbi`,
+then calls the generated instance/frame packers selected by that entry. Render
+does not probe files, reflect over payloads or recalculate offsets and
+strides. A missing identity, ABI or packer is rejected diagnostically.
+
 ## Resources
 
 - Create persistent buffers, textures and samplers through the session.
