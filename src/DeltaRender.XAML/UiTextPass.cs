@@ -25,7 +25,12 @@ internal sealed class UiTextPass(TextRenderFeature feature) : IRasterPass
         {
             _shaderProgram = pipeline.ShaderProgram;
             _description = new RasterPassDescription(
-                layer == TextRenderLayer.Shadow ? "DeltaRender.XAML.Text.Shadow" : "DeltaRender.XAML.Text.Base",
+                layer switch
+                {
+                    TextRenderLayer.Shadow => "DeltaRender.XAML.Text.Shadow",
+                    TextRenderLayer.Glow => "DeltaRender.XAML.Text.Glow",
+                    _ => "DeltaRender.XAML.Text.Base",
+                },
                 pipeline);
         }
 

@@ -56,6 +56,19 @@ public struct TextOuterGlowParameters
     }
 }
 
+public struct TextOuterGlowOnlyParameters
+{
+    public float2 Resolution = default;
+    public float DistanceRange = default;
+    public float4 OuterGlowColor = default;
+    public float OuterGlowRadius = default;
+    public float OuterGlowIntensity = default;
+
+    public TextOuterGlowOnlyParameters()
+    {
+    }
+}
+
 public struct TextEffectParameters
 {
     public float2 Resolution = default;
@@ -153,6 +166,24 @@ public readonly struct SdfTextOuterGlowFragmentContext
     public readonly TextOuterGlowParameters Parameters;
 }
 
+public readonly struct SdfTextOuterGlowOnlyVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextOuterGlowOnlyParameters Parameters;
+}
+
+public readonly struct SdfTextOuterGlowOnlyFragmentContext
+{
+    [Layout(0, 3)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextOuterGlowOnlyParameters Parameters;
+}
+
 public readonly struct MsdfTextOuterGlowVertexContext
 {
     [Layout(0, 0)]
@@ -169,6 +200,24 @@ public readonly struct MsdfTextOuterGlowFragmentContext
 
     [PushConstant]
     public readonly TextOuterGlowParameters Parameters;
+}
+
+public readonly struct MsdfTextOuterGlowOnlyVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextOuterGlowOnlyParameters Parameters;
+}
+
+public readonly struct MsdfTextOuterGlowOnlyFragmentContext
+{
+    [Layout(0, 4)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextOuterGlowOnlyParameters Parameters;
 }
 
 public struct TextOuterShadowParameters
@@ -261,6 +310,9 @@ public readonly struct MsdfTextEffectFragmentContext
 
 public static class TextShaders
 {
+    private static float4 Premultiply(float4 color) =>
+        new float4(color.xyz * color.w, color.w);
+
     [VertexShader("sdf-text")]
     public static TextVarying SdfTextVertex(in TextVertexContext context, in TextVarying input)
     {
@@ -336,8 +388,8 @@ public static class TextShaders
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
         var outerCoverage = maths.smoothstep(-strokeWidth - edge, -strokeWidth + edge, signedDistance);
         var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
-        return context.Parameters.TextColor * input.GlyphColor.Value * fillCoverage +
-            context.Parameters.StrokeColor * input.GlyphColor.Value * strokeContribution;
+        return Premultiply(context.Parameters.TextColor * input.GlyphColor.Value) * fillCoverage +
+            Premultiply(context.Parameters.StrokeColor * input.GlyphColor.Value) * strokeContribution;
     }
 
     [VertexShader("sdf-text-stroke")]
@@ -419,8 +471,8 @@ public static class TextShaders
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
         var outerCoverage = maths.smoothstep(-strokeWidth - edge, -strokeWidth + edge, signedDistance);
         var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
-        return context.Parameters.TextColor * input.GlyphColor.Value * fillCoverage +
-            context.Parameters.StrokeColor * input.GlyphColor.Value * strokeContribution;
+        return Premultiply(context.Parameters.TextColor * input.GlyphColor.Value) * fillCoverage +
+            Premultiply(context.Parameters.StrokeColor * input.GlyphColor.Value) * strokeContribution;
     }
 
     [VertexShader("msdf-text-stroke")]
@@ -505,8 +557,8 @@ public static class TextShaders
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
         var outerCoverage = maths.smoothstep(-strokeWidth - edge, -strokeWidth + edge, signedDistance);
         var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
-        return context.Parameters.TextColor * input.GlyphColor.Value * fillCoverage +
-            context.Parameters.StrokeColor * input.GlyphColor.Value * strokeContribution;
+        return Premultiply(context.Parameters.TextColor * input.GlyphColor.Value) * fillCoverage +
+            Premultiply(context.Parameters.StrokeColor * input.GlyphColor.Value) * strokeContribution;
     }
 
     [VertexShader("sdf-text-outer-glow")]
@@ -535,8 +587,37 @@ public static class TextShaders
         var outerGlowEnvelope = maths.smoothstep(-outerGlowRadius - edge, -edge, signedDistance);
         var outerGlowContribution = maths.max(outerGlowEnvelope - fillCoverage, 0f) * maths.max(context.Parameters.OuterGlowIntensity, 0f);
         var glyphColor = input.GlyphColor.Value;
-        return context.Parameters.OuterGlowColor * glyphColor * outerGlowContribution +
-            context.Parameters.TextColor * glyphColor * fillCoverage;
+        return Premultiply(context.Parameters.OuterGlowColor * glyphColor) * outerGlowContribution +
+            Premultiply(context.Parameters.TextColor * glyphColor) * fillCoverage;
+    }
+
+    [VertexShader("sdf-text-outer-glow-only")]
+    public static TextVarying SdfTextOuterGlowOnlyVertex(
+        in SdfTextOuterGlowOnlyVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateExpandedTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            maths.max(context.Parameters.OuterGlowRadius, 0f));
+    }
+
+    [FragmentShader("sdf-text-outer-glow-only")]
+    public static float4 SdfTextOuterGlowOnlyFragment(
+        in SdfTextOuterGlowOnlyFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
+        var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
+        var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
+        var outerGlowRadius = maths.max(context.Parameters.OuterGlowRadius, edge);
+        var outerGlowEnvelope = maths.smoothstep(-outerGlowRadius - edge, -edge, signedDistance);
+        var outerGlowContribution = maths.max(outerGlowEnvelope - fillCoverage, 0f) *
+            maths.max(context.Parameters.OuterGlowIntensity, 0f);
+        return Premultiply(context.Parameters.OuterGlowColor * input.GlyphColor.Value) * outerGlowContribution;
     }
 
     private static TextVarying CreateOffsetTextVarying(
@@ -604,6 +685,76 @@ public static class TextShaders
         };
     }
 
+    private static TextVarying CreateExpandedTextVarying(
+        GlyphInstance glyph,
+        uint vertexIndex,
+        float2 resolution,
+        float expansion)
+    {
+        var glyphSize = glyph.PixelMax - glyph.PixelMin;
+        glyphSize = new float2(maths.max(glyphSize.x, 1f), maths.max(glyphSize.y, 1f));
+        var uvMin = glyph.UvRect.xy;
+        var uvMax = glyph.UvRect.zw;
+        var uvPerPixel = (uvMax - uvMin) / glyphSize;
+        var min = glyph.PixelMin - new float2(expansion);
+        var max = glyph.PixelMax + new float2(expansion);
+        var expandedUvMin = uvMin - uvPerPixel * expansion;
+        var expandedUvMax = uvMax + uvPerPixel * expansion;
+
+        if (vertexIndex == 0u)
+        {
+            return new TextVarying
+            {
+                Position = new float4((min.x / resolution.x) * 2f - 1f, (min.y / resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = expandedUvMin,
+                GlyphColor = glyph.Color
+            };
+        }
+        else if (vertexIndex == 1u)
+        {
+            return new TextVarying
+            {
+                Position = new float4((max.x / resolution.x) * 2f - 1f, (min.y / resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(expandedUvMax.x, expandedUvMin.y),
+                GlyphColor = glyph.Color
+            };
+        }
+        else if (vertexIndex == 2u)
+        {
+            return new TextVarying
+            {
+                Position = new float4((min.x / resolution.x) * 2f - 1f, (max.y / resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(expandedUvMin.x, expandedUvMax.y),
+                GlyphColor = glyph.Color
+            };
+        }
+        else if (vertexIndex == 3u)
+        {
+            return new TextVarying
+            {
+                Position = new float4((min.x / resolution.x) * 2f - 1f, (max.y / resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(expandedUvMin.x, expandedUvMax.y),
+                GlyphColor = glyph.Color
+            };
+        }
+        else if (vertexIndex == 4u)
+        {
+            return new TextVarying
+            {
+                Position = new float4((max.x / resolution.x) * 2f - 1f, (min.y / resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(expandedUvMax.x, expandedUvMin.y),
+                GlyphColor = glyph.Color
+            };
+        }
+
+        return new TextVarying
+        {
+            Position = new float4((max.x / resolution.x) * 2f - 1f, (max.y / resolution.y) * 2f - 1f, 0f, 1f),
+            Uv = expandedUvMax,
+            GlyphColor = glyph.Color
+        };
+    }
+
     [VertexShader("sdf-text-outer-shadow")]
     public static TextVarying SdfTextOuterShadowVertex(
         in SdfTextOuterShadowVertexContext context,
@@ -632,7 +783,7 @@ public static class TextShaders
         var shadowOutside = maths.max(-signedDistance - shadowWidth, 0f);
         var shadowCoverage = 1f - maths.smoothstep(0f, shadowBlur + edge, shadowOutside);
         var shadowContribution = shadowCoverage * maths.max(context.Parameters.OuterShadowIntensity, 0f);
-        return context.Parameters.OuterShadowColor * input.GlyphColor.Value * shadowContribution;
+        return Premultiply(context.Parameters.OuterShadowColor * input.GlyphColor.Value) * shadowContribution;
     }
 
     [VertexShader("msdf-text-outer-shadow")]
@@ -666,7 +817,7 @@ public static class TextShaders
         var shadowOutside = maths.max(-signedDistance - shadowWidth, 0f);
         var shadowCoverage = 1f - maths.smoothstep(0f, shadowBlur + edge, shadowOutside);
         var shadowContribution = shadowCoverage * maths.max(context.Parameters.OuterShadowIntensity, 0f);
-        return context.Parameters.OuterShadowColor * input.GlyphColor.Value * shadowContribution;
+        return Premultiply(context.Parameters.OuterShadowColor * input.GlyphColor.Value) * shadowContribution;
     }
 
 
@@ -699,8 +850,40 @@ public static class TextShaders
         var outerGlowEnvelope = maths.smoothstep(-outerGlowRadius - edge, -edge, signedDistance);
         var outerGlowContribution = maths.max(outerGlowEnvelope - fillCoverage, 0f) * maths.max(context.Parameters.OuterGlowIntensity, 0f);
         var glyphColor = input.GlyphColor.Value;
-        return context.Parameters.OuterGlowColor * glyphColor * outerGlowContribution +
-            context.Parameters.TextColor * glyphColor * fillCoverage;
+        return Premultiply(context.Parameters.OuterGlowColor * glyphColor) * outerGlowContribution +
+            Premultiply(context.Parameters.TextColor * glyphColor) * fillCoverage;
+    }
+
+    [VertexShader("msdf-text-outer-glow-only")]
+    public static TextVarying MsdfTextOuterGlowOnlyVertex(
+        in MsdfTextOuterGlowOnlyVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateExpandedTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            maths.max(context.Parameters.OuterGlowRadius, 0f));
+    }
+
+    [FragmentShader("msdf-text-outer-glow-only")]
+    public static float4 MsdfTextOuterGlowOnlyFragment(
+        in MsdfTextOuterGlowOnlyFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        var median = maths.max(
+            maths.min(texel.x, texel.y),
+            maths.min(maths.max(texel.x, texel.y), texel.z));
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
+        var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
+        var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
+        var outerGlowRadius = maths.max(context.Parameters.OuterGlowRadius, edge);
+        var outerGlowEnvelope = maths.smoothstep(-outerGlowRadius - edge, -edge, signedDistance);
+        var outerGlowContribution = maths.max(outerGlowEnvelope - fillCoverage, 0f) *
+            maths.max(context.Parameters.OuterGlowIntensity, 0f);
+        return Premultiply(context.Parameters.OuterGlowColor * input.GlyphColor.Value) * outerGlowContribution;
     }
 
     [VertexShader("msdf-text")]
@@ -782,8 +965,8 @@ public static class TextShaders
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
         var outerCoverage = maths.smoothstep(-strokeWidth - edge, -strokeWidth + edge, signedDistance);
         var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
-        return context.Parameters.TextColor * input.GlyphColor.Value * fillCoverage +
-            context.Parameters.StrokeColor * input.GlyphColor.Value * strokeContribution;
+        return Premultiply(context.Parameters.TextColor * input.GlyphColor.Value) * fillCoverage +
+            Premultiply(context.Parameters.StrokeColor * input.GlyphColor.Value) * strokeContribution;
     }
 
     [VertexShader("sdf-text-stroke-outer-glow")]
@@ -812,9 +995,9 @@ public static class TextShaders
         var outerGlowContribution = maths.max(outerGlowEnvelope - outerCoverage, 0f) *
             maths.max(context.Parameters.OuterGlowIntensity, 0f);
         var glyphColor = input.GlyphColor.Value;
-        return context.Parameters.OuterGlowColor * glyphColor * outerGlowContribution +
-            context.Parameters.StrokeColor * glyphColor * strokeContribution +
-            context.Parameters.TextColor * glyphColor * fillCoverage;
+        return Premultiply(context.Parameters.OuterGlowColor * glyphColor) * outerGlowContribution +
+            Premultiply(context.Parameters.StrokeColor * glyphColor) * strokeContribution +
+            Premultiply(context.Parameters.TextColor * glyphColor) * fillCoverage;
     }
 
     [VertexShader("msdf-text-stroke-outer-glow")]
@@ -846,9 +1029,9 @@ public static class TextShaders
         var outerGlowContribution = maths.max(outerGlowEnvelope - outerCoverage, 0f) *
             maths.max(context.Parameters.OuterGlowIntensity, 0f);
         var glyphColor = input.GlyphColor.Value;
-        return context.Parameters.OuterGlowColor * glyphColor * outerGlowContribution +
-            context.Parameters.StrokeColor * glyphColor * strokeContribution +
-            context.Parameters.TextColor * glyphColor * fillCoverage;
+        return Premultiply(context.Parameters.OuterGlowColor * glyphColor) * outerGlowContribution +
+            Premultiply(context.Parameters.StrokeColor * glyphColor) * strokeContribution +
+            Premultiply(context.Parameters.TextColor * glyphColor) * fillCoverage;
     }
 
 }

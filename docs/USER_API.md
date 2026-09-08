@@ -65,6 +65,56 @@ The generated analytic rounded artifact accepts typed stroke, outer-shadow,
 inner-shadow and outer-glow layers through its producer-owned packer. The
 canonical `InnerGlow` capability is diagnosed until a matching generated
 artifact is registered.
+
+For a long visual outer shadow, register the generated shadow-only artifact
+next to the generated base artifact:
+
+```csharp
+registry.RegisterVisualEffectResourceLayers(
+    effectResource,
+    new UiVisualShaderVariant(
+        preparedShadowProgram,
+        UiVisualKind.RoundedRectangle,
+        UiVisualShaderPath.OuterShadowOnlyEffect),
+    new UiVisualShaderVariant(
+        preparedBaseProgram,
+        UiVisualKind.RoundedRectangle,
+        UiVisualShaderPath.Standard));
+```
+
+The adapter records the shadow and base as ordered raster layers. The
+shadow-only vertex artifact expands its raster quad by the typed offset,
+spread and blur extent, while its fragment artifact emits only shadow color;
+the base artifact then draws the original visual geometry. Both layers use
+the same renderer-owned instance buffer with separate packed ranges, so this
+path does not require a cached mask or a second UI tree. A `Stroke` plus
+`OuterShadow` resource uses `RoundedStrokeEffect` as its base variant. The
+effect outsets remain paint/damage bounds and never change layout size.
+
+Register an outer glow the same way when it must be an independent paint layer:
+
+```csharp
+registry.RegisterVisualEffectResourceGlowLayers(
+    effectResource,
+    new UiVisualShaderVariant(
+        preparedGlowProgram,
+        UiVisualKind.RoundedRectangle,
+        UiVisualShaderPath.OuterGlowOnlyEffect),
+    new UiVisualShaderVariant(
+        preparedBaseProgram,
+        UiVisualKind.RoundedRectangle,
+        UiVisualShaderPath.Standard));
+```
+
+The visual glow pass is recorded before the base pass and uses an expanded
+paint quad; the base pass keeps the original geometry. Text uses the equivalent
+`RegisterTextEffectResourceGlowLayers` registration with
+`TextShaderPath.OuterGlowOnly`. Its glyph quad is expanded by the typed glow
+radius, while shaping, font metrics, baseline and layout bounds stay unchanged.
+For an effect set containing stroke, shadow and glow, use the four-argument
+`RegisterTextEffectResourceLayers` overload to register shadow, glow-only and
+stroke-base variants in that order.
+
 A cached-mask visual uses the separate generated
 `CachedMaskRoundedRectangle` artifact. Register its session-owned texture,
 sampler and normalized UV rectangle first:
@@ -105,19 +155,19 @@ pipeline and instance layout. A future effect shape must provide a
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 
-The current prepared catalog contains 12 visual identities:
-`visual.solid`, `visual.solid.stroke`, `visual.solid.outer-glow`,
-`visual.solid.outer-shadow`, `visual.rounded`, `visual.rounded.outer-glow`,
-`visual.rounded.outer-shadow`, `visual.rounded.inner-shadow`,
-`visual.rounded.outer-shadow.cached-mask`,
-`visual.rounded.stroke.outer-shadow`, `visual.rounded.stroke.outer-glow` and
-`visual.rounded.stroke.outer-shadow.outer-glow`.
-It contains 12 text identities:
+The current prepared catalog contains 17 visual entries: 15 base/composite
+entries for solid, rounded, gradient and image rendering, plus the
+`solid.outer-shadow.shadow-only` and
+`rounded.outer-shadow.shadow-only` layer artifacts. It contains 12 text
+entries:
 `text.sdf`, `text.msdf`, `text.sdf.stroke`, `text.msdf.stroke`,
 `text.sdf.outer-glow`, `text.msdf.outer-glow`, `text.sdf.stroke.outer-glow`,
 `text.msdf.stroke.outer-glow`, `text.sdf.outer-shadow`, `text.msdf.outer-shadow`,
 `text.sdf.stroke.outer-shadow.outer-glow` and
 `text.msdf.stroke.outer-shadow.outer-glow`.
+The generated SDF/MSDF `OuterGlowOnly` programs are companion layer artifacts
+selected by layered registration; they do not create a runtime shader
+composition path or a second text representation.
 The catalog is metadata for exact lookup, not a request to compose effects at
 runtime. Text `CachedMask` is not in the prepared catalog and remains an
 explicit unsupported text path.

@@ -38,9 +38,7 @@
 
   <ItemGroup>
     <!-- These source-only adapters are bundled here so consumers do not reference samples or checkout-relative projects. -->
-    <ProjectReference Include="../DeltaRender.Text/DeltaRender.Text.csproj" PrivateAssets="all" />
     <ProjectReference Include="../DeltaRender.XAML/DeltaRender.XAML.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" PrivateAssets="all" />
   </ItemGroup>
   <PropertyGroup>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaXamlGeneratorFiles;CollectUiBundleFiles</TargetsForTfmSpecificContentInPackage>

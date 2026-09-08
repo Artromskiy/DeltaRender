@@ -46,6 +46,19 @@ public sealed class TextShaderDistanceConventionTests
     }
 
     [Fact]
+    public void GeneratedTextShadersPremultiplyEffectivePaintAndGlyphColor()
+    {
+        foreach (var fileName in FragmentShaders)
+        {
+            var source = File.ReadAllText(ShaderPath(fileName));
+            Assert.Contains("vec4 delta_helper_Premultiply(vec4 arg_color)", source, StringComparison.Ordinal);
+            Assert.Contains("arg_color.xyz * arg_color.w", source, StringComparison.Ordinal);
+            Assert.Contains("fragColor = delta_helper_Premultiply(", source, StringComparison.Ordinal);
+            Assert.DoesNotContain(" * GlyphColor * ", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void GeneratedTextShadowsTranslateGeometryAndSampleOriginalUv()
     {
         foreach (var fileName in ShadowVertexShaders)

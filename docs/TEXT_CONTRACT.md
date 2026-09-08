@@ -125,59 +125,71 @@ names or duplicate ShaderAbi declarations.
 
 ## Analytic text effects
 
-The producer also publishes deterministic graphics variants for analytic text
-effects without changing shaping, glyph metrics or atlas encoding:
+The producer publishes deterministic SDF/MSDF graphics variants for analytic
+text effects without changing shaping, glyph metrics or atlas encoding. The
+generated program remains the sole source of bindings, push-constant layout
+and typed packers. Every text fragment returns premultiplied RGBA, and every
+matching raster pipeline uses `PremultipliedAlpha` blending.
 
-- `sdf-text-stroke-outer-glow` uses the existing SDF alpha channel;
-- `msdf-text-stroke-outer-glow` uses the existing MSDF median-of-RGB distance;
-- both variants expose `TextEffectParameters` as one shared 144-byte push
-  constant root and retain the glyph storage buffer at set `0`, binding `0`;
-- `OuterGlowColor`, `OuterGlowRadius` and `OuterGlowIntensity` use the same distance-field
-  units as `DistanceRange` and `StrokeWidth`;
-- SDF/MSDF samples use `0.5 + signedDistance / (2 * DistanceRange)` and every
-  shader variant decodes with the matching `2 * DistanceRange` scale;
-- `OuterShadowColor`, `OuterShadowOffset`, `OuterShadowWidth`,
-  `OuterShadowBlurRadius`, `OuterShadowSpread` and `OuterShadowIntensity` are
-  packed in the same root; offset is converted to atlas UV using the generated
-  glyph pixel/UV-size interstage values;
-- shadow offsets follow the UI top-left convention: positive X moves the
-  shadow right and positive Y moves it down; the fragment samples the source
-  distance field at `uv - offset`;
-- analytic stroke, glow and shadow extents must fit the glyph image distance
-  range and atlas padding; larger effects require a glyph image prepared with
-  a sufficient range rather than extrapolation by the renderer;
-- fragment application order is outer shadow, outer glow, stroke, then fill;
-- the generated program exposes the corresponding typed root packers and
-  `VertexAbi`/`FragmentAbi`; consumers must use those generated members rather
-  than recreate the layout.
+Outer shadow and outer glow are ordered geometry layers, not shifted atlas
+samples:
+
+- the shadow vertex shader translates `GlyphInstance.PixelMin` and
+  `GlyphInstance.PixelMax` by `OuterShadowOffset` in device pixels;
+- the shadow fragment shader samples the original glyph UV and emits only
+  premultiplied shadow output;
+- the glow vertex shader expands the glyph paint quad by the typed glow radius;
+- the glow fragment shader samples the original glyph UV and emits only
+  premultiplied glow output;
+- positive X moves the layer right and positive Y moves it down under the
+  shared top-left UI convention;
+- the base layer then draws fill and stroke with the unmodified glyph geometry;
+- for one ordered text item, all shadow glyphs are recorded first, then all
+  glow glyphs, then the base glyphs. Adjacent decorated items are not merged
+  when that would change this `shadow -> glow -> base` ordering.
+
+The offset changes placement only. It does not increase SDF/MSDF distance
+range or atlas padding. Required analytic range is the maximum of stroke
+width, outer-glow radius and shadow width + spread + blur radius. SDF/MSDF
+samples encode `0.5 + signedDistance / (2 * DistanceRange)` and every variant
+decodes with the matching `2 * DistanceRange` scale.
 
 `TextRenderFeature` receives effect dimensions in device pixels and promotes
 its persistent SDF/MSDF atlas monotonically through `4`, `8`, `16` and `32`
 pixel distance-range tiers. DeltaText derives matching glyph-image padding and
 expanded plane bounds from the selected range, so the packed destination quad
-covers fill and analytic paint while each atlas cell remains isolated. A reach
-above the maximum automatic tier fails deterministically and requires a
-`CachedMask` effect or an explicitly configured larger base range.
+covers fill and local analytic paint while each atlas cell remains isolated.
+A large translation alone remains on the same tier. A blur/spread reach above
+the maximum automatic tier fails deterministically and requires a `CachedMask`
+effect or an explicitly configured larger base range.
 
-These are fixed producer artifacts, not runtime shader composition. A general
-ordered effect chain and cached-mask/backdrop-blur paths remain explicit
-follow-up work; backdrop blur is intentionally not part of the analytic path.
+These are fixed producer artifacts, not runtime shader composition. The
+`OuterGlowOnly` artifacts are companion programs for a separate glow pass;
+they do not change shaped text, metrics, baseline, layout bounds or atlas
+representation. A general ordered effect chain and cached-mask/backdrop-blur
+paths remain explicit follow-up work; backdrop blur is intentionally not part
+of the analytic path.
 
 ## Prepared variant matrix
 
-The current `DeltaRender.Text` catalog has 12 exact identities:
+The current producer catalog has 10 exact artifact identities:
 
-- SDF: standard, stroke, outer glow, outer shadow and stroke + outer shadow + outer glow;
-- MSDF: standard, stroke, outer glow, outer shadow, stroke + outer glow and stroke +
-  outer shadow + outer glow.
+- SDF: standard, stroke, outer glow, outer shadow and stroke + outer glow;
+- MSDF: standard, stroke, outer glow, outer shadow and stroke + outer glow.
 
-Each identity maps to its own generated graphics program and typed instance
-and parameter packers. `UiDisplayListResourceRegistry` accepts a text entry
-only when the `TextShaderVariant` mode/path and the immutable effect capability
-set match that identity. `TextShaderPacking` then selects the corresponding
-generated packer; it does not duplicate ShaderAbi layout or infer a different
-variant. Text `CachedMask` has no prepared entry and is intentionally rejected
-until a producer-owned text artifact and matching atlas contract exist.
+Each base/effect identity maps to its own generated graphics program and typed
+instance and parameter packers. The SDF and MSDF `OuterGlowOnly` companions
+use the same glyph-instance payload and are selected by layered registration.
+`UiDisplayListResourceRegistry` accepts a text entry only when the
+`TextShaderVariant` mode/path and the immutable effect capability set match
+that identity. `TextShaderPacking` then selects the corresponding generated
+packer; it does not duplicate ShaderAbi layout or infer a different variant.
+An `OuterShadow` or `OuterGlow` effect plan combines its prepared layer with
+the standard base layer. `Stroke | OuterShadow | OuterGlow` combines prepared
+outer-shadow and outer-glow layers with the prepared stroke base; there is no
+combined outer-shadow shader artifact. Text `CachedMask` has no prepared entry
+and is intentionally rejected until a producer-owned text artifact and
+matching atlas contract exist.
 
 ## Deliberate exclusions
 

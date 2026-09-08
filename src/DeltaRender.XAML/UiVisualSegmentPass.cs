@@ -3,6 +3,13 @@ using Delta.Shader.Contract;
 
 namespace Delta.Render.XAML;
 
+internal enum UiVisualRenderLayer : byte
+{
+    Base,
+    Shadow,
+    Glow,
+}
+
 internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRasterPass
 {
     private RasterPipelineDescription? _pipeline;
@@ -13,6 +20,7 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
     private int _firstOrderIndex;
     private int _visualCount;
     private ulong _instanceCount;
+    private UiVisualRenderLayer _layer;
 
     internal RasterPassDescription Description
         => _description ?? throw new InvalidOperationException("The visual segment description is not initialized.");
@@ -21,7 +29,8 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
         int firstOrderIndex,
         int visualCount,
         ulong instanceCount,
-        IGraphicsShaderProgram program)
+        IGraphicsShaderProgram program,
+        UiVisualRenderLayer layer)
     {
         ArgumentNullException.ThrowIfNull(program);
         if (!ReferenceEquals(_program, program))
@@ -39,7 +48,7 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
             _descriptionVisualCount != visualCount)
         {
             _description = new RasterPassDescription(
-                $"DeltaRender.XAML.VisualSegment[{firstOrderIndex}:{checked(firstOrderIndex + visualCount)})",
+                $"DeltaRender.XAML.VisualSegment.{layer}[{firstOrderIndex}:{checked(firstOrderIndex + visualCount)})",
                 _pipeline ?? throw new InvalidOperationException("The visual segment pipeline is not initialized."));
             _descriptionFirstOrderIndex = firstOrderIndex;
             _descriptionVisualCount = visualCount;
@@ -48,8 +57,9 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
         _firstOrderIndex = firstOrderIndex;
         _visualCount = visualCount;
         _instanceCount = instanceCount;
+        _layer = layer;
     }
 
     public void Record(IRasterCommandContext commands)
-        => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount, _instanceCount);
+        => owner.RecordVisualSegment(commands, _firstOrderIndex, _visualCount, _instanceCount, _layer);
 }

@@ -473,6 +473,71 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void TextOuterGlowRecordsGlowBeforeBase()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Glow".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80));
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Text,
+            UiEffectCapabilities.OuterGlow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                default,
+                default,
+                default,
+                new UiEffectLayer(new float4(0.2f, 0.4f, 1, 1), default, 0, 3, 0, 0.8f),
+                default,
+                default));
+        var registry = new UiDisplayListResourceRegistry();
+        registry.RegisterTextEffectResourceGlowLayers(
+            effectResource,
+            new TextShaderVariant(
+                SdfTextOuterGlowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.OuterGlowOnly),
+            new TextShaderVariant(
+                SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.Standard));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            registry: registry,
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with { EffectSet = effectSet },
+            UiClipId.None);
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Contains("DeltaRender.XAML.Text.Glow", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains("DeltaRender.XAML.Text.Base", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MissingTextEffectVariantIsRejectedDeterministically()
     {
         using var textService = new DeltaTextService();
@@ -1305,6 +1370,220 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(UiVisualShaderContract.CachedMaskTextureBinding, commands.TextureBindings[0].Binding);
         Assert.True(commands.TextureBindings[0].Texture.IsValid);
         Assert.Equal(maskSampler, commands.TextureBindings[0].Sampler);
+    }
+
+    [Fact]
+    public void VisualOuterShadowRecordsShadowBeforeBaseAndUsesSeparatePackedRanges()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.OuterShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                default,
+                new UiEffectLayer(
+                    new float4(0, 0, 0, 0.5f),
+                    new float2(100, 100),
+                    0,
+                    1.5f,
+                    0,
+                    1),
+                default,
+                default,
+                default,
+                default));
+        registry.RegisterVisualEffectResourceLayers(
+            effectResource,
+            new UiVisualShaderVariant(
+                RoundedOuterShadowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.RoundedRectangle,
+                UiVisualShaderPath.OuterShadowOnlyEffect),
+            new UiVisualShaderVariant(
+                RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.RoundedRectangle,
+                UiVisualShaderPath.Standard));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(800, 500),
+            registry: registry);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(100, 100, 600, 300),
+            UiVisualPaint.Solid(new float4(0.2f, 0.5f, 0.9f, 1)) with
+            {
+                CornerRadii = new float4(48, 20, 72, 12),
+                EffectSet = effectSet,
+            },
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[] { new UiDrawRef(UiDrawKind.Visual, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Contains(".Shadow[0:1)", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains(".Base[0:1)", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+        Assert.Equal(2, commands.DrawCount);
+        Assert.Equal(1u, commands.Draws[0].InstanceCount);
+        Assert.Equal(1u, commands.Draws[1].InstanceCount);
+        Assert.Equal(80UL, commands.BufferBindings[0].SizeInBytes);
+        Assert.Equal(48UL, commands.BufferBindings[1].SizeInBytes);
+        Assert.Equal(80UL, commands.BufferBindings[1].Offset);
+    }
+
+    [Fact]
+    public void SolidVisualOuterGlowRecordsGlowBeforeBase()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.OuterGlow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                default,
+                default,
+                default,
+                new UiEffectLayer(new float4(0.2f, 0.4f, 1, 1), default, 0, 3, 0, 0.8f),
+                default,
+                default));
+        registry.RegisterVisualEffectResourceGlowLayers(
+            effectResource,
+            new UiVisualShaderVariant(
+                SolidOuterGlowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.SolidRectangle,
+                UiVisualShaderPath.OuterGlowOnlyEffect),
+            new UiVisualShaderVariant(
+                SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.SolidRectangle,
+                UiVisualShaderPath.Standard));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            registry: registry);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 10, 20, 20),
+            UiVisualPaint.Solid(new float4(1, 1, 1, 1)) with { EffectSet = effectSet },
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            new[] { visual },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            new[] { new UiDrawRef(UiDrawKind.Visual, 0) })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Contains(".Glow[0:1)", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains(".Base[0:1)", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+        Assert.Equal(2, commands.DrawCount);
+        Assert.Equal(1u, commands.InstanceCounts[0]);
+        Assert.Equal(1u, commands.InstanceCounts[1]);
+    }
+
+    [Fact]
+    public void SolidVisualOuterShadowUsesSolidShadowLayerAndBaseLayer()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.OuterShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                default,
+                new UiEffectLayer(
+                    new float4(0, 0, 0, 0.5f),
+                    new float2(12, 18),
+                    0,
+                    8,
+                    4,
+                    1),
+                default,
+                default,
+                default,
+                default));
+        registry.RegisterVisualEffectResourceLayers(
+            effectResource,
+            new UiVisualShaderVariant(
+                SolidOuterShadowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.SolidRectangle,
+                UiVisualShaderPath.OuterShadowOnlyEffect),
+            new UiVisualShaderVariant(
+                SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.SolidRectangle,
+                UiVisualShaderPath.Standard));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(800, 500),
+            registry: registry);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(100, 100, 600, 300),
+            UiVisualPaint.Solid(new float4(0.2f, 0.5f, 0.9f, 1)) with { EffectSet = effectSet },
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[] { new UiDrawRef(UiDrawKind.Visual, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Contains(".Shadow[0:1)", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains(".Base[0:1)", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+        Assert.Equal(2, commands.DrawCount);
+        Assert.Equal(64UL, commands.BufferBindings[0].SizeInBytes);
+        Assert.Equal(32UL, commands.BufferBindings[1].SizeInBytes);
+        Assert.Equal(64UL, commands.BufferBindings[1].Offset);
     }
 
     [Fact]

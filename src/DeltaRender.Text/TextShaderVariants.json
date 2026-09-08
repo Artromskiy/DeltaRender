@@ -82,22 +82,6 @@
       "textRepresentation": "Msdf",
       "effects": "OuterShadow",
       "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "Stroke|OuterShadow|OuterGlow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Msdf",
-      "effects": "Stroke|OuterShadow|OuterGlow",
-      "quality": "Analytic"
     }
   ],
   "entries": [

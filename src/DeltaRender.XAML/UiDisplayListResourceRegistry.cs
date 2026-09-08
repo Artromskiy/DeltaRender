@@ -219,7 +219,146 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(variant));
         }
 
-        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, variant, NextVisualEffectRevision());
+        _visualEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            variant.Kind == UiVisualKind.SolidRectangle ? variant : null,
+            variant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border ? variant : null,
+            null,
+            null,
+            null,
+            null,
+            NextVisualEffectRevision());
+    }
+
+    /// <summary>
+    /// Associates one visual effect resource with a separate outer-shadow layer
+    /// and base layer. The two generated programs are recorded independently so
+    /// the shadow may use expanded geometry without changing the base payload.
+    /// </summary>
+    public void RegisterVisualEffectResourceLayers(
+        UiEffectResource effectResource,
+        UiVisualShaderVariant shadowVariant,
+        UiVisualShaderVariant baseVariant)
+        => RegisterVisualEffectResourceLayersCore(
+            effectResource,
+            shadowVariant,
+            baseVariant,
+            UiVisualShaderPath.OuterShadowOnlyEffect,
+            UiEffectCapabilities.OuterShadow,
+            "outer-shadow");
+
+    /// <summary>
+    /// Associates one visual effect resource with a separate outer-glow layer
+    /// and base layer. The glow uses expanded geometry and is recorded before
+    /// the base visual payload.
+    /// </summary>
+    public void RegisterVisualEffectResourceGlowLayers(
+        UiEffectResource effectResource,
+        UiVisualShaderVariant glowVariant,
+        UiVisualShaderVariant baseVariant)
+        => RegisterVisualEffectResourceLayersCore(
+            effectResource,
+            glowVariant,
+            baseVariant,
+            UiVisualShaderPath.OuterGlowOnlyEffect,
+            UiEffectCapabilities.OuterGlow,
+            "outer-glow");
+
+    private void RegisterVisualEffectResourceLayersCore(
+        UiEffectResource effectResource,
+        UiVisualShaderVariant layerVariant,
+        UiVisualShaderVariant baseVariant,
+        UiVisualShaderPath layerPath,
+        UiEffectCapabilities layerCapability,
+        string layerName)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Visual);
+        var capabilities = effectResource.Set.Capabilities;
+        var combinedCapabilities = UiEffectCapabilities.Stroke | layerCapability;
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            (capabilities != layerCapability && capabilities != combinedCapabilities))
+        {
+            throw new ArgumentException(
+                $"Layered visual effects require an Analytic {layerName} or Stroke+{layerName} effect set.",
+                nameof(effectResource));
+        }
+
+        if (!layerVariant.IsValid || layerVariant.Path != layerPath ||
+            !baseVariant.IsValid ||
+            baseVariant.Path is not (UiVisualShaderPath.Standard or UiVisualShaderPath.RoundedStrokeEffect) ||
+            !IsCompatibleVisualKind(layerVariant.Kind, baseVariant.Kind))
+        {
+            throw new ArgumentException(
+                $"Layered visual effects require a matching generated {layerPath} and base visual variant.",
+                nameof(layerVariant));
+        }
+
+        if (effectResource.Set.Capabilities == layerCapability &&
+            baseVariant.Path != UiVisualShaderPath.Standard)
+        {
+            throw new ArgumentException($"An {layerName}-only effect set requires the standard base visual artifact.",
+                nameof(baseVariant));
+        }
+
+        if (effectResource.Set.Capabilities == combinedCapabilities &&
+            baseVariant.Path != UiVisualShaderPath.RoundedStrokeEffect)
+        {
+            throw new ArgumentException($"A Stroke+{layerName} effect set requires the generated rounded-stroke base artifact.",
+                nameof(baseVariant));
+        }
+
+        var diagnostic = string.Empty;
+        if (!UiVisualShaderContract.TryDescribeInstance(
+                layerVariant.Program,
+                layerVariant.Kind,
+                layerVariant.Path,
+                out _,
+                out _,
+                out _,
+                out _,
+                out _,
+                out diagnostic))
+        {
+            throw new ArgumentException(
+                $"The visual {layerName} layer is not compatible with its generated UI artifact: {diagnostic}",
+                nameof(layerVariant));
+        }
+
+        if (!UiVisualShaderContract.TryDescribeInstance(
+                baseVariant.Program,
+                baseVariant.Kind,
+                baseVariant.Path,
+                out _,
+                out _,
+                out _,
+                out _,
+                out _,
+                out diagnostic))
+        {
+            throw new ArgumentException(
+                $"The visual base layer is not compatible with its generated UI artifact: {diagnostic}",
+                nameof(baseVariant));
+        }
+
+        var previous = _visualEffectSets.TryGetValue(effectResource.Set.Resource, out var registration) &&
+                       registration.EffectResource.Set == effectResource.Set
+            ? registration
+            : default;
+        _visualEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            baseVariant.Kind == UiVisualKind.SolidRectangle ? baseVariant : previous.SolidBaseVariant,
+            baseVariant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border ? baseVariant : previous.RoundedBaseVariant,
+            layerPath == UiVisualShaderPath.OuterShadowOnlyEffect && layerVariant.Kind == UiVisualKind.SolidRectangle
+                ? layerVariant : previous.SolidShadowVariant,
+            layerPath == UiVisualShaderPath.OuterShadowOnlyEffect &&
+                layerVariant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border
+                ? layerVariant : previous.RoundedShadowVariant,
+            layerPath == UiVisualShaderPath.OuterGlowOnlyEffect && layerVariant.Kind == UiVisualKind.SolidRectangle
+                ? layerVariant : previous.SolidGlowVariant,
+            layerPath == UiVisualShaderPath.OuterGlowOnlyEffect &&
+                layerVariant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border
+                ? layerVariant : previous.RoundedGlowVariant,
+            NextVisualEffectRevision());
     }
 
     /// <summary>
@@ -251,7 +390,15 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, registration.Variant, NextVisualEffectRevision());
+        _visualEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            registration.SolidBaseVariant,
+            registration.RoundedBaseVariant,
+            registration.SolidShadowVariant,
+            registration.RoundedShadowVariant,
+            registration.SolidGlowVariant,
+            registration.RoundedGlowVariant,
+            NextVisualEffectRevision());
     }
 
     /// <summary>
@@ -284,14 +431,14 @@ public sealed class UiDisplayListResourceRegistry
         };
         if (isBaseVariant)
         {
-            _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant, null);
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant, null, null);
             return;
         }
 
         if (variant.Path == TextShaderPath.OuterShadow &&
             capabilities == UiEffectCapabilities.OuterShadow)
         {
-            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, variant);
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, variant, null);
             return;
         }
 
@@ -323,7 +470,68 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant);
+        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant, null);
+    }
+
+    /// <summary>
+    /// Associates one immutable text effect resource with a separate
+    /// outer-glow layer and base shader variant.
+    /// </summary>
+    public void RegisterTextEffectResourceGlowLayers(
+        UiEffectResource effectResource,
+        TextShaderVariant glowVariant,
+        TextShaderVariant baseVariant)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
+        var capabilities = effectResource.Set.Capabilities;
+        var basePath = capabilities == UiEffectCapabilities.OuterGlow
+            ? TextShaderPath.Standard
+            : TextShaderPath.Stroke;
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            capabilities is not (UiEffectCapabilities.OuterGlow or
+                (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow)) ||
+            !glowVariant.IsValid || glowVariant.Path != TextShaderPath.OuterGlowOnly ||
+            !baseVariant.IsValid || baseVariant.Path != basePath ||
+            glowVariant.Mode != baseVariant.Mode)
+        {
+            throw new ArgumentException(
+                "Layered text glow requires a matching generated OuterGlowOnly and base variant.",
+                nameof(effectResource));
+        }
+
+        var previous = _textEffectSets.TryGetValue(effectResource.Set.Resource, out var registration) &&
+                       registration.EffectResource.Set == effectResource.Set
+            ? registration
+            : default;
+        _textEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            baseVariant,
+            previous.ShadowVariant,
+            glowVariant);
+    }
+
+    /// <summary>Associates separate shadow, glow and base variants for one text effect resource.</summary>
+    public void RegisterTextEffectResourceLayers(
+        UiEffectResource effectResource,
+        TextShaderVariant shadowVariant,
+        TextShaderVariant glowVariant,
+        TextShaderVariant baseVariant)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            effectResource.Set.Capabilities !=
+                (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow) ||
+            !shadowVariant.IsValid || shadowVariant.Path != TextShaderPath.OuterShadow ||
+            !glowVariant.IsValid || glowVariant.Path != TextShaderPath.OuterGlowOnly ||
+            !baseVariant.IsValid || baseVariant.Path != TextShaderPath.Stroke ||
+            shadowVariant.Mode != baseVariant.Mode || glowVariant.Mode != baseVariant.Mode)
+        {
+            throw new ArgumentException(
+                "Combined text effects require matching generated OuterShadow, OuterGlowOnly and Stroke variants.",
+                nameof(effectResource));
+        }
+
+        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant, glowVariant);
     }
 
     /// <summary>Removes one semantic visual type without releasing its shader program.</summary>
@@ -364,14 +572,61 @@ public sealed class UiDisplayListResourceRegistry
         out UiEffectResource effectResource)
     {
         if (_visualEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
-            registration.EffectResource.Set == effectSet)
+            registration.EffectResource.Set == effectSet &&
+            (registration.RoundedBaseVariant ?? registration.SolidBaseVariant) is { } resolved)
         {
-            variant = registration.Variant;
+            variant = resolved;
             effectResource = registration.EffectResource;
             return true;
         }
 
         variant = default;
+        effectResource = default;
+        return false;
+    }
+
+    internal bool TryResolveVisualEffectSet(
+        UiEffectSet effectSet,
+        UiVisualKind visualKind,
+        out UiVisualShaderVariant variant,
+        out UiEffectResource effectResource)
+    {
+        if (_visualEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
+            registration.EffectResource.Set == effectSet &&
+            SelectBaseVariant(registration, visualKind) is { } resolved)
+        {
+            variant = resolved;
+            effectResource = registration.EffectResource;
+            return true;
+        }
+
+        variant = default;
+        effectResource = default;
+        return false;
+    }
+
+    internal bool TryResolveVisualEffectLayers(
+        UiEffectSet effectSet,
+        UiVisualKind visualKind,
+        out UiVisualShaderVariant baseVariant,
+        out UiVisualShaderVariant? shadowVariant,
+        out UiVisualShaderVariant? glowVariant,
+        out UiEffectResource effectResource)
+    {
+        if (_visualEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
+            registration.EffectResource.Set == effectSet &&
+            SelectBaseVariant(registration, visualKind) is { } resolvedBase)
+        {
+            baseVariant = resolvedBase;
+            shadowVariant = SelectShadowVariant(registration, visualKind);
+            glowVariant = SelectGlowVariant(registration, visualKind);
+            effectResource = registration.EffectResource;
+            return true;
+        }
+
+        baseVariant = default;
+        shadowVariant = null;
+        glowVariant = null;
         effectResource = default;
         return false;
     }
@@ -397,7 +652,7 @@ public sealed class UiDisplayListResourceRegistry
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
             registration.EffectResource.Set == effectSet)
         {
-            variant = registration.ShadowVariant ?? registration.BaseVariant ?? default;
+            variant = registration.ShadowVariant ?? registration.GlowVariant ?? registration.BaseVariant ?? default;
             effectResource = registration.EffectResource;
             return true;
         }
@@ -413,17 +668,35 @@ public sealed class UiDisplayListResourceRegistry
         out TextShaderVariant? shadowVariant,
         out UiEffectResource effectResource)
     {
+        var resolved = TryResolveTextEffectPlan(
+            effectSet,
+            out baseVariant,
+            out shadowVariant,
+            out _,
+            out effectResource);
+        return resolved;
+    }
+
+    internal bool TryResolveTextEffectPlan(
+        UiEffectSet effectSet,
+        out TextShaderVariant? baseVariant,
+        out TextShaderVariant? shadowVariant,
+        out TextShaderVariant? glowVariant,
+        out UiEffectResource effectResource)
+    {
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
             registration.EffectResource.Set == effectSet)
         {
             baseVariant = registration.BaseVariant;
             shadowVariant = registration.ShadowVariant;
+            glowVariant = registration.GlowVariant;
             effectResource = registration.EffectResource;
             return true;
         }
 
         baseVariant = null;
         shadowVariant = null;
+        glowVariant = null;
         effectResource = default;
         return false;
     }
@@ -503,13 +776,19 @@ public sealed class UiDisplayListResourceRegistry
 
     private readonly record struct VisualEffectSetRegistration(
         UiEffectResource EffectResource,
-        UiVisualShaderVariant Variant,
+        UiVisualShaderVariant? SolidBaseVariant,
+        UiVisualShaderVariant? RoundedBaseVariant,
+        UiVisualShaderVariant? SolidShadowVariant,
+        UiVisualShaderVariant? RoundedShadowVariant,
+        UiVisualShaderVariant? SolidGlowVariant,
+        UiVisualShaderVariant? RoundedGlowVariant,
         ulong Revision);
 
     private readonly record struct TextEffectSetRegistration(
         UiEffectResource EffectResource,
         TextShaderVariant? BaseVariant,
-        TextShaderVariant? ShadowVariant);
+        TextShaderVariant? ShadowVariant,
+        TextShaderVariant? GlowVariant);
 
     private static void ValidateEffectResource(UiEffectResource effectResource, UiEffectTarget expectedTarget)
     {
@@ -518,6 +797,38 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException($"The typed effect resource must be valid and target {expectedTarget}.", nameof(effectResource));
         }
     }
+
+    private static bool IsCompatibleVisualKind(UiVisualKind left, UiVisualKind right)
+        => left == right ||
+            left is UiVisualKind.RoundedRectangle or UiVisualKind.Border &&
+            right is UiVisualKind.RoundedRectangle or UiVisualKind.Border;
+
+    private static UiVisualShaderVariant? SelectBaseVariant(
+        VisualEffectSetRegistration registration,
+        UiVisualKind visualKind)
+        => visualKind == UiVisualKind.SolidRectangle
+            ? registration.SolidBaseVariant
+            : visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border
+                ? registration.RoundedBaseVariant
+                : null;
+
+    private static UiVisualShaderVariant? SelectShadowVariant(
+        VisualEffectSetRegistration registration,
+        UiVisualKind visualKind)
+        => visualKind == UiVisualKind.SolidRectangle
+            ? registration.SolidShadowVariant
+            : visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border
+                ? registration.RoundedShadowVariant
+                : null;
+
+    private static UiVisualShaderVariant? SelectGlowVariant(
+        VisualEffectSetRegistration registration,
+        UiVisualKind visualKind)
+        => visualKind == UiVisualKind.SolidRectangle
+            ? registration.SolidGlowVariant
+            : visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border
+                ? registration.RoundedGlowVariant
+                : null;
 
     private ulong NextVisualEffectRevision()
     {

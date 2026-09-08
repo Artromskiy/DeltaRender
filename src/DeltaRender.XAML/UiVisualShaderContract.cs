@@ -15,9 +15,14 @@ internal enum UiRectangleShaderKind : byte
     SolidStroke,
     SolidOuterGlow,
     SolidOuterShadow,
+    SolidOuterShadowOnly,
+    SolidOuterGlowOnly,
     Rounded,
+    RoundedStroke,
     RoundedOuterGlow,
     RoundedOuterShadow,
+    RoundedOuterShadowOnly,
+    RoundedOuterGlowOnly,
     RoundedInnerShadow,
     RoundedStrokeOuterShadow,
     RoundedStrokeOuterGlow,
@@ -37,12 +42,22 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi SolidOuterGlowFragmentAbi = SolidOuterGlowGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi SolidOuterShadowVertexAbi = SolidOuterShadowGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi SolidOuterShadowFragmentAbi = SolidOuterShadowGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi SolidOuterShadowOnlyVertexAbi = SolidOuterShadowOnlyGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi SolidOuterShadowOnlyFragmentAbi = SolidOuterShadowOnlyGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi SolidOuterGlowOnlyVertexAbi = SolidOuterGlowOnlyGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi SolidOuterGlowOnlyFragmentAbi = SolidOuterGlowOnlyGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedVertexAbi = RoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedFragmentAbi = RoundedRectangleGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi RoundedStrokeVertexAbi = RoundedStrokeGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi RoundedStrokeFragmentAbi = RoundedStrokeGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedOuterGlowVertexAbi = RoundedOuterGlowGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedOuterGlowFragmentAbi = RoundedOuterGlowGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedOuterShadowVertexAbi = RoundedOuterShadowGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedOuterShadowFragmentAbi = RoundedOuterShadowGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi RoundedOuterShadowOnlyVertexAbi = RoundedOuterShadowOnlyGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi RoundedOuterShadowOnlyFragmentAbi = RoundedOuterShadowOnlyGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi RoundedOuterGlowOnlyVertexAbi = RoundedOuterGlowOnlyGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi RoundedOuterGlowOnlyFragmentAbi = RoundedOuterGlowOnlyGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedInnerShadowVertexAbi = RoundedInnerShadowGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedInnerShadowFragmentAbi = RoundedInnerShadowGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedStrokeOuterShadowVertexAbi = RoundedStrokeOuterShadowGraphicsShaderProgram.VertexAbi;
@@ -69,9 +84,14 @@ internal static class UiVisualShaderContract
         size = Maths.Max(size, SolidStrokeVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, SolidOuterGlowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, SolidOuterShadowVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SolidOuterShadowOnlyVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SolidOuterGlowOnlyVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, RoundedStrokeVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedOuterGlowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedOuterShadowVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, RoundedOuterShadowOnlyVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, RoundedOuterGlowOnlyVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedInnerShadowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedStrokeOuterShadowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedStrokeOuterGlowVertexAbi.PushConstants[0].Size);
@@ -162,6 +182,58 @@ internal static class UiVisualShaderContract
                     expectedFragment = SolidOuterShadowFragmentAbi;
                 }
             }
+        }
+        else if (path == UiVisualShaderPath.OuterShadowOnlyEffect)
+        {
+            if (visualKind == UiVisualKind.SolidRectangle)
+            {
+                shaderKind = UiRectangleShaderKind.SolidOuterShadowOnly;
+                expectedVertex = SolidOuterShadowOnlyVertexAbi;
+                expectedFragment = SolidOuterShadowOnlyFragmentAbi;
+            }
+            else if (visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border)
+            {
+                shaderKind = UiRectangleShaderKind.RoundedOuterShadowOnly;
+                expectedVertex = RoundedOuterShadowOnlyVertexAbi;
+                expectedFragment = RoundedOuterShadowOnlyFragmentAbi;
+            }
+            else
+            {
+                diagnostic = $"Visual kind {visualKind} cannot use the selected outer-shadow-only UI artifact.";
+                return false;
+            }
+        }
+        else if (path == UiVisualShaderPath.OuterGlowOnlyEffect)
+        {
+            if (visualKind == UiVisualKind.SolidRectangle)
+            {
+                shaderKind = UiRectangleShaderKind.SolidOuterGlowOnly;
+                expectedVertex = SolidOuterGlowOnlyVertexAbi;
+                expectedFragment = SolidOuterGlowOnlyFragmentAbi;
+            }
+            else if (visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border)
+            {
+                shaderKind = UiRectangleShaderKind.RoundedOuterGlowOnly;
+                expectedVertex = RoundedOuterGlowOnlyVertexAbi;
+                expectedFragment = RoundedOuterGlowOnlyFragmentAbi;
+            }
+            else
+            {
+                diagnostic = $"Visual kind {visualKind} cannot use the selected outer-glow-only UI artifact.";
+                return false;
+            }
+        }
+        else if (path == UiVisualShaderPath.RoundedStrokeEffect)
+        {
+            if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
+            {
+                diagnostic = $"Visual kind {visualKind} cannot use the selected rounded-stroke UI artifact.";
+                return false;
+            }
+
+            shaderKind = UiRectangleShaderKind.RoundedStroke;
+            expectedVertex = RoundedStrokeVertexAbi;
+            expectedFragment = RoundedStrokeFragmentAbi;
         }
         else if (path is UiVisualShaderPath.SolidLinearGradient or UiVisualShaderPath.SolidImage)
         {
@@ -270,9 +342,14 @@ internal static class UiVisualShaderContract
                 UiRectangleShaderKind.SolidStroke => "solid-stroke",
                 UiRectangleShaderKind.SolidOuterGlow => "solid-outer-glow",
                 UiRectangleShaderKind.SolidOuterShadow => "solid-outer-shadow",
+                UiRectangleShaderKind.SolidOuterShadowOnly => "solid-outer-shadow-only",
+                UiRectangleShaderKind.SolidOuterGlowOnly => "solid-outer-glow-only",
                 UiRectangleShaderKind.Rounded => "rounded",
+                UiRectangleShaderKind.RoundedStroke => "rounded-stroke",
                 UiRectangleShaderKind.RoundedOuterGlow => "rounded-outer-glow",
                 UiRectangleShaderKind.RoundedOuterShadow => "rounded-outer-shadow",
+                UiRectangleShaderKind.RoundedOuterShadowOnly => "rounded-outer-shadow-only",
+                UiRectangleShaderKind.RoundedOuterGlowOnly => "rounded-outer-glow-only",
                 UiRectangleShaderKind.RoundedInnerShadow => "rounded-inner-shadow",
                 UiRectangleShaderKind.RoundedStrokeOuterShadow => "rounded-stroke-outer-shadow",
                 UiRectangleShaderKind.RoundedStrokeOuterGlow => "rounded-stroke-outer-glow",
@@ -469,6 +546,60 @@ internal static class UiVisualShaderContract
                     visual.Paint.FillColor,
                     visual.Paint.CornerRadii,
                     ToShaderEffectLayer(shadow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
+        if (shaderKind == UiRectangleShaderKind.SolidOuterShadowOnly)
+        {
+            var shadow = effectResource.Parameters.OuterShadow;
+            return SolidOuterShadowOnlyGraphicsShaderProgram.PackSolidOuterShadowOnlyRectangleVertexInstancesElement(
+                new SolidOuterShadowOnlyRectangleParameters(
+                    visual.Bounds,
+                    ToShaderEffectLayer(shadow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
+        if (shaderKind == UiRectangleShaderKind.SolidOuterGlowOnly)
+        {
+            var glow = effectResource.Parameters.OuterGlow;
+            return SolidOuterGlowOnlyGraphicsShaderProgram.PackSolidOuterGlowOnlyRectangleVertexInstancesElement(
+                new SolidOuterGlowOnlyRectangleParameters(
+                    visual.Bounds,
+                    ToShaderEffectLayer(glow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
+        if (shaderKind == UiRectangleShaderKind.RoundedOuterShadowOnly)
+        {
+            var shadow = effectResource.Parameters.OuterShadow;
+            return RoundedOuterShadowOnlyGraphicsShaderProgram.PackRoundedOuterShadowOnlyRectangleVertexInstancesElement(
+                new RoundedOuterShadowOnlyRectangleParameters(
+                    visual.Bounds,
+                    visual.Paint.CornerRadii,
+                    ToShaderEffectLayer(shadow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
+        if (shaderKind == UiRectangleShaderKind.RoundedOuterGlowOnly)
+        {
+            var glow = effectResource.Parameters.OuterGlow;
+            return RoundedOuterGlowOnlyGraphicsShaderProgram.PackRoundedOuterGlowOnlyRectangleVertexInstancesElement(
+                new RoundedOuterGlowOnlyRectangleParameters(
+                    visual.Bounds,
+                    visual.Paint.CornerRadii,
+                    ToShaderEffectLayer(glow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
+        if (shaderKind == UiRectangleShaderKind.RoundedStroke)
+        {
+            var stroke = effectResource.Parameters.Stroke;
+            return RoundedStrokeGraphicsShaderProgram.PackRoundedStrokeRectangleVertexInstancesElement(
+                new RoundedStrokeRectangleParameters(
+                    visual.Bounds,
+                    visual.Paint.FillColor,
+                    visual.Paint.CornerRadii,
+                    ToShaderEffectLayer(stroke, effectResource.Parameters.Units, dpiScale)),
                 destination);
         }
 
@@ -701,9 +832,14 @@ internal static class UiVisualShaderContract
             UiRectangleShaderKind.SolidStroke => SolidStrokeGraphicsShaderProgram.PackSolidStrokeRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.SolidOuterGlow => SolidOuterGlowGraphicsShaderProgram.PackSolidOuterGlowRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.SolidOuterShadow => SolidOuterShadowGraphicsShaderProgram.PackSolidOuterShadowRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.SolidOuterShadowOnly => SolidOuterShadowOnlyGraphicsShaderProgram.PackSolidOuterShadowOnlyRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.SolidOuterGlowOnly => SolidOuterGlowOnlyGraphicsShaderProgram.PackSolidOuterGlowOnlyRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedStroke => RoundedStrokeGraphicsShaderProgram.PackRoundedStrokeRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedOuterGlow => RoundedOuterGlowGraphicsShaderProgram.PackOuterGlowRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedOuterShadow => RoundedOuterShadowGraphicsShaderProgram.PackOuterShadowRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedOuterShadowOnly => RoundedOuterShadowOnlyGraphicsShaderProgram.PackRoundedOuterShadowOnlyRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedOuterGlowOnly => RoundedOuterGlowOnlyGraphicsShaderProgram.PackRoundedOuterGlowOnlyRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedInnerShadow => RoundedInnerShadowGraphicsShaderProgram.PackInnerShadowRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedStrokeOuterShadow => RoundedStrokeOuterShadowGraphicsShaderProgram.PackRoundedStrokeOuterShadowVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedStrokeOuterGlow => RoundedStrokeOuterGlowGraphicsShaderProgram.PackRoundedStrokeOuterGlowVertexFrame(in frame, destination),

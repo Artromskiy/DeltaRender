@@ -25,5 +25,20 @@ The analytic rounded-rectangle source also publishes `InnerShadow` in the
 typed `UiEffectParameters` payload. Its fragment order is outer shadow, outer
 glow, fill, inner shadow, then stroke; the generated instance packer remains the
 single ABI authority. Cached-mask and backdrop-blur effects are intentionally
-not represented by this analytic artifact because they require a separate
-texture/readback path.
+ not represented by this analytic artifact because they require a separate
+ texture/readback path.
+
+The `ShadowOnly` quality tier publishes standalone solid and rounded
+outer-shadow pairs. Their vertex stage expands the raster quad by the offset
+and spread/blur extent while retaining UVs in the original rectangle space;
+their fragment stage outputs only premultiplied shadow. Use a separate base
+pass, selected from `solid-rectangle`, `solid-stroke`, `rounded-rectangle`, or
+`rounded-stroke`. The older analytic outer-shadow pairs remain combined for
+compatibility. Shadow-only instance records omit `FillColor`, use set `0`,
+binding `0`, and keep frame push constants in `UiFrameConstants`.
+
+The analytic source also publishes standalone `OuterGlowOnly` solid and
+rounded pairs. Their vertex stage expands the raster quad by the typed glow
+radius and their fragment stage emits only premultiplied glow. They are used
+as a separate pass before the ordinary base artifact; runtime does not compose
+shader source or inspect files.

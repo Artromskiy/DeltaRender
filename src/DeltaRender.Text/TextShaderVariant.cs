@@ -10,6 +10,7 @@ public enum TextShaderPath : byte
     Standard,
     Stroke,
     OuterGlow,
+    OuterGlowOnly,
     OuterShadow,
     StrokeOuterGlow,
 }
@@ -56,5 +57,5 @@ public readonly record struct TextShaderVariant(
     public bool IsValid => Program is not null &&
         Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
         Path is TextShaderPath.Standard or TextShaderPath.Stroke or TextShaderPath.OuterGlow or
-            TextShaderPath.OuterShadow or TextShaderPath.StrokeOuterGlow;
+            TextShaderPath.OuterGlowOnly or TextShaderPath.OuterShadow or TextShaderPath.StrokeOuterGlow;
 }

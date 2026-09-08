@@ -37,6 +37,8 @@ public sealed class TextRenderFeatureTests
 
         Assert.True(feature.TryResolveTextVariant(variant, out var pipeline));
         Assert.Same(program, pipeline.ShaderProgram);
+        Assert.Equal(RenderBlendMode.PremultipliedAlpha, feature.CompositePipeline.BlendMode);
+        Assert.Equal(RenderBlendMode.PremultipliedAlpha, pipeline.BlendMode);
     }
 
     [Fact]

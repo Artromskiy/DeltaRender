@@ -8,6 +8,7 @@ internal enum TextRenderLayer : byte
 {
     Base,
     Shadow,
+    Glow,
 }
 
 internal readonly record struct PendingRun(
@@ -19,6 +20,7 @@ internal readonly record struct PendingRun(
     bool MergeWithPrevious,
     TextShaderVariant? BaseShaderVariant,
     TextShaderVariant? ShadowShaderVariant,
+    TextShaderVariant? GlowShaderVariant,
     TextEffectValues EffectValues,
     TextRunCacheKey CacheKey,
     uint Version);
@@ -43,6 +45,7 @@ internal sealed class CachedRun
     internal bool MergeWithPrevious;
     internal TextShaderVariant? BaseShaderVariant;
     internal TextShaderVariant? ShadowShaderVariant;
+    internal TextShaderVariant? GlowShaderVariant;
     internal TextEffectValues EffectValues;
     internal ulong AtlasEpoch;
 }

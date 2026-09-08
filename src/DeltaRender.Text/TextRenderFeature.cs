@@ -147,7 +147,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             shaderProgram,
             topology: PrimitiveTopology.TriangleList,
             cullMode: RasterCullMode.None,
-            blendMode: RenderBlendMode.Alpha);
+            blendMode: RenderBlendMode.PremultipliedAlpha);
         RenderBufferHandle instanceBuffer = default;
         RenderSamplerHandle sampler = default;
         try
@@ -217,17 +217,21 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             variant.Program,
             topology: PrimitiveTopology.TriangleList,
             cullMode: RasterCullMode.None,
-            blendMode: RenderBlendMode.Alpha);
+            blendMode: RenderBlendMode.PremultipliedAlpha);
         return true;
     }
 
     internal bool AreRunVariantsCompatible(int firstRun, int secondRun)
         => _pendingRuns.RefAt(firstRun).BaseShaderVariant == _pendingRuns.RefAt(secondRun).BaseShaderVariant &&
            _pendingRuns.RefAt(firstRun).ShadowShaderVariant == _pendingRuns.RefAt(secondRun).ShadowShaderVariant &&
+           _pendingRuns.RefAt(firstRun).GlowShaderVariant == _pendingRuns.RefAt(secondRun).GlowShaderVariant &&
            _pendingRuns.RefAt(firstRun).EffectValues == _pendingRuns.RefAt(secondRun).EffectValues;
 
     internal bool HasShadowLayer(int runIndex)
         => _pendingRuns.RefAt(runIndex).ShadowShaderVariant.HasValue;
+
+    internal bool HasGlowLayer(int runIndex)
+        => _pendingRuns.RefAt(runIndex).GlowShaderVariant.HasValue;
 
     internal bool TryGetCompositePipeline(
         int firstRun,
@@ -266,7 +270,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         uint producerRunVersion = 0,
         TextShaderVariant? baseShaderVariant = null,
         TextEffectValues effectValues = default,
-        TextShaderVariant? shadowShaderVariant = null)
+        TextShaderVariant? shadowShaderVariant = null,
+        TextShaderVariant? glowShaderVariant = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -286,17 +291,29 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             baseShaderVariant = null;
         }
 
+        if (baseShaderVariant is { Path: TextShaderPath.OuterGlowOnly } && glowShaderVariant is null)
+        {
+            glowShaderVariant = baseShaderVariant;
+            baseShaderVariant = null;
+        }
+
         if (!effectValues.IsValid ||
             (baseShaderVariant is null && shadowShaderVariant is null && effectValues != TextEffectValues.Empty) ||
-            (baseShaderVariant is { Path: TextShaderPath.Standard } && effectValues != TextEffectValues.Empty) ||
-            shadowShaderVariant is { Path: not TextShaderPath.OuterShadow })
+            (baseShaderVariant is { Path: TextShaderPath.Standard } &&
+             effectValues != TextEffectValues.Empty &&
+             shadowShaderVariant is null && glowShaderVariant is null) ||
+            shadowShaderVariant is { Path: not TextShaderPath.OuterShadow } ||
+            glowShaderVariant is { Path: not TextShaderPath.OuterGlowOnly })
         {
-            throw new ArgumentException("Text effects require separate compatible base and outer-shadow generated shader variants.", nameof(effectValues));
+            throw new ArgumentException("Text effects require separate compatible base, outer-shadow and outer-glow generated shader variants.", nameof(effectValues));
         }
 
         mergeWithPrevious = mergeWithPrevious &&
             !shadowShaderVariant.HasValue &&
-            (_pendingRunCount == 0 || !_pendingRuns.RefAt(_pendingRunCount - 1).ShadowShaderVariant.HasValue);
+            !glowShaderVariant.HasValue &&
+            (_pendingRunCount == 0 ||
+             (!_pendingRuns.RefAt(_pendingRunCount - 1).ShadowShaderVariant.HasValue &&
+              !_pendingRuns.RefAt(_pendingRunCount - 1).GlowShaderVariant.HasValue));
 
         EnsureArrayCapacity(ref _pendingRuns, _pendingRunCount + 1);
         _pendingRuns.RefAt(_pendingRunCount) = new PendingRun(
@@ -308,6 +325,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             mergeWithPrevious,
             baseShaderVariant,
             shadowShaderVariant,
+            glowShaderVariant,
             effectValues,
             new TextRunCacheKey(producerRunId, producerRunGeneration),
             producerRunVersion);
@@ -354,6 +372,15 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             if (HasShadowLayer(runIndex))
             {
                 AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.Shadow);
+            }
+
+            if (HasGlowLayer(runIndex))
+            {
+                AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.Glow);
+            }
+
+            if (HasShadowLayer(runIndex) || HasGlowLayer(runIndex))
+            {
                 AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.Base);
                 runIndex++;
                 continue;
@@ -362,6 +389,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             var runCount = 1;
             while (runIndex + runCount < _pendingRunCount &&
                    !HasShadowLayer(runIndex + runCount) &&
+                   !HasGlowLayer(runIndex + runCount) &&
                    AreRunVariantsCompatible(runIndex, runIndex + runCount))
             {
                 runCount++;
@@ -871,6 +899,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
             cachedRun.BaseShaderVariant != pending.BaseShaderVariant ||
             cachedRun.ShadowShaderVariant != pending.ShadowShaderVariant ||
+            cachedRun.GlowShaderVariant != pending.GlowShaderVariant ||
             cachedRun.EffectValues != pending.EffectValues ||
             cachedRun.AtlasEpoch != _atlas.Epoch)
         {
@@ -922,6 +951,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
         cachedRun.BaseShaderVariant = pending.BaseShaderVariant;
         cachedRun.ShadowShaderVariant = pending.ShadowShaderVariant;
+        cachedRun.GlowShaderVariant = pending.GlowShaderVariant;
         cachedRun.EffectValues = pending.EffectValues;
         cachedRun.AtlasEpoch = _atlas.Epoch;
     }
@@ -1039,7 +1069,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     }
 
     private static TextShaderVariant? GetLayerVariant(in PendingRun run, TextRenderLayer layer)
-        => layer == TextRenderLayer.Shadow ? run.ShadowShaderVariant : run.BaseShaderVariant;
+        => layer switch
+        {
+            TextRenderLayer.Shadow => run.ShadowShaderVariant,
+            TextRenderLayer.Glow => run.GlowShaderVariant,
+            _ => run.BaseShaderVariant,
+        };
 
     private sealed class TextDrawPass(TextRenderFeature owner) : IRasterPass
     {
@@ -1062,7 +1097,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 _shaderProgram = pipeline.ShaderProgram;
                 _description = new RasterPassDescription(
-                    layer == TextRenderLayer.Shadow ? "DeltaRender.Text.Shadow" : "DeltaRender.Text.Base",
+                    layer switch
+                    {
+                        TextRenderLayer.Shadow => "DeltaRender.Text.Shadow",
+                        TextRenderLayer.Glow => "DeltaRender.Text.Glow",
+                        _ => "DeltaRender.Text.Base",
+                    },
                     pipeline);
             }
 

@@ -55,6 +55,28 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private UiRectangleShaderKind[] _visualShaderKinds = [];
     private UiVisualShaderPath[] _visualShaderPaths = [];
     private UiEffectResource[] _visualEffectResources = [];
+    private IGraphicsShaderProgram?[] _visualShadowPrograms = [];
+    private uint[] _visualShadowPushConstantSizes = [];
+    private uint[] _visualShadowInstanceStrides = [];
+    private ShaderBinding[] _visualShadowInstanceBindings = [];
+    private UiRectangleShaderKind[] _visualShadowShaderKinds = [];
+    private UiVisualShaderPath[] _visualShadowShaderPaths = [];
+    private UiEffectResource[] _visualShadowEffectResources = [];
+    private int[] _visualShadowInstanceCounts = [];
+    private int[] _visualShadowInstanceOffsets = [];
+    private uint[] _visualShadowFramePushConstantOffsets = [];
+    private bool[] _visualHasShadow = [];
+    private IGraphicsShaderProgram?[] _visualGlowPrograms = [];
+    private uint[] _visualGlowPushConstantSizes = [];
+    private uint[] _visualGlowInstanceStrides = [];
+    private ShaderBinding[] _visualGlowInstanceBindings = [];
+    private UiRectangleShaderKind[] _visualGlowShaderKinds = [];
+    private UiVisualShaderPath[] _visualGlowShaderPaths = [];
+    private UiEffectResource[] _visualGlowEffectResources = [];
+    private int[] _visualGlowInstanceCounts = [];
+    private int[] _visualGlowInstanceOffsets = [];
+    private uint[] _visualGlowFramePushConstantOffsets = [];
+    private bool[] _visualHasGlow = [];
     private int[] _visualInstanceCounts = [];
     private uint[] _visualFramePushConstantOffsets = [];
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
@@ -269,6 +291,28 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualShaderKinds, displayList.Order.Length);
         EnsureCapacity(ref _visualShaderPaths, displayList.Order.Length);
         EnsureCapacity(ref _visualEffectResources, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowPrograms, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowPushConstantSizes, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowInstanceStrides, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowInstanceBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowShaderKinds, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowShaderPaths, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowEffectResources, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowInstanceCounts, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowInstanceOffsets, displayList.Order.Length);
+        EnsureCapacity(ref _visualShadowFramePushConstantOffsets, displayList.Order.Length);
+        EnsureCapacity(ref _visualHasShadow, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowPrograms, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowPushConstantSizes, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowInstanceStrides, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowInstanceBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowShaderKinds, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowShaderPaths, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowEffectResources, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowInstanceCounts, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowInstanceOffsets, displayList.Order.Length);
+        EnsureCapacity(ref _visualGlowFramePushConstantOffsets, displayList.Order.Length);
+        EnsureCapacity(ref _visualHasGlow, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceCounts, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceOffsets, displayList.Order.Length);
         EnsureCapacity(ref _visualFramePushConstantOffsets, displayList.Order.Length);
@@ -429,6 +473,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     var text = _texts.RefAt(draw.Index);
                     TextShaderVariant? baseShaderVariant = null;
                     TextShaderVariant? shadowShaderVariant = null;
+                    TextShaderVariant? glowShaderVariant = null;
                     var effectValues = TextEffectValues.Empty;
                     if (text.Paint.EffectSet.IsValid)
                     {
@@ -436,9 +481,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                                 text.Paint.EffectSet,
                                 out baseShaderVariant,
                                 out shadowShaderVariant,
+                                out glowShaderVariant,
                                 out var effectResource) ||
                             baseShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(baseShaderVariant.Value, out _) ||
-                            shadowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(shadowShaderVariant.Value, out _))
+                            shadowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(shadowShaderVariant.Value, out _) ||
+                            glowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(glowShaderVariant.Value, out _))
                         {
                             AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
                             previousTextCanMerge = false;
@@ -457,16 +504,17 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         origin.y,
                         new Vector4(color.x, color.y, color.z, color.w),
                         _coordinates.ToPhysical(_commandClips.RefAt(index)),
-                        mergeWithPrevious: previousTextCanMerge && !shadowShaderVariant.HasValue,
+                        mergeWithPrevious: previousTextCanMerge && !shadowShaderVariant.HasValue && !glowShaderVariant.HasValue,
                         baseShaderVariant: baseShaderVariant,
                         effectValues: effectValues,
                         shadowShaderVariant: shadowShaderVariant,
+                        glowShaderVariant: glowShaderVariant,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
                         producerRunVersion: identity.Version);
 
                     textRunCount++;
-                    previousTextCanMerge = !shadowShaderVariant.HasValue;
+                    previousTextCanMerge = !shadowShaderVariant.HasValue && !glowShaderVariant.HasValue;
                 }
 
                 textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph, registerUploadPass: false);
@@ -540,7 +588,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 var end = index + 1;
                 var lastRun = firstRun;
                 var hasShadowLayer = _textFeature.HasShadowLayer(firstRun);
-                while (!hasShadowLayer && end < _orderCount &&
+                var hasGlowLayer = _textFeature.HasGlowLayer(firstRun);
+                while (!hasShadowLayer && !hasGlowLayer && end < _orderCount &&
                        _order.RefAt(end).Kind == UiDrawKind.Text &&
                        !_commandClips.RefAt(end).IsEmpty &&
                        _textRunIndices.RefAt(end) == lastRun + 1 &&
@@ -552,6 +601,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 }
 
                 if (hasShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Shadow) ||
+                    hasGlowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Glow) ||
                     !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base))
                 {
                     AddDiagnostic($"Text at Order[{index}] has no compatible prepared shader variant.");
@@ -574,26 +624,79 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
+            if (_visualHasShadow.RefAt(index))
+            {
+                var shadowProgram = _visualShadowPrograms.RefAt(index);
+                if (shadowProgram is null || !AddVisualPass(
+                        graph,
+                        target,
+                        index,
+                        1,
+                        checked((ulong)_visualShadowInstanceCounts.RefAt(index)),
+                        shadowProgram,
+                        UiVisualRenderLayer.Shadow))
+                {
+                    AddDiagnostic($"Visual at Order[{index}] has no compatible prepared outer-shadow layer.");
+                    continue;
+                }
+            }
+
+            if (_visualHasGlow.RefAt(index))
+            {
+                var glowProgram = _visualGlowPrograms.RefAt(index);
+                if (glowProgram is null || !AddVisualPass(
+                        graph,
+                        target,
+                        index,
+                        1,
+                        checked((ulong)_visualGlowInstanceCounts.RefAt(index)),
+                        glowProgram,
+                        UiVisualRenderLayer.Glow))
+                {
+                    AddDiagnostic($"Visual at Order[{index}] has no compatible prepared outer-glow layer.");
+                    continue;
+                }
+            }
+
             var visualEnd = index + 1;
             var segmentInstanceCount = (ulong)_visualInstanceCounts.RefAt(index);
             while (visualEnd < _orderCount &&
                    _order.RefAt(visualEnd).Kind == UiDrawKind.Visual &&
                    !_commandClips.RefAt(visualEnd).IsEmpty &&
+                   !_visualHasShadow.RefAt(visualEnd) &&
+                   !_visualHasGlow.RefAt(visualEnd) &&
                    CanJoinVisualSegment(index, visualEnd))
             {
                 segmentInstanceCount = checked(segmentInstanceCount + (ulong)_visualInstanceCounts.RefAt(visualEnd));
                 visualEnd++;
             }
 
-            var visualPass = GetVisualSegmentPass(index, visualEnd - index, segmentInstanceCount, program);
-            var pass = graph.AddRasterPass(visualPass.Description, visualPass);
-            graph.UseColorAttachment(
-                pass,
-                0,
-                new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
-            graph.UseBuffer(pass, _visualInstanceGraphHandle, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
+            AddVisualPass(graph, target, index, visualEnd - index, segmentInstanceCount, program, UiVisualRenderLayer.Base);
 
-            for (var visualIndex = index; visualIndex < visualEnd; visualIndex++)
+            index = visualEnd - 1;
+        }
+    }
+
+    private bool AddVisualPass(
+        IRenderGraphBuilder graph,
+        RenderGraphTextureHandle target,
+        int firstOrderIndex,
+        int visualCount,
+        ulong instanceCount,
+        IGraphicsShaderProgram program,
+        UiVisualRenderLayer layer)
+    {
+        var visualPass = GetVisualSegmentPass(firstOrderIndex, visualCount, instanceCount, program, layer);
+        var pass = graph.AddRasterPass(visualPass.Description, visualPass);
+        graph.UseColorAttachment(
+            pass,
+            0,
+            new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
+        graph.UseBuffer(pass, _visualInstanceGraphHandle, RenderResourceAccess.Read, RenderPipelineStages.Vertex);
+
+        if (layer == UiVisualRenderLayer.Base)
+        {
+            for (var visualIndex = firstOrderIndex; visualIndex < firstOrderIndex + visualCount; visualIndex++)
             {
                 if (_visualImageTextures.RefAt(visualIndex).HasValue)
                 {
@@ -607,16 +710,17 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
                 }
             }
-
-            index = visualEnd - 1;
         }
+
+        return true;
     }
 
     private UiVisualSegmentPass GetVisualSegmentPass(
         int firstOrderIndex,
         int visualCount,
         ulong instanceCount,
-        IGraphicsShaderProgram program)
+        IGraphicsShaderProgram program,
+        UiVisualRenderLayer layer)
     {
         if (_visualSegmentPassCount == _visualSegmentPasses.Length)
         {
@@ -631,7 +735,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualSegmentPasses[_visualSegmentPassCount] = pass;
         }
 
-        pass.SetRange(firstOrderIndex, visualCount, instanceCount, program);
+        pass.SetRange(firstOrderIndex, visualCount, instanceCount, program, layer);
         _visualSegmentPassCount++;
         return pass;
     }
@@ -686,7 +790,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         var draw = _order.RefAt(orderIndex);
         var visual = _visuals.RefAt(draw.Index);
-        var program = ResolveVisualProgram(visual, out var shaderVisualKind, out var shaderPath, out var effectResource);
+        ResolveVisualPlan(visual, out var baseVariant, out var shadowVariant, out var glowVariant, out var effectResource);
+        var program = baseVariant.Program;
+        var shaderVisualKind = baseVariant.Kind;
+        var shaderPath = baseVariant.Path;
         UiRectangleShaderKind shaderKind;
         ShaderBinding instanceBinding;
         uint instanceStride;
@@ -768,6 +875,28 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualMaskResources.RefAt(orderIndex) = default;
         _visualMaskSamplers.RefAt(orderIndex) = default;
         _visualMaskUvRects.RefAt(orderIndex) = default;
+        _visualShadowPrograms.RefAt(orderIndex) = null;
+        _visualShadowPushConstantSizes.RefAt(orderIndex) = 0;
+        _visualShadowInstanceStrides.RefAt(orderIndex) = 0;
+        _visualShadowInstanceBindings.RefAt(orderIndex) = default;
+        _visualShadowShaderKinds.RefAt(orderIndex) = default;
+        _visualShadowShaderPaths.RefAt(orderIndex) = default;
+        _visualShadowEffectResources.RefAt(orderIndex) = default;
+        _visualShadowInstanceCounts.RefAt(orderIndex) = 0;
+        _visualShadowInstanceOffsets.RefAt(orderIndex) = 0;
+        _visualShadowFramePushConstantOffsets.RefAt(orderIndex) = 0;
+        _visualHasShadow.RefAt(orderIndex) = false;
+        _visualGlowPrograms.RefAt(orderIndex) = null;
+        _visualGlowPushConstantSizes.RefAt(orderIndex) = 0;
+        _visualGlowInstanceStrides.RefAt(orderIndex) = 0;
+        _visualGlowInstanceBindings.RefAt(orderIndex) = default;
+        _visualGlowShaderKinds.RefAt(orderIndex) = default;
+        _visualGlowShaderPaths.RefAt(orderIndex) = default;
+        _visualGlowEffectResources.RefAt(orderIndex) = default;
+        _visualGlowInstanceCounts.RefAt(orderIndex) = 0;
+        _visualGlowInstanceOffsets.RefAt(orderIndex) = 0;
+        _visualGlowFramePushConstantOffsets.RefAt(orderIndex) = 0;
+        _visualHasGlow.RefAt(orderIndex) = false;
         if (visual.Kind == UiVisualKind.Image)
         {
             if (!_registry.TryResolveImage(visual.Resource, out var imageTexture, out var imageSampler, out var imageBinding) || !imageBinding.HasValue)
@@ -813,6 +942,88 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualMaskUvRects.RefAt(orderIndex) = maskUvRect;
         }
 
+        if (shadowVariant is { } shadow)
+        {
+            if (!UiVisualShaderContract.TryDescribeInstance(
+                    shadow.Program,
+                    shadow.Kind,
+                    shadow.Path,
+                    out var shadowKind,
+                    out var shadowBinding,
+                    out var shadowStride,
+                    out var shadowPushConstantSize,
+                    out var shadowPushConstantOffset,
+                    out var shadowDiagnostic))
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] has an unsupported outer-shadow layer: {shadowDiagnostic}");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            var shadowFrameSize = UiVisualShaderContract.PackFrame(
+                shadowKind,
+                _viewport,
+                _visualFramePushConstants.AsSpan(0, checked((int)shadowPushConstantSize)));
+            if (shadowFrameSize != shadowPushConstantSize)
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] generated shadow frame packer wrote {shadowFrameSize} bytes; expected {shadowPushConstantSize}.");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            _visualShadowPrograms.RefAt(orderIndex) = shadow.Program;
+            _visualShadowPushConstantSizes.RefAt(orderIndex) = shadowPushConstantSize;
+            _visualShadowInstanceStrides.RefAt(orderIndex) = shadowStride;
+            _visualShadowInstanceBindings.RefAt(orderIndex) = shadowBinding;
+            _visualShadowShaderKinds.RefAt(orderIndex) = shadowKind;
+            _visualShadowShaderPaths.RefAt(orderIndex) = shadow.Path;
+            _visualShadowEffectResources.RefAt(orderIndex) = effectResource;
+            _visualShadowInstanceCounts.RefAt(orderIndex) = UiVisualShaderContract.MaxInstanceCount(shadowKind);
+            _visualShadowFramePushConstantOffsets.RefAt(orderIndex) = shadowPushConstantOffset;
+            _visualHasShadow.RefAt(orderIndex) = true;
+        }
+
+        if (glowVariant is { } glow)
+        {
+            if (!UiVisualShaderContract.TryDescribeInstance(
+                    glow.Program,
+                    glow.Kind,
+                    glow.Path,
+                    out var glowKind,
+                    out var glowBinding,
+                    out var glowStride,
+                    out var glowPushConstantSize,
+                    out var glowPushConstantOffset,
+                    out var glowDiagnostic))
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] has an unsupported outer-glow layer: {glowDiagnostic}");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            var glowFrameSize = UiVisualShaderContract.PackFrame(
+                glowKind,
+                _viewport,
+                _visualFramePushConstants.AsSpan(0, checked((int)glowPushConstantSize)));
+            if (glowFrameSize != glowPushConstantSize)
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] generated glow frame packer wrote {glowFrameSize} bytes; expected {glowPushConstantSize}.");
+                _visualPrograms.RefAt(orderIndex) = null;
+                return false;
+            }
+
+            _visualGlowPrograms.RefAt(orderIndex) = glow.Program;
+            _visualGlowPushConstantSizes.RefAt(orderIndex) = glowPushConstantSize;
+            _visualGlowInstanceStrides.RefAt(orderIndex) = glowStride;
+            _visualGlowInstanceBindings.RefAt(orderIndex) = glowBinding;
+            _visualGlowShaderKinds.RefAt(orderIndex) = glowKind;
+            _visualGlowShaderPaths.RefAt(orderIndex) = glow.Path;
+            _visualGlowEffectResources.RefAt(orderIndex) = effectResource;
+            _visualGlowInstanceCounts.RefAt(orderIndex) = UiVisualShaderContract.MaxInstanceCount(glowKind);
+            _visualGlowFramePushConstantOffsets.RefAt(orderIndex) = glowPushConstantOffset;
+            _visualHasGlow.RefAt(orderIndex) = true;
+        }
+
         return true;
     }
 
@@ -847,14 +1058,70 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 byteCursor = Align(byteCursor, _visualInstanceAlignment);
             }
 
+            var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
+            var clip = _commandClips.RefAt(orderIndex);
+            var physicalVisual = _coordinates.ToPhysical(visual);
+            if (_visualHasShadow.RefAt(orderIndex))
+            {
+                byteCursor = Align(byteCursor, _visualInstanceAlignment);
+                var shadowStride = _visualShadowInstanceStrides.RefAt(orderIndex);
+                var shadowOffset = checked((int)byteCursor);
+                var shadowBytes = checked((int)shadowStride * _visualShadowInstanceCounts.RefAt(orderIndex));
+                var shadowEnd = checked(shadowOffset + shadowBytes);
+                EnsureCapacity(ref _visualInstanceBytes, shadowEnd);
+                var shadowWritten = UiVisualShaderContract.PackInstances(
+                    _visualShadowShaderKinds.RefAt(orderIndex),
+                    in physicalVisual,
+                    in clip,
+                    in _visualShadowEffectResources.RefAt(orderIndex),
+                    in _visualMaskUvRects.RefAt(orderIndex),
+                    _dpiScale,
+                    _visualGradientResources.RefAt(orderIndex),
+                    shadowStride,
+                    _visualInstanceBytes.AsSpan(shadowOffset, shadowBytes));
+                if (shadowWritten != shadowBytes)
+                {
+                    AddDiagnostic($"Visual at Order[{orderIndex}] generated shadow packer wrote {shadowWritten} bytes; expected {shadowBytes}.");
+                    return false;
+                }
+
+                _visualShadowInstanceOffsets.RefAt(orderIndex) = shadowOffset;
+                byteCursor = checked(byteCursor + (uint)shadowWritten);
+            }
+
+            if (_visualHasGlow.RefAt(orderIndex))
+            {
+                byteCursor = Align(byteCursor, _visualInstanceAlignment);
+                var glowStride = _visualGlowInstanceStrides.RefAt(orderIndex);
+                var glowOffset = checked((int)byteCursor);
+                var glowBytes = checked((int)glowStride * _visualGlowInstanceCounts.RefAt(orderIndex));
+                var glowEnd = checked(glowOffset + glowBytes);
+                EnsureCapacity(ref _visualInstanceBytes, glowEnd);
+                var glowWritten = UiVisualShaderContract.PackInstances(
+                    _visualGlowShaderKinds.RefAt(orderIndex),
+                    in physicalVisual,
+                    in clip,
+                    in _visualGlowEffectResources.RefAt(orderIndex),
+                    in _visualMaskUvRects.RefAt(orderIndex),
+                    _dpiScale,
+                    _visualGradientResources.RefAt(orderIndex),
+                    glowStride,
+                    _visualInstanceBytes.AsSpan(glowOffset, glowBytes));
+                if (glowWritten != glowBytes)
+                {
+                    AddDiagnostic($"Visual at Order[{orderIndex}] generated glow packer wrote {glowWritten} bytes; expected {glowBytes}.");
+                    return false;
+                }
+
+                _visualGlowInstanceOffsets.RefAt(orderIndex) = glowOffset;
+                byteCursor = checked(byteCursor + (uint)glowWritten);
+            }
+
             var stride = _visualInstanceStrides.RefAt(orderIndex);
             var offset = checked((int)byteCursor);
             var maxInstanceBytes = checked((int)stride * _visualInstanceCounts.RefAt(orderIndex));
             var end = checked(offset + maxInstanceBytes);
             EnsureCapacity(ref _visualInstanceBytes, end);
-            var visual = _visuals.RefAt(_order.RefAt(orderIndex).Index);
-            var clip = _commandClips.RefAt(orderIndex);
-            var physicalVisual = _coordinates.ToPhysical(visual);
             var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
                 in physicalVisual,
@@ -874,7 +1141,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualInstanceCounts.RefAt(orderIndex) = written / (int)stride;
             _visualInstanceOffsets.RefAt(orderIndex) = offset;
             byteCursor = checked(byteCursor + (uint)written);
-            previousOrderIndex = orderIndex;
+            previousOrderIndex = _visualHasShadow.RefAt(orderIndex) || _visualHasGlow.RefAt(orderIndex)
+                ? -1
+                : orderIndex;
         }
 
         _visualInstanceByteCount = checked((int)byteCursor);
@@ -897,13 +1166,63 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
+            var visual = _visuals.RefAt(draw.Index);
+            var clip = _commandClips.RefAt(orderIndex);
+            var physicalVisual = _coordinates.ToPhysical(visual);
+            if (_visualHasShadow.RefAt(orderIndex))
+            {
+                var shadowStride = _visualShadowInstanceStrides.RefAt(orderIndex);
+                var shadowOffset = _visualShadowInstanceOffsets.RefAt(orderIndex);
+                var shadowBytes = checked((int)(shadowStride * (uint)_visualShadowInstanceCounts.RefAt(orderIndex)));
+                var shadowWritten = UiVisualShaderContract.PackInstances(
+                    _visualShadowShaderKinds.RefAt(orderIndex),
+                    in physicalVisual,
+                    in clip,
+                    in _visualShadowEffectResources.RefAt(orderIndex),
+                    in _visualMaskUvRects.RefAt(orderIndex),
+                    _dpiScale,
+                    _visualGradientResources.RefAt(orderIndex),
+                    shadowStride,
+                    _visualInstanceBytes.AsSpan(shadowOffset, shadowBytes));
+                if (shadowWritten != shadowBytes)
+                {
+                    _reuseVisualInstanceLayout = false;
+                    _visualInstancesPrepared = false;
+                    return PrepareVisualInstances();
+                }
+
+                AddVisualUploadRange(shadowOffset, shadowWritten);
+            }
+
+            if (_visualHasGlow.RefAt(orderIndex))
+            {
+                var glowStride = _visualGlowInstanceStrides.RefAt(orderIndex);
+                var glowOffset = _visualGlowInstanceOffsets.RefAt(orderIndex);
+                var glowBytes = checked((int)(glowStride * (uint)_visualGlowInstanceCounts.RefAt(orderIndex)));
+                var glowWritten = UiVisualShaderContract.PackInstances(
+                    _visualGlowShaderKinds.RefAt(orderIndex),
+                    in physicalVisual,
+                    in clip,
+                    in _visualGlowEffectResources.RefAt(orderIndex),
+                    in _visualMaskUvRects.RefAt(orderIndex),
+                    _dpiScale,
+                    _visualGradientResources.RefAt(orderIndex),
+                    glowStride,
+                    _visualInstanceBytes.AsSpan(glowOffset, glowBytes));
+                if (glowWritten != glowBytes)
+                {
+                    _reuseVisualInstanceLayout = false;
+                    _visualInstancesPrepared = false;
+                    return PrepareVisualInstances();
+                }
+
+                AddVisualUploadRange(glowOffset, glowWritten);
+            }
+
             var stride = _visualInstanceStrides.RefAt(orderIndex);
             var instanceCount = _visualInstanceCounts.RefAt(orderIndex);
             var offset = _visualInstanceOffsets.RefAt(orderIndex);
             var instanceBytes = checked((int)(stride * (uint)instanceCount));
-            var visual = _visuals.RefAt(draw.Index);
-            var clip = _commandClips.RefAt(orderIndex);
-            var physicalVisual = _coordinates.ToPhysical(visual);
             var written = UiVisualShaderContract.PackInstances(
                 _visualShaderKinds.RefAt(orderIndex),
                 in physicalVisual,
@@ -946,6 +1265,30 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 continue;
             }
 
+            if (_visualHasShadow.RefAt(orderIndex))
+            {
+                var shadowOffset = _visualShadowInstanceOffsets.RefAt(orderIndex);
+                var shadowLength = checked((int)(_visualShadowInstanceStrides.RefAt(orderIndex) * (uint)_visualShadowInstanceCounts.RefAt(orderIndex)));
+                if (!_visualInstanceBytes.AsSpan(shadowOffset, shadowLength).SequenceEqual(
+                        _uploadedVisualInstanceBytes.AsSpan(shadowOffset, shadowLength)))
+                {
+                    SetFullVisualUploadRange();
+                    return true;
+                }
+            }
+
+            if (_visualHasGlow.RefAt(orderIndex))
+            {
+                var glowOffset = _visualGlowInstanceOffsets.RefAt(orderIndex);
+                var glowLength = checked((int)(_visualGlowInstanceStrides.RefAt(orderIndex) * (uint)_visualGlowInstanceCounts.RefAt(orderIndex)));
+                if (!_visualInstanceBytes.AsSpan(glowOffset, glowLength).SequenceEqual(
+                        _uploadedVisualInstanceBytes.AsSpan(glowOffset, glowLength)))
+                {
+                    SetFullVisualUploadRange();
+                    return true;
+                }
+            }
+
             var offset = _visualInstanceOffsets.RefAt(orderIndex);
             var length = checked((int)(_visualInstanceStrides.RefAt(orderIndex) * (uint)instanceCount));
             if (!_visualInstanceBytes.AsSpan(offset, length).SequenceEqual(
@@ -975,6 +1318,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
             if (!found)
             {
+                if (_visualHasShadow.RefAt(orderIndex) || _visualHasGlow.RefAt(orderIndex))
+                {
+                    return false;
+                }
+
                 program = candidate;
                 stride = _visualInstanceStrides.RefAt(orderIndex);
                 binding = _visualInstanceBindings.RefAt(orderIndex);
@@ -1121,6 +1469,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     private bool CanJoinVisualSegment(int firstOrderIndex, int nextOrderIndex)
     {
+        if (_visualHasShadow.RefAt(firstOrderIndex) || _visualHasShadow.RefAt(nextOrderIndex) ||
+            _visualHasGlow.RefAt(firstOrderIndex) || _visualHasGlow.RefAt(nextOrderIndex))
+        {
+            return false;
+        }
+
         if (!ReferenceEquals(_visualPrograms.RefAt(firstOrderIndex), _visualPrograms.RefAt(nextOrderIndex)) ||
             _visualPushConstantSizes.RefAt(firstOrderIndex) != _visualPushConstantSizes.RefAt(nextOrderIndex) ||
             _visualInstanceStrides.RefAt(firstOrderIndex) != _visualInstanceStrides.RefAt(nextOrderIndex) ||
@@ -1144,29 +1498,42 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                _visualMaskSamplers.RefAt(firstOrderIndex) == _visualMaskSamplers.RefAt(nextOrderIndex);
     }
 
-    internal void RecordVisualSegment(IRasterCommandContext commands, int firstOrderIndex, int visualCount, ulong segmentInstanceCount)
+    internal void RecordVisualSegment(
+        IRasterCommandContext commands,
+        int firstOrderIndex,
+        int visualCount,
+        ulong segmentInstanceCount,
+        UiVisualRenderLayer layer)
     {
+        var isShadow = layer == UiVisualRenderLayer.Shadow;
+        var isGlow = layer == UiVisualRenderLayer.Glow;
+        var pushConstantSizes = isShadow ? _visualShadowPushConstantSizes : isGlow ? _visualGlowPushConstantSizes : _visualPushConstantSizes;
+        var pushConstantOffsets = isShadow ? _visualShadowFramePushConstantOffsets : isGlow ? _visualGlowFramePushConstantOffsets : _visualFramePushConstantOffsets;
+        var strides = isShadow ? _visualShadowInstanceStrides : isGlow ? _visualGlowInstanceStrides : _visualInstanceStrides;
+        var bindings = isShadow ? _visualShadowInstanceBindings : isGlow ? _visualGlowInstanceBindings : _visualInstanceBindings;
+        var offsets = isShadow ? _visualShadowInstanceOffsets : isGlow ? _visualGlowInstanceOffsets : _visualInstanceOffsets;
+        var kinds = isShadow ? _visualShadowShaderKinds : isGlow ? _visualGlowShaderKinds : _visualShaderKinds;
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
         commands.PushConstants(_visualFramePushConstants.AsSpan(
             0,
-            checked((int)_visualPushConstantSizes.RefAt(firstOrderIndex))),
-            _visualFramePushConstantOffsets.RefAt(firstOrderIndex));
-        var stride = _visualInstanceStrides.RefAt(firstOrderIndex);
+            checked((int)pushConstantSizes.RefAt(firstOrderIndex))),
+            pushConstantOffsets.RefAt(firstOrderIndex));
+        var stride = strides.RefAt(firstOrderIndex);
 
-        if (_flatVisualInstanceBuffer)
+        if (_flatVisualInstanceBuffer && layer == UiVisualRenderLayer.Base)
         {
-            commands.BindBuffer(_visualInstanceBindings.RefAt(firstOrderIndex), _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
+            commands.BindBuffer(bindings.RefAt(firstOrderIndex), _visualInstanceGraphHandle, 0, checked((ulong)_visualInstanceByteCount));
         }
         else
         {
             commands.BindBuffer(
-                _visualInstanceBindings.RefAt(firstOrderIndex),
+                bindings.RefAt(firstOrderIndex),
                 _visualInstanceGraphHandle,
-                checked((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)),
+                checked((ulong)offsets.RefAt(firstOrderIndex)),
                 checked((ulong)stride * segmentInstanceCount));
         }
 
-        if (_visualShaderKinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.CachedMaskRounded)
+        if (!isShadow && kinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.CachedMaskRounded)
         {
             var maskTexture = _visualMaskTextures.RefAt(firstOrderIndex)
                 ?? throw new InvalidOperationException("The cached-mask graph resource was not imported.");
@@ -1176,7 +1543,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualMaskSamplers.RefAt(firstOrderIndex));
         }
 
-        if (_visualShaderKinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.SolidImage)
+        if (!isShadow && kinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.SolidImage)
         {
             var imageTexture = _visualImageTextures.RefAt(firstOrderIndex)
                 ?? throw new InvalidOperationException("The image graph resource was not imported.");
@@ -1186,7 +1553,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualImageSamplers.RefAt(firstOrderIndex));
         }
 
-        if (UiVisualShaderContract.UsesShaderClip(_visualShaderKinds.RefAt(firstOrderIndex)))
+        if (UiVisualShaderContract.UsesShaderClip(kinds.RefAt(firstOrderIndex)))
         {
             if (segmentInstanceCount == 0)
             {
@@ -1198,8 +1565,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 0,
                 checked((int)_viewport.Width),
                 checked((int)_viewport.Height)));
-            var firstInstance = _flatVisualInstanceBuffer
-                ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstOrderIndex) / stride))
+            var firstInstance = _flatVisualInstanceBuffer && layer == UiVisualRenderLayer.Base
+                ? checked((uint)((ulong)offsets.RefAt(firstOrderIndex) / stride))
                 : 0;
             commands.Draw(6, checked((uint)segmentInstanceCount), 0, firstInstance);
             return;
@@ -1212,24 +1579,25 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var clip = _commandClips.RefAt(drawStart);
             var drawEnd = drawStart + 1;
             var firstDrawOrder = drawStart;
-            uint instanceCount = (uint)_visualInstanceCounts.RefAt(drawStart);
+            uint instanceCount = (uint)(isShadow ? _visualShadowInstanceCounts : isGlow ? _visualGlowInstanceCounts : _visualInstanceCounts).RefAt(drawStart);
             while (drawEnd < segmentEnd && _commandClips.RefAt(drawEnd) == clip)
             {
-                if (instanceCount == 0 && _visualInstanceCounts.RefAt(drawEnd) != 0)
+                var drawCount = isShadow ? _visualShadowInstanceCounts.RefAt(drawEnd) : isGlow ? _visualGlowInstanceCounts.RefAt(drawEnd) : _visualInstanceCounts.RefAt(drawEnd);
+                if (instanceCount == 0 && drawCount != 0)
                 {
                     firstDrawOrder = drawEnd;
                 }
 
-                instanceCount = checked(instanceCount + (uint)_visualInstanceCounts.RefAt(drawEnd));
+                instanceCount = checked(instanceCount + (uint)drawCount);
                 drawEnd++;
             }
 
             if (instanceCount != 0)
             {
                 commands.SetScissor(_coordinates.ToPhysical(clip));
-                var firstInstance = _flatVisualInstanceBuffer
-                    ? checked((uint)((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) / stride))
-                    : checked((uint)(((ulong)_visualInstanceOffsets.RefAt(firstDrawOrder) - (ulong)_visualInstanceOffsets.RefAt(firstOrderIndex)) / stride));
+                var firstInstance = _flatVisualInstanceBuffer && layer == UiVisualRenderLayer.Base
+                    ? checked((uint)((ulong)offsets.RefAt(firstDrawOrder) / stride))
+                    : checked((uint)(((ulong)offsets.RefAt(firstDrawOrder) - (ulong)offsets.RefAt(firstOrderIndex)) / stride));
                 commands.Draw(6, instanceCount, 0, firstInstance);
             }
 
@@ -1257,6 +1625,31 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _disposed = true;
     }
 
+    private void ResolveVisualPlan(
+        UiVisualDraw visual,
+        out UiVisualShaderVariant baseVariant,
+        out UiVisualShaderVariant? shadowVariant,
+        out UiVisualShaderVariant? glowVariant,
+        out UiEffectResource effectResource)
+    {
+        if (visual.Paint.EffectSet.IsValid &&
+            _registry.TryResolveVisualEffectLayers(
+                visual.Paint.EffectSet,
+                visual.Kind,
+                out baseVariant,
+                out shadowVariant,
+                out glowVariant,
+                out effectResource))
+        {
+            return;
+        }
+
+        var program = ResolveVisualProgram(visual, out var visualKind, out var path, out effectResource);
+        baseVariant = new UiVisualShaderVariant(program, visualKind, path);
+        shadowVariant = null;
+        glowVariant = null;
+    }
+
     private IGraphicsShaderProgram ResolveVisualProgram(
         UiVisualDraw visual,
         out UiVisualKind shaderVisualKind,
@@ -1279,7 +1672,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return _linearGradientVisualProgram ?? _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");
         }
         if (visual.Paint.EffectSet.IsValid &&
-            _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out var effectVariant, out effectResource))
+            _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, visual.Kind, out var effectVariant, out effectResource))
         {
             shaderVisualKind = effectVariant.Kind;
             shaderPath = effectVariant.Path;
@@ -1337,14 +1730,46 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var visualVariant = default(UiVisualShaderVariant);
+        UiVisualShaderVariant? shadowVariant = null;
+        UiVisualShaderVariant? glowVariant = null;
         UiEffectResource effectResource = default;
         var effectRevision = 0UL;
         if (visual.Paint.EffectSet.IsValid &&
-            (!_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant, out effectResource) ||
+            (!_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, visual.Kind, out visualVariant, out effectResource) ||
              !_registry.TryGetVisualEffectRevision(visual.Paint.EffectSet, out effectRevision)))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] references an unregistered effect-set resource.");
             return false;
+        }
+
+        if (visual.Paint.EffectSet.IsValid &&
+            _registry.TryResolveVisualEffectLayers(
+                visual.Paint.EffectSet,
+                visual.Kind,
+                out _,
+                out shadowVariant,
+                out glowVariant,
+                out _) &&
+            shadowVariant.HasValue)
+        {
+            if (shadowVariant is not { } resolvedShadow ||
+                !IsCompatibleVisualVariant(visual.Kind, resolvedShadow.Kind) ||
+                resolvedShadow.Path != UiVisualShaderPath.OuterShadowOnlyEffect)
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] uses an incompatible outer-shadow shader layer.");
+                return false;
+            }
+        }
+
+        if (visual.Paint.EffectSet.IsValid && glowVariant.HasValue)
+        {
+            if (glowVariant is not { } resolvedGlow ||
+                !IsCompatibleVisualVariant(visual.Kind, resolvedGlow.Kind) ||
+                resolvedGlow.Path != UiVisualShaderPath.OuterGlowOnlyEffect)
+            {
+                AddDiagnostic($"Visual at Order[{orderIndex}] uses an incompatible outer-glow shader layer.");
+                return false;
+            }
         }
 
         if (visual.Paint.EffectSet.IsValid &&
@@ -1593,6 +2018,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             Array.Clear(_texts, 0, _textCount);
             Array.Clear(_order, 0, _orderCount);
             Array.Clear(_visualPrograms, 0, _orderCount);
+            Array.Clear(_visualShadowPrograms, 0, _orderCount);
+            Array.Clear(_visualHasShadow, 0, _orderCount);
+            Array.Clear(_visualGlowPrograms, 0, _orderCount);
+            Array.Clear(_visualHasGlow, 0, _orderCount);
             _visualInstanceByteCount = 0;
             _flatVisualInstanceBuffer = false;
             _hasPackedVisualFrame = false;

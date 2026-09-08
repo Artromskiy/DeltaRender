@@ -114,6 +114,30 @@
       "effects": "None",
       "quality": "Analytic",
       "material": "Image"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Solid",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "OuterShadow",
+      "quality": "ShadowOnly"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "OuterShadow",
+      "quality": "ShadowOnly"
     }
   ],
   "entries": [
@@ -424,6 +448,72 @@
       "vertexEntryPoint": "solid-image",
       "fragmentEntryPoint": "solid-image",
       "layerSetIdentity": "visual.solid.image"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedStrokeGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "RoundedStrokeRectangleVertex.vert.spv",
+      "fragmentSpirv": "RoundedStrokeRectangleFragment.frag.spv",
+      "generatedProgramType": "RoundedStrokeGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackRoundedStrokeRectangleVertexInstancesElements",
+      "fragmentPacker": "PackRoundedStrokeRectangleVertexFrame",
+      "vertexEntryPoint": "rounded-stroke",
+      "fragmentEntryPoint": "rounded-stroke",
+      "layerSetIdentity": "visual.rounded.stroke"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Solid",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "OuterShadow",
+        "quality": "ShadowOnly"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidOuterShadowOnlyGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SolidOuterShadowOnlyRectangleVertex.vert.spv",
+      "fragmentSpirv": "SolidOuterShadowOnlyRectangleFragment.frag.spv",
+      "generatedProgramType": "SolidOuterShadowOnlyGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidOuterShadowOnlyRectangleVertexInstancesElements",
+      "fragmentPacker": "PackSolidOuterShadowOnlyRectangleVertexFrame",
+      "vertexEntryPoint": "solid-outer-shadow-only",
+      "fragmentEntryPoint": "solid-outer-shadow-only",
+      "layerSetIdentity": "visual.solid.outer-shadow.shadow-only"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "OuterShadow",
+        "quality": "ShadowOnly"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedOuterShadowOnlyGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "RoundedOuterShadowOnlyRectangleVertex.vert.spv",
+      "fragmentSpirv": "RoundedOuterShadowOnlyRectangleFragment.frag.spv",
+      "generatedProgramType": "RoundedOuterShadowOnlyGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackRoundedOuterShadowOnlyRectangleVertexInstancesElements",
+      "fragmentPacker": "PackRoundedOuterShadowOnlyRectangleVertexFrame",
+      "vertexEntryPoint": "rounded-outer-shadow-only",
+      "fragmentEntryPoint": "rounded-outer-shadow-only",
+      "layerSetIdentity": "visual.rounded.outer-shadow.shadow-only"
     }
   ]
 }

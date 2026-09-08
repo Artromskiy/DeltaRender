@@ -113,6 +113,46 @@ public static class UiRenderHost
             UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Fragment());
 
+    /// <summary>Creates the generated rounded-stroke graphics program.</summary>
+    public static GraphicsShaderProgram CreateRoundedStrokeProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.RoundedStroke.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedStroke.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStroke.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStroke.Fragment());
+
+    /// <summary>Creates the generated solid outer-shadow-only graphics program.</summary>
+    public static GraphicsShaderProgram CreateSolidOuterShadowOnlyProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.SolidOuterShadowOnly.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.SolidOuterShadowOnly.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.SolidOuterShadowOnly.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.SolidOuterShadowOnly.Fragment());
+
+    /// <summary>Creates the generated rounded outer-shadow-only graphics program.</summary>
+    public static GraphicsShaderProgram CreateRoundedOuterShadowOnlyProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.RoundedOuterShadowOnly.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedOuterShadowOnly.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedOuterShadowOnly.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedOuterShadowOnly.Fragment());
+
+    /// <summary>Creates the generated solid outer-glow-only graphics program.</summary>
+    public static GraphicsShaderProgram CreateSolidOuterGlowOnlyProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.SolidOuterGlowOnly.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.SolidOuterGlowOnly.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.SolidOuterGlowOnly.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.SolidOuterGlowOnly.Fragment());
+
+    /// <summary>Creates the generated rounded outer-glow-only graphics program.</summary>
+    public static GraphicsShaderProgram CreateRoundedOuterGlowOnlyProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.RoundedOuterGlowOnly.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedOuterGlowOnly.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedOuterGlowOnly.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedOuterGlowOnly.Fragment());
+
     /// <summary>Creates the generated linear-gradient graphics program.</summary>
     public static GraphicsShaderProgram CreateLinearGradientProgram() =>
         CreateProgram(
@@ -137,12 +177,26 @@ public static class UiRenderHost
             TextShaderArtifacts.Abi.TextShaders.SdfText.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfText.Fragment());
 
+    private static GraphicsShaderProgram CreateTextStrokeProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextStroke.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextStroke.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextStroke.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextStroke.Fragment());
+
     private static GraphicsShaderProgram CreateTextOuterShadowProgram() =>
         CreateProgram(
             TextShaderArtifacts.Spv.TextShaders.SdfTextOuterShadow.Vertex(),
             TextShaderArtifacts.Spv.TextShaders.SdfTextOuterShadow.Fragment(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Fragment());
+
+    private static GraphicsShaderProgram CreateTextOuterGlowOnlyProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextOuterGlowOnly.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextOuterGlowOnly.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Fragment());
 
     private static GraphicsShaderProgram CreateTextStrokeOuterGlowProgram() =>
         CreateProgram(
@@ -164,14 +218,102 @@ public static class UiRenderHost
         {
             if (effect.Set.Target == UiEffectTarget.Visual &&
                 effect.Set.Quality == UiEffectQuality.Analytic &&
-                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow))
+                effect.Set.Capabilities == UiEffectCapabilities.OuterGlow)
             {
-                registry.RegisterVisualEffectResource(
+                registry.RegisterVisualEffectResourceGlowLayers(
                     effect,
                     new UiVisualShaderVariant(
-                        CreateRoundedStrokeOuterGlowProgram(),
+                        CreateSolidOuterGlowOnlyProgram(),
+                        UiVisualKind.SolidRectangle,
+                        UiVisualShaderPath.OuterGlowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateSolidRectangleProgram(),
+                        UiVisualKind.SolidRectangle,
+                        UiVisualShaderPath.Standard));
+                registry.RegisterVisualEffectResourceGlowLayers(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedOuterGlowOnlyProgram(),
                         UiVisualKind.RoundedRectangle,
-                        UiVisualShaderPath.RoundedStrokeOuterGlowEffect));
+                        UiVisualShaderPath.OuterGlowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateRoundedRectangleProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.Standard));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.OuterShadow)
+            {
+                registry.RegisterVisualEffectResourceLayers(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateSolidOuterShadowOnlyProgram(),
+                        UiVisualKind.SolidRectangle,
+                        UiVisualShaderPath.OuterShadowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateSolidRectangleProgram(),
+                        UiVisualKind.SolidRectangle,
+                        UiVisualShaderPath.Standard));
+                registry.RegisterVisualEffectResourceLayers(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedOuterShadowOnlyProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.OuterShadowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateRoundedRectangleProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.Standard));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow))
+            {
+                registry.RegisterVisualEffectResourceLayers(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedOuterShadowOnlyProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.OuterShadowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateRoundedStrokeProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.RoundedStrokeEffect));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow))
+            {
+                registry.RegisterVisualEffectResourceGlowLayers(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedOuterGlowOnlyProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.OuterGlowOnlyEffect),
+                    new UiVisualShaderVariant(
+                        CreateRoundedStrokeProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.RoundedStrokeEffect));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.OuterGlow)
+            {
+                registry.RegisterTextEffectResourceGlowLayers(
+                    effect,
+                    new TextShaderVariant(
+                        CreateTextOuterGlowOnlyProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.OuterGlowOnly),
+                    new TextShaderVariant(
+                        CreateTextProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.Standard));
             }
 
             if (effect.Set.Target == UiEffectTarget.Text &&
@@ -198,9 +340,13 @@ public static class UiRenderHost
                         GlyphImageMode.Sdf,
                         TextShaderPath.OuterShadow),
                     new TextShaderVariant(
-                        CreateTextStrokeOuterGlowProgram(),
+                        CreateTextOuterGlowOnlyProgram(),
                         GlyphImageMode.Sdf,
-                        TextShaderPath.StrokeOuterGlow));
+                        TextShaderPath.OuterGlowOnly),
+                    new TextShaderVariant(
+                        CreateTextStrokeProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.Stroke));
             }
         }
 
