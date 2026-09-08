@@ -13,6 +13,7 @@ using Delta.Text.Contract;
 using Delta.XAML.Contract;
 using Xunit;
 using Xunit.Abstractions;
+using XamlEffectParameters = Delta.XAML.Contract.UiEffectParameters;
 
 namespace Delta.Render.Tests;
 
@@ -433,8 +434,16 @@ public sealed class UiDisplayListGraphFeatureTests
             UiEffectCapabilities.Outline,
             UiEffectQuality.Analytic,
             default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
+                default,
+                default,
+                default));
         var registry = new UiDisplayListResourceRegistry();
-        registry.RegisterTextEffectSet(effectSet, new TextShaderVariant(textProgram, GlyphImageMode.Sdf));
+        registry.RegisterTextEffectResource(effectResource, new TextShaderVariant(textProgram, GlyphImageMode.Sdf));
         using var feature = new UiDisplayListGraphFeature(
             session,
             SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
@@ -884,31 +893,97 @@ public sealed class UiDisplayListGraphFeatureTests
             UiEffectCapabilities.Outline,
             UiEffectQuality.Analytic,
             default);
-        var visualProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var visualProgram = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         var textProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
 
-        var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.SolidRectangle);
-        registry.RegisterVisualEffectSet(visualEffect, visualVariant);
-        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf);
-        registry.RegisterTextEffectSet(textEffect, textVariant);
-
-        Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual));
-        Assert.Equal(visualVariant, resolvedVisual);
-        Assert.False(registry.TryResolveVisualEffectSet(
-            visualEffect with { Quality = UiEffectQuality.CachedMask }, out _));
-        Assert.False(registry.TryResolveVisualEffectSet(textEffect, out _));
-        Assert.True(registry.TryResolveTextEffectSet(textEffect, out var resolvedText));
-        Assert.Equal(textVariant, resolvedText);
-        Assert.False(registry.TryResolveTextEffectSet(visualEffect, out _));
-        Assert.Throws<ArgumentException>(() => registry.RegisterVisualEffectSet(
+        var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.AnalyticEffect);
+        var visualResource = new UiEffectResource(
             visualEffect,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
+                default,
+                default,
+                default));
+        registry.RegisterVisualEffectResource(visualResource, visualVariant);
+        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf);
+        var textResource = new UiEffectResource(
+            textEffect,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
+                default,
+                default,
+                default));
+        registry.RegisterTextEffectResource(textResource, textVariant);
+
+        Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual, out var resolvedVisualResource));
+        Assert.Equal(visualVariant, resolvedVisual);
+        Assert.Equal(visualResource, resolvedVisualResource);
+        Assert.False(registry.TryResolveVisualEffectSet(
+            visualEffect with { Quality = UiEffectQuality.CachedMask }, out _, out _));
+        Assert.False(registry.TryResolveVisualEffectSet(textEffect, out _, out _));
+        Assert.True(registry.TryResolveTextEffectSet(textEffect, out var resolvedText, out var resolvedTextResource));
+        Assert.Equal(textVariant, resolvedText);
+        Assert.Equal(textResource, resolvedTextResource);
+        Assert.False(registry.TryResolveTextEffectSet(visualEffect, out _, out _));
+        Assert.Throws<ArgumentException>(() => registry.RegisterVisualEffectResource(
+            visualResource,
             new UiVisualShaderVariant(
                 SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
-                UiVisualKind.SolidRectangle)));
+                UiVisualKind.RoundedRectangle,
+                UiVisualShaderPath.AnalyticEffect)));
         Assert.True(registry.UnregisterVisualEffectSet(visualEffect.Resource));
         Assert.False(registry.UnregisterVisualEffectSet(visualEffect.Resource));
         Assert.True(registry.UnregisterTextEffectSet(textEffect.Resource));
         Assert.False(registry.UnregisterTextEffectSet(textEffect.Resource));
+    }
+
+    [Fact]
+    public void AnalyticVisualEffectRejectsUnsupportedInsetShadowAndCachedMask()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var program = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var variant = new UiVisualShaderVariant(
+            program,
+            UiVisualKind.RoundedRectangle,
+            UiVisualShaderPath.AnalyticEffect);
+
+        var insetSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.InsetShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var insetResource = new UiEffectResource(
+            insetSet,
+            new XamlEffectParameters(
+                default,
+                default,
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                default,
+                default));
+        var insetError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterVisualEffectResource(insetResource, variant));
+        Assert.Contains("InsetShadow", insetError.Message, StringComparison.Ordinal);
+
+        var cachedSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.Stroke,
+            UiEffectQuality.CachedMask,
+            default);
+        var cachedResource = new UiEffectResource(
+            cachedSet,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                default,
+                default,
+                default,
+                new UiResourceId(Guid.NewGuid())));
+        var cachedError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterVisualEffectResource(cachedResource, variant));
+        Assert.Contains("CachedMask", cachedError.Message, StringComparison.Ordinal);
     }
 
     [Fact]

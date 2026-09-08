@@ -32,41 +32,47 @@ resource hazards and execution.
 
 ## Prepared UI effect programs
 
-`UiDisplayListResourceRegistry` keeps visual and text effect sets in separate
-registries. Visual sets reference a prepared `IGraphicsShaderProgram`; text
-sets reference a typed `TextShaderVariant` descriptor that selects the existing
+`UiDisplayListResourceRegistry` keeps visual and text effect resources in separate
+registries. Each resource contains the complete typed `UiEffectResource`
+payload. Visual resources reference a prepared `IGraphicsShaderProgram`; text
+resources reference a typed `TextShaderVariant` descriptor that selects the existing
 generated packer mode:
 
 ```csharp
-registry.RegisterVisualEffectSet(
-    visualEffectSet,
-    new UiVisualShaderVariant(preparedVisualProgram, UiVisualKind.RoundedRectangle));
-registry.RegisterTextEffectSet(
-    textEffectSet,
+registry.RegisterVisualEffectResource(
+    visualEffectResource,
+    new UiVisualShaderVariant(
+        preparedVisualProgram,
+        UiVisualKind.RoundedRectangle,
+        UiVisualShaderPath.AnalyticEffect));
+registry.RegisterTextEffectResource(
+    textEffectResource,
     new TextShaderVariant(preparedTextProgram, GlyphImageMode.Sdf));
 ```
 
 The registry does not own or dispose the program. During display-list
-consumption, `DeltaRender.XAML` matches the complete immutable effect-set
-metadata (resource identity, target, capabilities, quality and outsets) before
-selecting a registered visual program for batching. A resource identity with
-different metadata is rejected; it cannot silently reuse another prepared
-variant. The registry does not compose shader layers, inspect files, or infer
-effect parameters from a CLR object.
+consumption, `DeltaRender.XAML` matches the complete immutable effect-resource
+metadata (set identity, target, capabilities, quality, outsets and typed layer
+parameters) before selecting a registered variant for batching. A resource
+identity with different metadata is rejected; it cannot silently reuse another
+prepared variant. The registry does not compose shader layers, inspect files,
+or infer effect parameters from a CLR object.
 
-The current fixed rectangle packers still accept only the shipped solid and
-rounded ABI shapes. A registered visual effect program must therefore expose the
-matching prepared ABI before it can be submitted; a different ABI is rejected
-with a diagnostic until its generated packer/adapter is available. A text
-variant is accepted only when its mode and resolved bindings, stride and
+The generated analytic rounded artifact accepts typed stroke/outline,
+outer-shadow and glow layers through its producer-owned packer. Inset-shadow
+and cached-mask resources are rejected because this ABI does not expose those
+fields. No local CLR ABI or fallback packer is used. A registered visual effect
+program must therefore expose the matching prepared ABI before it can be
+submitted; a different ABI is rejected with a diagnostic until its generated
+packer/adapter is available. A text variant is accepted only when its mode and
+resolved bindings, stride and
 push-constant range match the configured `TextRenderFeature`; adjacent runs
 with different variants become separate raster passes. Missing or incompatible
 variants are reported rather than silently falling back to the no-effect path.
 
-Visual registration accepts `UiVisualShaderVariant` only. Registration validates
-the complete program against the existing generated solid or rounded rectangle
-ABI and packer selected by `UiVisualKind`; an arbitrary effect ABI is rejected
-before it reaches graph submission. A future effect shape must provide a
+Visual registration accepts `UiVisualShaderVariant` together with a typed
+`UiEffectResource`. Registration validates the complete program against the
+selected generated ABI and packer before it reaches graph submission. A future effect shape must provide a
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 

@@ -51,6 +51,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint[] _visualInstanceStrides = [];
     private ShaderBinding[] _visualInstanceBindings = [];
     private UiRectangleShaderKind[] _visualShaderKinds = [];
+    private UiVisualShaderPath[] _visualShaderPaths = [];
+    private UiEffectResource[] _visualEffectResources = [];
     private int[] _visualInstanceCounts = [];
     private uint[] _visualFramePushConstantOffsets = [];
     private RenderGraphTextureHandle?[] _visualImageTextures = [];
@@ -82,6 +84,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint _packedVisualFrameOffset;
     private IGraphicsShaderProgram? _preparedVisualProgram;
     private UiVisualKind _preparedVisualKind;
+    private UiVisualShaderPath _preparedVisualShaderPath;
     private UiRectangleShaderKind _preparedVisualShaderKind;
     private ShaderBinding _preparedVisualInstanceBinding;
     private uint _preparedVisualInstanceStride;
@@ -250,6 +253,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualInstanceStrides, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceBindings, displayList.Order.Length);
         EnsureCapacity(ref _visualShaderKinds, displayList.Order.Length);
+        EnsureCapacity(ref _visualShaderPaths, displayList.Order.Length);
+        EnsureCapacity(ref _visualEffectResources, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceCounts, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceOffsets, displayList.Order.Length);
         EnsureCapacity(ref _visualFramePushConstantOffsets, displayList.Order.Length);
@@ -405,7 +410,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     TextShaderVariant? shaderVariant = null;
                     if (text.Paint.EffectSet.IsValid)
                     {
-                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant) ||
+                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant, out _) ||
                             !_textFeature.TryResolveTextVariant(registeredVariant, out _))
                         {
                             AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
@@ -628,7 +633,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         var draw = _order.RefAt(orderIndex);
         var visual = _visuals.RefAt(draw.Index);
-        var program = ResolveVisualProgram(visual, out var shaderVisualKind);
+        var program = ResolveVisualProgram(visual, out var shaderVisualKind, out var shaderPath, out var effectResource);
         UiRectangleShaderKind shaderKind;
         ShaderBinding instanceBinding;
         uint instanceStride;
@@ -636,7 +641,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         uint pushConstantOffset;
         if (_hasPreparedVisualDescription &&
             ReferenceEquals(_preparedVisualProgram, program) &&
-            _preparedVisualKind == shaderVisualKind)
+            _preparedVisualKind == shaderVisualKind &&
+            _preparedVisualShaderPath == shaderPath)
         {
             shaderKind = _preparedVisualShaderKind;
             instanceBinding = _preparedVisualInstanceBinding;
@@ -647,6 +653,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         else if (!UiVisualShaderContract.TryDescribeInstance(
                      program,
                      shaderVisualKind,
+                     shaderPath,
                      out shaderKind,
                      out instanceBinding,
                      out instanceStride,
@@ -661,6 +668,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         {
             _preparedVisualProgram = program;
             _preparedVisualKind = shaderVisualKind;
+            _preparedVisualShaderPath = shaderPath;
             _preparedVisualShaderKind = shaderKind;
             _preparedVisualInstanceBinding = instanceBinding;
             _preparedVisualInstanceStride = instanceStride;
@@ -695,6 +703,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualInstanceStrides.RefAt(orderIndex) = instanceStride;
         _visualInstanceBindings.RefAt(orderIndex) = instanceBinding;
         _visualShaderKinds.RefAt(orderIndex) = shaderKind;
+        _visualShaderPaths.RefAt(orderIndex) = shaderPath;
+        _visualEffectResources.RefAt(orderIndex) = effectResource;
         _visualInstanceCounts.RefAt(orderIndex) = UiVisualShaderContract.MaxInstanceCount(shaderKind);
         _visualFramePushConstantOffsets.RefAt(orderIndex) = pushConstantOffset;
         _visualImageTextures.RefAt(orderIndex) = null;
@@ -760,6 +770,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualShaderKinds.RefAt(orderIndex),
                 in physicalVisual,
                 in clip,
+                in _visualEffectResources.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, maxInstanceBytes));
             if (written <= 0 || written % (int)stride != 0)
@@ -805,6 +816,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 _visualShaderKinds.RefAt(orderIndex),
                 in physicalVisual,
                 in clip,
+                in _visualEffectResources.RefAt(orderIndex),
                 stride,
                 _visualInstanceBytes.AsSpan(offset, instanceBytes));
             if (written != instanceBytes)
@@ -1111,12 +1123,20 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _disposed = true;
     }
 
-    private IGraphicsShaderProgram ResolveVisualProgram(UiVisualDraw visual, out UiVisualKind shaderVisualKind)
+    private IGraphicsShaderProgram ResolveVisualProgram(
+        UiVisualDraw visual,
+        out UiVisualKind shaderVisualKind,
+        out UiVisualShaderPath shaderPath,
+        out UiEffectResource effectResource)
     {
         shaderVisualKind = visual.Kind;
-        if (visual.Paint.EffectSet.IsValid && _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out var effectVariant))
+        shaderPath = UiVisualShaderPath.Standard;
+        effectResource = default;
+        if (visual.Paint.EffectSet.IsValid &&
+            _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out var effectVariant, out effectResource))
         {
             shaderVisualKind = effectVariant.Kind;
+            shaderPath = effectVariant.Path;
             return effectVariant.Program;
         }
 
@@ -1174,7 +1194,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var visualVariant = default(UiVisualShaderVariant);
-        if (visual.Paint.EffectSet.IsValid && !_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant))
+        UiEffectResource effectResource = default;
+        if (visual.Paint.EffectSet.IsValid &&
+            !_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant, out effectResource))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] references an unregistered effect-set resource.");
             return false;
@@ -1184,6 +1206,15 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             !IsCompatibleVisualVariant(visual.Kind, visualVariant.Kind))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] uses an effect shader variant for {visualVariant.Kind}, not {visual.Kind}.");
+            return false;
+        }
+
+        if (visual.Paint.EffectSet.IsValid && visualVariant.Path == UiVisualShaderPath.AnalyticEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
+             effectResource.Set.Quality == UiEffectQuality.CachedMask))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] requests an effect layer not supported by the analytic rounded UI ABI.");
             return false;
         }
 
@@ -1287,7 +1318,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var textVariant = default(TextShaderVariant);
-        if (text.Paint.EffectSet.IsValid && !_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out textVariant))
+        if (text.Paint.EffectSet.IsValid && !_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out textVariant, out _))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] references an unregistered text effect-set resource.");
             return false;

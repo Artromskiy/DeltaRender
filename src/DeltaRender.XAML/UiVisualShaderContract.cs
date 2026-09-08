@@ -3,6 +3,8 @@ using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Render.UIShaders;
 using Delta.XAML.Contract;
+using ShaderEffectLayer = Delta.Render.UIShaders.UiEffectLayerParameters;
+using ShaderEffectParameters = Delta.Render.UIShaders.UiEffectParameters;
 
 namespace Delta.Render.XAML;
 
@@ -11,6 +13,7 @@ internal enum UiRectangleShaderKind : byte
 {
     Solid,
     Rounded,
+    AnalyticRounded,
 }
 
 internal static class UiVisualShaderContract
@@ -19,6 +22,8 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi SolidFragmentAbi = SolidRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedVertexAbi = RoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedFragmentAbi = RoundedRectangleGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi AnalyticVertexAbi = AnalyticRoundedRectangleGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi AnalyticFragmentAbi = AnalyticRoundedRectangleGraphicsShaderProgram.FragmentAbi;
 
     internal static int MaxPushConstantSize { get; } = GetMaxPushConstantSize();
 
@@ -26,12 +31,22 @@ internal static class UiVisualShaderContract
     {
         var size = SolidVertexAbi.PushConstants[0].Size;
         size = Maths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, AnalyticVertexAbi.PushConstants[0].Size);
         return checked((int)size);
     }
 
     internal static bool TryDescribe(
         IGraphicsShaderProgram program,
         UiVisualKind visualKind,
+        out UiRectangleShaderKind shaderKind,
+        out uint pushConstantSize,
+        out string diagnostic)
+        => TryDescribe(program, visualKind, UiVisualShaderPath.Standard, out shaderKind, out pushConstantSize, out diagnostic);
+
+    internal static bool TryDescribe(
+        IGraphicsShaderProgram program,
+        UiVisualKind visualKind,
+        UiVisualShaderPath path,
         out UiRectangleShaderKind shaderKind,
         out uint pushConstantSize,
         out string diagnostic)
@@ -43,22 +58,37 @@ internal static class UiVisualShaderContract
 
         ShaderAbi expectedVertex;
         ShaderAbi expectedFragment;
-        switch (visualKind)
+        if (path == UiVisualShaderPath.AnalyticEffect)
         {
-            case UiVisualKind.SolidRectangle:
-                shaderKind = UiRectangleShaderKind.Solid;
-                expectedVertex = SolidVertexAbi;
-                expectedFragment = SolidFragmentAbi;
-                break;
-            case UiVisualKind.RoundedRectangle:
-            case UiVisualKind.Border:
-                shaderKind = UiRectangleShaderKind.Rounded;
-                expectedVertex = RoundedVertexAbi;
-                expectedFragment = RoundedFragmentAbi;
-                break;
-            default:
-                diagnostic = $"Visual kind {visualKind} has no supported generated DeltaRender.UIShaders artifact.";
+            if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
+            {
+                diagnostic = $"Visual kind {visualKind} cannot use the analytic effect UI artifact.";
                 return false;
+            }
+
+            shaderKind = UiRectangleShaderKind.AnalyticRounded;
+            expectedVertex = AnalyticVertexAbi;
+            expectedFragment = AnalyticFragmentAbi;
+        }
+        else
+        {
+            switch (visualKind)
+            {
+                case UiVisualKind.SolidRectangle:
+                    shaderKind = UiRectangleShaderKind.Solid;
+                    expectedVertex = SolidVertexAbi;
+                    expectedFragment = SolidFragmentAbi;
+                    break;
+                case UiVisualKind.RoundedRectangle:
+                case UiVisualKind.Border:
+                    shaderKind = UiRectangleShaderKind.Rounded;
+                    expectedVertex = RoundedVertexAbi;
+                    expectedFragment = RoundedFragmentAbi;
+                    break;
+                default:
+                    diagnostic = $"Visual kind {visualKind} has no supported generated DeltaRender.UIShaders artifact.";
+                    return false;
+            }
         }
 
         var vertex = program.Vertex;
@@ -72,6 +102,7 @@ internal static class UiVisualShaderContract
             {
                 UiRectangleShaderKind.Solid => "solid",
                 UiRectangleShaderKind.Rounded => "rounded",
+                UiRectangleShaderKind.AnalyticRounded => "analytic-rounded-effect",
                 _ => "unknown",
             };
             diagnostic = $"Visual kind {visualKind} requires the matching generated DeltaShader.UI {shaderName}-rectangle ABI.";
@@ -91,8 +122,29 @@ internal static class UiVisualShaderContract
         out uint framePushConstantSize,
         out uint framePushConstantOffset,
         out string diagnostic)
+        => TryDescribeInstance(
+            program,
+            visualKind,
+            UiVisualShaderPath.Standard,
+            out shaderKind,
+            out instanceBinding,
+            out instanceStride,
+            out framePushConstantSize,
+            out framePushConstantOffset,
+            out diagnostic);
+
+    internal static bool TryDescribeInstance(
+        IGraphicsShaderProgram program,
+        UiVisualKind visualKind,
+        UiVisualShaderPath path,
+        out UiRectangleShaderKind shaderKind,
+        out ShaderBinding instanceBinding,
+        out uint instanceStride,
+        out uint framePushConstantSize,
+        out uint framePushConstantOffset,
+        out string diagnostic)
     {
-        if (!TryDescribe(program, visualKind, out shaderKind, out _, out diagnostic))
+        if (!TryDescribe(program, visualKind, path, out shaderKind, out _, out diagnostic))
         {
             instanceBinding = default;
             instanceStride = 0;
@@ -188,6 +240,31 @@ internal static class UiVisualShaderContract
     internal static int PackInstance(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        Span<byte> destination)
+    {
+        if (shaderKind != UiRectangleShaderKind.AnalyticRounded)
+        {
+            return PackInstance(shaderKind, in visual, destination);
+        }
+
+        var parameters = effectResource.Parameters;
+        var effects = new ShaderEffectParameters(
+            ToShaderEffectLayer(parameters.StrokeOrOutline),
+            ToShaderEffectLayer(parameters.OuterShadow),
+            ToShaderEffectLayer(parameters.Glow));
+        return AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexInstancesElement(
+            new AnalyticRoundedRectangleParameters(
+                visual.Bounds,
+                visual.Paint.FillColor,
+                visual.Paint.CornerRadii,
+                effects),
+            destination);
+    }
+
+    internal static int PackInstance(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
         in PixelRect clip,
         Span<byte> destination)
         => PackInstance(shaderKind, in visual, destination);
@@ -206,12 +283,29 @@ internal static class UiVisualShaderContract
     internal static int PackInstances(
         UiRectangleShaderKind shaderKind,
         in UiVisualDraw visual,
+        in UiEffectResource effectResource,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, destination);
+
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
         in PixelRect clip,
         uint instanceStride,
         Span<byte> destination)
     {
         return PackInstance(shaderKind, in visual, destination);
     }
+
+    internal static int PackInstances(
+        UiRectangleShaderKind shaderKind,
+        in UiVisualDraw visual,
+        in PixelRect clip,
+        in UiEffectResource effectResource,
+        uint instanceStride,
+        Span<byte> destination)
+        => PackInstance(shaderKind, in visual, in effectResource, destination);
 
     internal static int PackFrame(
         UiRectangleShaderKind shaderKind,
@@ -223,11 +317,15 @@ internal static class UiVisualShaderContract
         {
             UiRectangleShaderKind.Solid => SolidRectangleGraphicsShaderProgram.PackSolidRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.AnalyticRounded => AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),
         };
     }
 
     internal static bool UsesShaderClip(UiRectangleShaderKind shaderKind) => false;
+
+    private static ShaderEffectLayer ToShaderEffectLayer(UiEffectLayer layer)
+        => new(layer.Color, layer.Offset, layer.Width, layer.BlurRadius, layer.Spread, layer.Intensity);
 
 
 

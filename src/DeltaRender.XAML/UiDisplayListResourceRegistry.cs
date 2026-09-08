@@ -51,16 +51,17 @@ public sealed class UiDisplayListResourceRegistry
     }
 
     /// <summary>
-    /// Associates an immutable visual effect-set resource with its complete prepared
+    /// Associates an immutable visual effect resource with its complete prepared
     /// graphics program. The caller retains ownership of the program.
     /// </summary>
-    public void RegisterVisualEffectSet(UiEffectSet effectSet, UiVisualShaderVariant variant)
+    public void RegisterVisualEffectResource(UiEffectResource effectResource, UiVisualShaderVariant variant)
     {
-        ValidateEffectSet(effectSet, UiEffectTarget.Visual);
+        ValidateEffectResource(effectResource, UiEffectTarget.Visual);
         var diagnostic = string.Empty;
         if (!variant.IsValid || !UiVisualShaderContract.TryDescribeInstance(
                 variant.Program,
                 variant.Kind,
+                variant.Path,
                 out _,
                 out _,
                 out _,
@@ -73,22 +74,39 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(variant));
         }
 
-        _visualEffectSets[effectSet.Resource] = new(effectSet, variant);
+        if (variant.Path == UiVisualShaderPath.AnalyticEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities.HasFlag(UiEffectCapabilities.InsetShadow) ||
+             effectResource.Set.Quality == UiEffectQuality.CachedMask))
+        {
+            throw new ArgumentException(
+                "The analytic rounded UI artifact supports analytic stroke/outline, outer-shadow and glow layers only; InsetShadow and CachedMask are unsupported.",
+                nameof(effectResource));
+        }
+
+        if (variant.Path == UiVisualShaderPath.Standard)
+        {
+            throw new ArgumentException(
+                "A visual effect resource requires the generated analytic effect UI artifact.",
+                nameof(variant));
+        }
+
+        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
     }
 
     /// <summary>
-    /// Associates an immutable text effect-set resource with a prepared typed
+    /// Associates an immutable text effect resource with a prepared typed
     /// shader variant. The caller retains ownership of the variant's program.
     /// </summary>
-    public void RegisterTextEffectSet(UiEffectSet effectSet, TextShaderVariant variant)
+    public void RegisterTextEffectResource(UiEffectResource effectResource, TextShaderVariant variant)
     {
-        ValidateEffectSet(effectSet, UiEffectTarget.Text);
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
         if (!variant.IsValid)
         {
             throw new ArgumentException("A text effect set requires a valid generated text shader variant.", nameof(variant));
         }
 
-        _textEffectSets[effectSet.Resource] = new(effectSet, variant);
+        _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
     }
 
     /// <summary>Removes one semantic visual type without releasing its shader program.</summary>
@@ -115,29 +133,39 @@ public sealed class UiDisplayListResourceRegistry
     internal bool TryResolveVisualType(UiVisualTypeId type, out IGraphicsShaderProgram? program)
         => _visualTypes.TryGetValue(type, out program);
 
-    internal bool TryResolveVisualEffectSet(UiEffectSet effectSet, out UiVisualShaderVariant variant)
+    internal bool TryResolveVisualEffectSet(
+        UiEffectSet effectSet,
+        out UiVisualShaderVariant variant,
+        out UiEffectResource effectResource)
     {
         if (_visualEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
-            registration.EffectSet == effectSet)
+            registration.EffectResource.Set == effectSet)
         {
             variant = registration.Variant;
+            effectResource = registration.EffectResource;
             return true;
         }
 
         variant = default;
+        effectResource = default;
         return false;
     }
 
-    internal bool TryResolveTextEffectSet(UiEffectSet effectSet, out TextShaderVariant variant)
+    internal bool TryResolveTextEffectSet(
+        UiEffectSet effectSet,
+        out TextShaderVariant variant,
+        out UiEffectResource effectResource)
     {
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
-            registration.EffectSet == effectSet)
+            registration.EffectResource.Set == effectSet)
         {
             variant = registration.Variant;
+            effectResource = registration.EffectResource;
             return true;
         }
 
         variant = default;
+        effectResource = default;
         return false;
     }
 
@@ -167,18 +195,18 @@ public sealed class UiDisplayListResourceRegistry
         ShaderBinding? FragmentBinding);
 
     private readonly record struct VisualEffectSetRegistration(
-        UiEffectSet EffectSet,
+        UiEffectResource EffectResource,
         UiVisualShaderVariant Variant);
 
     private readonly record struct TextEffectSetRegistration(
-        UiEffectSet EffectSet,
+        UiEffectResource EffectResource,
         TextShaderVariant Variant);
 
-    private static void ValidateEffectSet(UiEffectSet effectSet, UiEffectTarget expectedTarget)
+    private static void ValidateEffectResource(UiEffectResource effectResource, UiEffectTarget expectedTarget)
     {
-        if (!effectSet.IsValid || effectSet.Target != expectedTarget)
+        if (!effectResource.IsValid || effectResource.Set.Target != expectedTarget)
         {
-            throw new ArgumentException($"The effect set must be valid and target {expectedTarget}.", nameof(effectSet));
+            throw new ArgumentException($"The typed effect resource must be valid and target {expectedTarget}.", nameof(effectResource));
         }
     }
 }
