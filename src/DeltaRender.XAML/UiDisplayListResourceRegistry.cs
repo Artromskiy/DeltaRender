@@ -115,6 +115,16 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
+        if (variant.Path is UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.SolidGlowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             (variant.Path == UiVisualShaderPath.SolidStrokeEffect && effectResource.Set.Capabilities != UiEffectCapabilities.Stroke) ||
+             (variant.Path == UiVisualShaderPath.SolidGlowEffect && effectResource.Set.Capabilities != UiEffectCapabilities.Glow)))
+        {
+            throw new ArgumentException(
+                "The solid visual effect artifact requires an Analytic effect set with exactly its declared effect.",
+                nameof(effectResource));
+        }
+
         if (variant.Path == UiVisualShaderPath.GlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
              effectResource.Set.Capabilities != UiEffectCapabilities.Glow))
@@ -199,6 +209,15 @@ public sealed class UiDisplayListResourceRegistry
                 variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
                 effectResource.Set.Capabilities == UiEffectCapabilities.Glow)
+            {
+                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+                return;
+            }
+
+            if (variant.Path == TextShaderPath.OuterShadow &&
+                variant.Mode == GlyphImageMode.Sdf &&
+                effectResource.Set.Quality == UiEffectQuality.Analytic &&
+                effectResource.Set.Capabilities == UiEffectCapabilities.OuterShadow)
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;

@@ -58,6 +58,22 @@
       "textRepresentation": "Msdf",
       "effects": "Glow",
       "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Msdf",
+      "effects": "Outline",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Sdf",
+      "effects": "OuterShadow",
+      "quality": "Analytic"
     }
   ],
   "entries": [
@@ -214,6 +230,50 @@
       "vertexEntryPoint": "msdf-text-glow",
       "fragmentEntryPoint": "msdf-text-glow",
       "layerSetIdentity": "text.msdf.glow"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Msdf",
+        "effects": "Outline",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextOutlineVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextOutlineFragment.frag.spv",
+      "generatedProgramType": "MsdfTextOutlineGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackMsdfTextOutlineVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextOutlineFragmentParameters",
+      "vertexEntryPoint": "msdf-text-outline",
+      "fragmentEntryPoint": "msdf-text-outline",
+      "layerSetIdentity": "text.msdf.outline"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Sdf",
+        "effects": "OuterShadow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOuterShadowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextOuterShadowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextOuterShadowFragment.frag.spv",
+      "generatedProgramType": "SdfTextOuterShadowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSdfTextOuterShadowVertexGlyphsElements",
+      "fragmentPacker": "PackSdfTextOuterShadowFragmentParameters",
+      "vertexEntryPoint": "sdf-text-outer-shadow",
+      "fragmentEntryPoint": "sdf-text-outer-shadow",
+      "layerSetIdentity": "text.sdf.outer-shadow"
     }
   ]
 }

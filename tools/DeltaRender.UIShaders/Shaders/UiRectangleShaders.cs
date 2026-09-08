@@ -46,6 +46,89 @@ public readonly struct SolidRectangleVertexContext
 
 public readonly struct SolidRectangleFragmentContext { }
 
+public readonly struct SolidStrokeRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 FillColor;
+    public readonly float4 StrokeColor;
+    public readonly float StrokeWidth;
+
+    public SolidStrokeRectangleParameters(float4 rect, float4 fillColor, float4 strokeColor, float strokeWidth)
+    {
+        Rect = rect;
+        FillColor = fillColor;
+        StrokeColor = strokeColor;
+        StrokeWidth = strokeWidth;
+    }
+}
+
+[Interstage]
+public struct SolidStrokeRectanglePayload
+{
+    public Position Position;
+    public Uv0 Uv;
+    public SegmentRect Rect;
+    public VertexColor FillColor;
+    public FragmentColor StrokeColor;
+    public BorderWidth StrokeWidth;
+}
+
+public readonly struct SolidStrokeRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<SolidStrokeRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct SolidStrokeRectangleFragmentContext { }
+
+public readonly struct SolidGlowRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 FillColor;
+    public readonly float4 GlowColor;
+    public readonly float2 GlowOffset;
+    public readonly float GlowRadius;
+    public readonly float GlowSpread;
+    public readonly float GlowIntensity;
+
+    public SolidGlowRectangleParameters(float4 rect, float4 fillColor, UiEffectLayerParameters glow)
+    {
+        Rect = rect;
+        FillColor = fillColor;
+        GlowColor = glow.Color;
+        GlowOffset = glow.Offset;
+        GlowRadius = glow.BlurRadius;
+        GlowSpread = glow.Spread;
+        GlowIntensity = glow.Intensity;
+    }
+}
+
+[Interstage]
+public struct SolidGlowRectanglePayload
+{
+    public Position Position;
+    public Uv0 Uv;
+    public SegmentRect Rect;
+    public VertexColor FillColor;
+    public EffectGlowColor GlowColor;
+    public EffectGlowGeometry GlowGeometry;
+    public EffectGlowFalloff GlowFalloff;
+}
+
+public readonly struct SolidGlowRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<SolidGlowRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct SolidGlowRectangleFragmentContext { }
+
 public readonly struct RoundedRectangleParameters
 {
     public readonly float4 Rect;
@@ -495,6 +578,78 @@ public static class UiRectangleShaders
     {
         float4 c = input.Color.Value;
         return new float4(c.xyz * c.w, c.w);
+    }
+
+    [VertexShader("solid-stroke")]
+    public static SolidStrokeRectanglePayload SolidStrokeRectangleVertex(
+        in SolidStrokeRectangleVertexContext context,
+        in SolidStrokeRectanglePayload input)
+    {
+        SolidStrokeRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        return new SolidStrokeRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Uv = new Uv0(local),
+            Rect = new SegmentRect(instance.Rect),
+            FillColor = new VertexColor(instance.FillColor),
+            StrokeColor = new FragmentColor(instance.StrokeColor),
+            StrokeWidth = new BorderWidth(instance.StrokeWidth)
+        };
+    }
+
+    [FragmentShader("solid-stroke")]
+    public static float4 SolidStrokeRectangleFragment(
+        in SolidStrokeRectangleFragmentContext context,
+        in SolidStrokeRectanglePayload input)
+    {
+        float2 size = input.Rect.Value.zw;
+        float2 pixel = input.Uv.Value * size;
+        float distance = GetRoundedDistance(new float4(0f, 0f, 0f, 0f), pixel, size);
+        float outerCoverage = Coverage(distance);
+        float innerCoverage = Coverage(distance + input.StrokeWidth.Value);
+        float4 fill = Premultiply(input.FillColor.Value, innerCoverage);
+        float4 stroke = Premultiply(input.StrokeColor.Value, max(outerCoverage - innerCoverage, 0f));
+        return Over(fill, stroke);
+    }
+
+    [VertexShader("solid-glow")]
+    public static SolidGlowRectanglePayload SolidGlowRectangleVertex(
+        in SolidGlowRectangleVertexContext context,
+        in SolidGlowRectanglePayload input)
+    {
+        SolidGlowRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        return new SolidGlowRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Uv = new Uv0(local),
+            Rect = new SegmentRect(instance.Rect),
+            FillColor = new VertexColor(instance.FillColor),
+            GlowColor = new EffectGlowColor(instance.GlowColor),
+            GlowGeometry = new EffectGlowGeometry(new float4(instance.GlowOffset, 0f, instance.GlowRadius)),
+            GlowFalloff = new EffectGlowFalloff(new float2(instance.GlowSpread, instance.GlowIntensity))
+        };
+    }
+
+    [FragmentShader("solid-glow")]
+    public static float4 SolidGlowRectangleFragment(
+        in SolidGlowRectangleFragmentContext context,
+        in SolidGlowRectanglePayload input)
+    {
+        float2 size = input.Rect.Value.zw;
+        float2 pixel = input.Uv.Value * size;
+        float distance = GetRoundedDistance(new float4(0f, 0f, 0f, 0f), pixel, size);
+        UiEffectLayerParameters glow = new(
+            input.GlowColor.Value,
+            input.GlowGeometry.Value.xy,
+            input.GlowGeometry.Value.z,
+            input.GlowGeometry.Value.w,
+            input.GlowFalloff.Value.x,
+            input.GlowFalloff.Value.y);
+        return ApplyGlow(distance, glow, Premultiply(input.FillColor.Value, Coverage(distance)));
     }
 
     [VertexShader("rounded-rectangle")]

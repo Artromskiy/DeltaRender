@@ -13,6 +13,22 @@
     },
     {
       "target": "Visual",
+      "primitive": "Solid",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Solid",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Glow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
       "primitive": "Rounded",
       "material": "FlatColor",
       "textRepresentation": "None",
@@ -82,6 +98,50 @@
       "vertexEntryPoint": "solid-rectangle",
       "fragmentEntryPoint": "solid-rectangle",
       "layerSetIdentity": "visual.solid"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Solid",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidStrokeGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SolidStrokeRectangleVertex.vert.spv",
+      "fragmentSpirv": "SolidStrokeRectangleFragment.frag.spv",
+      "generatedProgramType": "SolidStrokeGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidStrokeRectangleVertexInstancesElements",
+      "fragmentPacker": "PackSolidStrokeRectangleVertexFrame",
+      "vertexEntryPoint": "solid-stroke",
+      "fragmentEntryPoint": "solid-stroke",
+      "layerSetIdentity": "visual.solid.stroke"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Solid",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SolidGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SolidGlowRectangleVertex.vert.spv",
+      "fragmentSpirv": "SolidGlowRectangleFragment.frag.spv",
+      "generatedProgramType": "SolidGlowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidGlowRectangleVertexInstancesElements",
+      "fragmentPacker": "PackSolidGlowRectangleVertexFrame",
+      "vertexEntryPoint": "solid-glow",
+      "fragmentEntryPoint": "solid-glow",
+      "layerSetIdentity": "visual.solid.glow"
     },
     {
       "key": {
