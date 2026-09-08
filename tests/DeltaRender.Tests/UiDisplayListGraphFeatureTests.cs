@@ -5,9 +5,9 @@ using Delta;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
+using Delta.Render.UIShaders;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Render.UIShaders;
 using Delta.Text;
 using Delta.Text.Contract;
 using Delta.XAML.Contract;
@@ -280,7 +280,9 @@ public sealed class UiDisplayListGraphFeatureTests
             new UiVisualPaint(
                 new float4(0.2f, 0.5f, 0.9f, 1),
                 new float4(8, 8, 8, 8),
-                UiEffectSet.None),
+                UiEffectSet.None)
+            with
+            { BlendMode = UiBlendMode.PremultipliedAlpha },
             UiClipId.None,
             UiResourceId.Empty);
 
@@ -296,7 +298,45 @@ public sealed class UiDisplayListGraphFeatureTests
         feature.AddPasses(graph, 1);
 
         Assert.Single(graph.RasterDescriptions);
-        Assert.Equal(RenderBlendMode.PremultipliedAlpha, graph.RasterDescriptions[0].Pipeline.BlendMode);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha),
+            graph.RasterDescriptions[0].Pipeline.BlendState);
+    }
+
+    [Fact]
+    public void VisualBlendModeMapsToRendererBlendState()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 10, 40, 30),
+            new UiVisualPaint(
+                new float4(0.2f, 0.5f, 0.9f, 1),
+                default,
+                UiEffectSet.None)
+            with
+            { BlendMode = UiBlendMode.Multiply },
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(
+                new[] { visual },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[] { new UiDrawRef(UiDrawKind.Visual, 0) })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Single(graph.RasterDescriptions);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.Multiply),
+            graph.RasterDescriptions[0].Pipeline.BlendState);
     }
 
     [Fact]

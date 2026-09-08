@@ -38,7 +38,9 @@ public sealed class TextRenderFeatureTests
         Assert.True(feature.TryResolveTextVariant(variant, out var pipeline));
         Assert.Same(program, pipeline.ShaderProgram);
         Assert.Equal(RenderBlendMode.PremultipliedAlpha, feature.CompositePipeline.BlendMode);
-        Assert.Equal(RenderBlendMode.PremultipliedAlpha, pipeline.BlendMode);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha),
+            pipeline.BlendState);
     }
 
     [Fact]
@@ -123,7 +125,7 @@ public sealed class TextRenderFeatureTests
         var firstCommands = firstGraph.RecordRaster();
 
         Assert.Equal(1, firstCommands.PushConstantCallCount);
-        Assert.Equal(64, firstCommands.LastPushConstants.Length);
+        Assert.Equal(128, firstCommands.LastPushConstants.Length);
         Assert.Equal(800f, ReadFloat(firstCommands.LastPushConstants, 0));
         Assert.Equal(600f, ReadFloat(firstCommands.LastPushConstants, 4));
         Assert.Equal(1f, ReadFloat(firstCommands.LastPushConstants, 16));

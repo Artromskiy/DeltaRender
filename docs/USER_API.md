@@ -211,6 +211,24 @@ validates their ABI and creates/caches the Vulkan pipeline internally. Producers
 provide generated packed data; Render does not compile shaders or duplicate
 shader layout declarations.
 
+Raster pipelines support these renderer-owned fixed-function blend modes. For
+custom fixed-function behavior, pass a `RenderBlendState` to
+`RasterPipelineDescription`; it specifies source/destination factors and
+operations independently for color and alpha.
+
+- `Opaque`: blending disabled.
+- `Alpha`: `src * srcAlpha + dst * (1 - srcAlpha)`.
+- `PremultipliedAlpha`: `src + dst * (1 - srcAlpha)`; use this for premultiplied UI/text/glow output.
+- `Additive`: existing straight-alpha additive behavior, `src * srcAlpha + dst`. It is not a premultiplied-additive mode and must not be used for premultiplied glow without an explicitly approved future mode.
+- `Multiply`: `src * dst + dst * (1 - srcAlpha)`.
+
+For premultiplied additive glow, use `RenderBlendState.PremultipliedAdditive`
+(`src + dst`) instead of changing the existing `Additive` preset.
+
+The blend state is part of `RasterPipelineDescription`, so changing it selects
+an independent cached Vulkan pipeline. Blend modes do not require a shader
+variant or a new payload ABI.
+
 Depth and stencil are declared through `RasterPipelineDescription` and
 `DepthStencilAttachmentDescription`. The graph validates the matching target
 and attachment usage.

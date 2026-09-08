@@ -15,6 +15,7 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
     private RasterPipelineDescription? _pipeline;
     private RasterPassDescription? _description;
     private IGraphicsShaderProgram? _program;
+    private RenderBlendState _blendState;
     private int _descriptionFirstOrderIndex = -1;
     private int _descriptionVisualCount = -1;
     private int _firstOrderIndex;
@@ -30,16 +31,18 @@ internal sealed class UiVisualSegmentPass(UiDisplayListGraphFeature owner) : IRa
         int visualCount,
         ulong instanceCount,
         IGraphicsShaderProgram program,
-        UiVisualRenderLayer layer)
+        UiVisualRenderLayer layer,
+        RenderBlendState blendState)
     {
         ArgumentNullException.ThrowIfNull(program);
-        if (!ReferenceEquals(_program, program))
+        if (!ReferenceEquals(_program, program) || _blendState != blendState)
         {
             _program = program;
+            _blendState = blendState;
             _pipeline = new RasterPipelineDescription(
                 program,
                 cullMode: RasterCullMode.None,
-                blendMode: RenderBlendMode.PremultipliedAlpha);
+                blendState: blendState);
             _description = null;
         }
 

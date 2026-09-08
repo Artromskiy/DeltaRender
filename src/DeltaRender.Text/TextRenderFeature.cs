@@ -187,7 +187,10 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     internal RasterPipelineDescription CompositePipeline => _pipeline;
 
-    internal bool TryResolveTextVariant(TextShaderVariant variant, out RasterPipelineDescription pipeline)
+    internal bool TryResolveTextVariant(
+        TextShaderVariant variant,
+        out RasterPipelineDescription pipeline,
+        RenderBlendState? blendState = null)
     {
         pipeline = _pipeline;
         if (!variant.IsValid || variant.Mode != _mode)
@@ -217,7 +220,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             variant.Program,
             topology: PrimitiveTopology.TriangleList,
             cullMode: RasterCullMode.None,
-            blendMode: RenderBlendMode.PremultipliedAlpha);
+            blendState: blendState ?? RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha));
         return true;
     }
 
@@ -225,6 +228,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         => _pendingRuns.RefAt(firstRun).BaseShaderVariant == _pendingRuns.RefAt(secondRun).BaseShaderVariant &&
            _pendingRuns.RefAt(firstRun).ShadowShaderVariant == _pendingRuns.RefAt(secondRun).ShadowShaderVariant &&
            _pendingRuns.RefAt(firstRun).GlowShaderVariant == _pendingRuns.RefAt(secondRun).GlowShaderVariant &&
+           _pendingRuns.RefAt(firstRun).BlendState == _pendingRuns.RefAt(secondRun).BlendState &&
            _pendingRuns.RefAt(firstRun).EffectValues == _pendingRuns.RefAt(secondRun).EffectValues;
 
     internal bool HasShadowLayer(int runIndex)
@@ -255,8 +259,29 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             }
         }
 
-        return !variant.HasValue || TryResolveTextVariant(variant.Value, out pipeline);
+        if (!variant.HasValue)
+        {
+            pipeline = WithBlendState(_pipeline, _pendingRuns.RefAt(firstRun).BlendState);
+            return true;
+        }
+
+        return TryResolveTextVariant(variant.Value, out pipeline, _pendingRuns.RefAt(firstRun).BlendState);
     }
+
+    private static RasterPipelineDescription WithBlendState(
+        RasterPipelineDescription source,
+        RenderBlendState blendState)
+        => new(
+            source.ShaderProgram,
+            source.Topology,
+            source.CullMode,
+            source.FrontFace,
+            source.BlendMode,
+            source.DepthTest,
+            source.DepthWrite,
+            source.DepthCompareOperation,
+            source.StencilState,
+            blendState);
 
     internal int QueueCompositeRun(
         ShapedText text,
@@ -271,7 +296,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         TextShaderVariant? baseShaderVariant = null,
         TextEffectValues effectValues = default,
         TextShaderVariant? shadowShaderVariant = null,
-        TextShaderVariant? glowShaderVariant = null)
+        TextShaderVariant? glowShaderVariant = null,
+        RenderBlendState? blendState = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -323,6 +349,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             color,
             clip,
             mergeWithPrevious,
+            blendState ?? RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha),
             baseShaderVariant,
             shadowShaderVariant,
             glowShaderVariant,
@@ -897,6 +924,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             cachedRun.Color != pending.Color ||
             cachedRun.Clip != pending.Clip ||
             cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
+            cachedRun.BlendState != pending.BlendState ||
             cachedRun.BaseShaderVariant != pending.BaseShaderVariant ||
             cachedRun.ShadowShaderVariant != pending.ShadowShaderVariant ||
             cachedRun.GlowShaderVariant != pending.GlowShaderVariant ||
@@ -949,6 +977,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         cachedRun.Color = pending.Color;
         cachedRun.Clip = pending.Clip;
         cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
+        cachedRun.BlendState = pending.BlendState;
         cachedRun.BaseShaderVariant = pending.BaseShaderVariant;
         cachedRun.ShadowShaderVariant = pending.ShadowShaderVariant;
         cachedRun.GlowShaderVariant = pending.GlowShaderVariant;
@@ -1080,6 +1109,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         private RasterPassDescription _description = new("DeltaRender.Text.Base", owner.CompositePipeline);
         private IGraphicsShaderProgram _shaderProgram = owner.CompositePipeline.ShaderProgram;
+        private RenderBlendState _blendState;
         private int _firstRun;
         private int _runCount;
         private TextRenderLayer _layer;
@@ -1093,9 +1123,12 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
                 return false;
             }
 
-            if (!ReferenceEquals(_shaderProgram, pipeline.ShaderProgram) || _layer != layer)
+            if (!ReferenceEquals(_shaderProgram, pipeline.ShaderProgram) ||
+                _layer != layer ||
+                _blendState != pipeline.BlendState)
             {
                 _shaderProgram = pipeline.ShaderProgram;
+                _blendState = pipeline.BlendState;
                 _description = new RasterPassDescription(
                     layer switch
                     {

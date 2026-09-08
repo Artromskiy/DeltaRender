@@ -18,6 +18,7 @@ internal readonly record struct PendingRun(
     Vector4 Color,
     PixelRect Clip,
     bool MergeWithPrevious,
+    RenderBlendState BlendState,
     TextShaderVariant? BaseShaderVariant,
     TextShaderVariant? ShadowShaderVariant,
     TextShaderVariant? GlowShaderVariant,
@@ -43,6 +44,7 @@ internal sealed class CachedRun
     internal Vector4 Color;
     internal PixelRect Clip;
     internal bool MergeWithPrevious;
+    internal RenderBlendState BlendState;
     internal TextShaderVariant? BaseShaderVariant;
     internal TextShaderVariant? ShadowShaderVariant;
     internal TextShaderVariant? GlowShaderVariant;

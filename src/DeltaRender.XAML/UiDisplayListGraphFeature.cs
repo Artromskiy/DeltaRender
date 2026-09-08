@@ -52,6 +52,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private uint[] _visualPushConstantSizes = [];
     private uint[] _visualInstanceStrides = [];
     private ShaderBinding[] _visualInstanceBindings = [];
+    private RenderBlendState[] _visualBlendStates = [];
     private UiRectangleShaderKind[] _visualShaderKinds = [];
     private UiVisualShaderPath[] _visualShaderPaths = [];
     private UiEffectResource[] _visualEffectResources = [];
@@ -288,6 +289,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualPushConstantSizes, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceStrides, displayList.Order.Length);
         EnsureCapacity(ref _visualInstanceBindings, displayList.Order.Length);
+        EnsureCapacity(ref _visualBlendStates, displayList.Order.Length);
         EnsureCapacity(ref _visualShaderKinds, displayList.Order.Length);
         EnsureCapacity(ref _visualShaderPaths, displayList.Order.Length);
         EnsureCapacity(ref _visualEffectResources, displayList.Order.Length);
@@ -498,6 +500,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     var color = text.Paint.FillColor;
                     var identity = _identities.RefAt(index);
                     var origin = _coordinates.ToPhysical(text.BaselineOrigin);
+                    if (!TryMapBlendMode(text.Paint.BlendMode, out var textBlendState))
+                    {
+                        AddDiagnostic($"Text at Order[{index}] has unsupported blend mode {text.Paint.BlendMode}.");
+                        previousTextCanMerge = false;
+                        continue;
+                    }
+
                     _textRunIndices.RefAt(index) = _textFeature.QueueCompositeRun(
                         text.Text,
                         origin.x,
@@ -509,6 +518,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         effectValues: effectValues,
                         shadowShaderVariant: shadowShaderVariant,
                         glowShaderVariant: glowShaderVariant,
+                        blendState: textBlendState,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
                         producerRunVersion: identity.Version);
@@ -686,7 +696,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         IGraphicsShaderProgram program,
         UiVisualRenderLayer layer)
     {
-        var visualPass = GetVisualSegmentPass(firstOrderIndex, visualCount, instanceCount, program, layer);
+        var visualPass = GetVisualSegmentPass(
+            firstOrderIndex,
+            visualCount,
+            instanceCount,
+            program,
+            layer,
+            _visualBlendStates.RefAt(firstOrderIndex));
         var pass = graph.AddRasterPass(visualPass.Description, visualPass);
         graph.UseColorAttachment(
             pass,
@@ -720,7 +736,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         int visualCount,
         ulong instanceCount,
         IGraphicsShaderProgram program,
-        UiVisualRenderLayer layer)
+        UiVisualRenderLayer layer,
+        RenderBlendState blendState)
     {
         if (_visualSegmentPassCount == _visualSegmentPasses.Length)
         {
@@ -735,7 +752,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _visualSegmentPasses[_visualSegmentPassCount] = pass;
         }
 
-        pass.SetRange(firstOrderIndex, visualCount, instanceCount, program, layer);
+        pass.SetRange(firstOrderIndex, visualCount, instanceCount, program, layer, blendState);
         _visualSegmentPassCount++;
         return pass;
     }
@@ -790,6 +807,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         var draw = _order.RefAt(orderIndex);
         var visual = _visuals.RefAt(draw.Index);
+        if (!TryMapBlendMode(visual.Paint.BlendMode, out var blendState))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] has unsupported blend mode {visual.Paint.BlendMode}.");
+            return false;
+        }
+
         ResolveVisualPlan(visual, out var baseVariant, out var shadowVariant, out var glowVariant, out var effectResource);
         var program = baseVariant.Program;
         var shaderVisualKind = baseVariant.Kind;
@@ -862,6 +885,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualPushConstantSizes.RefAt(orderIndex) = pushConstantSize;
         _visualInstanceStrides.RefAt(orderIndex) = instanceStride;
         _visualInstanceBindings.RefAt(orderIndex) = instanceBinding;
+        _visualBlendStates.RefAt(orderIndex) = blendState;
         _visualShaderKinds.RefAt(orderIndex) = shaderKind;
         _visualShaderPaths.RefAt(orderIndex) = shaderPath;
         _visualEffectResources.RefAt(orderIndex) = effectResource;
@@ -1905,6 +1929,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
+        if (!TryMapBlendMode(text.Paint.BlendMode, out _))
+        {
+            AddDiagnostic($"Text at Order[{orderIndex}] has unsupported blend mode {text.Paint.BlendMode}.");
+            return false;
+        }
+
         if (text.Paint.EffectSet != UiEffectSet.None &&
             (!text.Paint.EffectSet.IsValid || text.Paint.EffectSet.Target != UiEffectTarget.Text))
         {
@@ -2007,6 +2037,31 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                previous.Paint.EffectSet.Equals(current.Paint.EffectSet);
     }
 
+    private static bool TryMapBlendMode(UiBlendMode mode, out RenderBlendState state)
+    {
+        switch (mode)
+        {
+            case UiBlendMode.Opaque:
+                state = RenderBlendState.FromMode(RenderBlendMode.Opaque);
+                return true;
+            case UiBlendMode.Alpha:
+                state = RenderBlendState.FromMode(RenderBlendMode.Alpha);
+                return true;
+            case UiBlendMode.PremultipliedAlpha:
+                state = RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha);
+                return true;
+            case UiBlendMode.Additive:
+                state = RenderBlendState.FromMode(RenderBlendMode.Additive);
+                return true;
+            case UiBlendMode.Multiply:
+                state = RenderBlendState.FromMode(RenderBlendMode.Multiply);
+                return true;
+            default:
+                state = default;
+                return false;
+        }
+    }
+
     private void ClearFrameStorage(bool preserveVisualInstanceLayout = false)
     {
         if (!preserveVisualInstanceLayout)
@@ -2016,6 +2071,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             Array.Clear(_texts, 0, _textCount);
             Array.Clear(_order, 0, _orderCount);
             Array.Clear(_visualPrograms, 0, _orderCount);
+            Array.Clear(_visualBlendStates, 0, _orderCount);
             Array.Clear(_visualShadowPrograms, 0, _orderCount);
             Array.Clear(_visualHasShadow, 0, _orderCount);
             Array.Clear(_visualGlowPrograms, 0, _orderCount);

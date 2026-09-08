@@ -135,7 +135,7 @@ internal sealed unsafe class VulkanGraphPipeline
                 var viewport = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
                 var rasterization = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, PolygonMode = PolygonMode.Fill, CullMode = ToCullMode(description.CullMode), FrontFace = description.FrontFace == RasterFrontFace.Clockwise ? FrontFace.Clockwise : FrontFace.CounterClockwise, LineWidth = 1 };
                 var multisample = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
-                var blend = new PipelineColorBlendAttachmentState { BlendEnable = description.BlendMode != RenderBlendMode.Opaque, SrcColorBlendFactor = description.BlendMode == RenderBlendMode.PremultipliedAlpha ? BlendFactor.One : BlendFactor.SrcAlpha, DstColorBlendFactor = description.BlendMode == RenderBlendMode.Additive ? BlendFactor.One : BlendFactor.OneMinusSrcAlpha, ColorBlendOp = BlendOp.Add, SrcAlphaBlendFactor = BlendFactor.One, DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha, AlphaBlendOp = BlendOp.Add, ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
+                var blend = ResolveBlendState(description.BlendState);
                 var blendState = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
                 var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
                 var dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamicStates };
@@ -168,6 +168,46 @@ internal sealed unsafe class VulkanGraphPipeline
             DestroyShaderModule(session, fragment);
         }
     }
+
+    internal static PipelineColorBlendAttachmentState ResolveBlendState(RenderBlendState blendState)
+    {
+        return new PipelineColorBlendAttachmentState
+        {
+            BlendEnable = blendState.Enabled,
+            SrcColorBlendFactor = ToBlendFactor(blendState.SourceColorFactor),
+            DstColorBlendFactor = ToBlendFactor(blendState.DestinationColorFactor),
+            ColorBlendOp = ToBlendOperation(blendState.ColorOperation),
+            SrcAlphaBlendFactor = ToBlendFactor(blendState.SourceAlphaFactor),
+            DstAlphaBlendFactor = ToBlendFactor(blendState.DestinationAlphaFactor),
+            AlphaBlendOp = ToBlendOperation(blendState.AlphaOperation),
+            ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
+        };
+    }
+
+    private static BlendFactor ToBlendFactor(RenderBlendFactor factor) => factor switch
+    {
+        RenderBlendFactor.Zero => BlendFactor.Zero,
+        RenderBlendFactor.One => BlendFactor.One,
+        RenderBlendFactor.SrcColor => BlendFactor.SrcColor,
+        RenderBlendFactor.OneMinusSrcColor => BlendFactor.OneMinusSrcColor,
+        RenderBlendFactor.DstColor => BlendFactor.DstColor,
+        RenderBlendFactor.OneMinusDstColor => BlendFactor.OneMinusDstColor,
+        RenderBlendFactor.SrcAlpha => BlendFactor.SrcAlpha,
+        RenderBlendFactor.OneMinusSrcAlpha => BlendFactor.OneMinusSrcAlpha,
+        RenderBlendFactor.DstAlpha => BlendFactor.DstAlpha,
+        RenderBlendFactor.OneMinusDstAlpha => BlendFactor.OneMinusDstAlpha,
+        _ => throw new ArgumentOutOfRangeException(nameof(factor), factor, "Unsupported blend factor."),
+    };
+
+    private static BlendOp ToBlendOperation(RenderBlendOperation operation) => operation switch
+    {
+        RenderBlendOperation.Add => BlendOp.Add,
+        RenderBlendOperation.Subtract => BlendOp.Subtract,
+        RenderBlendOperation.ReverseSubtract => BlendOp.ReverseSubtract,
+        RenderBlendOperation.Min => BlendOp.Min,
+        RenderBlendOperation.Max => BlendOp.Max,
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unsupported blend operation."),
+    };
 
     private static List<ShaderResourceBinding> MergeResources(IGraphicsShaderProgram program)
     {

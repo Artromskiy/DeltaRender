@@ -228,15 +228,41 @@ public sealed class VulkanReuseTests(ITestOutputHelper output)
         var premultiplied = new RasterPipelineDescription(
             program,
             blendMode: RenderBlendMode.PremultipliedAlpha);
+        var multiply = new RasterPipelineDescription(
+            program,
+            blendMode: RenderBlendMode.Multiply);
         var cache = new VulkanPipelineCache<RasterPipelineDescription, int>();
         var createCalls = 0;
 
         cache.GetOrCreate(opaque, () => ++createCalls);
         cache.GetOrCreate(premultiplied, () => ++createCalls);
+        cache.GetOrCreate(multiply, () => ++createCalls);
 
-        Assert.Equal(2, createCalls);
-        Assert.Equal(2, cache.CreateCount);
-        Assert.Equal(2, cache.Count);
+        Assert.Equal(3, createCalls);
+        Assert.Equal(3, cache.CreateCount);
+        Assert.Equal(3, cache.Count);
+    }
+
+    [Fact]
+    public void VulkanBlendMappingKeepsAlphaModesAndAddsMultiply()
+    {
+        var opaque = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.FromMode(RenderBlendMode.Opaque));
+        var alpha = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.FromMode(RenderBlendMode.Alpha));
+        var premultiplied = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha));
+        var additive = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.FromMode(RenderBlendMode.Additive));
+        var multiply = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.FromMode(RenderBlendMode.Multiply));
+        var premultipliedAdditive = VulkanGraphPipeline.ResolveBlendState(RenderBlendState.PremultipliedAdditive);
+
+        Assert.False(opaque.BlendEnable);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.SrcAlpha, alpha.SrcColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha, alpha.DstColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.One, premultiplied.SrcColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.SrcAlpha, additive.SrcColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.One, additive.DstColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.DstColor, multiply.SrcColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha, multiply.DstColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.One, premultipliedAdditive.SrcColorBlendFactor);
+        Assert.Equal(Silk.NET.Vulkan.BlendFactor.One, premultipliedAdditive.DstColorBlendFactor);
     }
 
     [Fact]

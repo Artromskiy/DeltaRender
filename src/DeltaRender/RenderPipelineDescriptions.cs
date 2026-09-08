@@ -29,6 +29,94 @@ public enum RenderBlendMode : byte
     Alpha,
     PremultipliedAlpha,
     Additive,
+    Multiply,
+}
+
+public enum RenderBlendFactor : byte
+{
+    Zero,
+    One,
+    SrcColor,
+    OneMinusSrcColor,
+    DstColor,
+    OneMinusDstColor,
+    SrcAlpha,
+    OneMinusSrcAlpha,
+    DstAlpha,
+    OneMinusDstAlpha,
+}
+
+public enum RenderBlendOperation : byte
+{
+    Add,
+    Subtract,
+    ReverseSubtract,
+    Min,
+    Max,
+}
+
+public readonly record struct RenderBlendState(
+    bool Enabled,
+    RenderBlendFactor SourceColorFactor,
+    RenderBlendFactor DestinationColorFactor,
+    RenderBlendOperation ColorOperation,
+    RenderBlendFactor SourceAlphaFactor,
+    RenderBlendFactor DestinationAlphaFactor,
+    RenderBlendOperation AlphaOperation)
+{
+    public static RenderBlendState PremultipliedAdditive => new(
+        true,
+        RenderBlendFactor.One,
+        RenderBlendFactor.One,
+        RenderBlendOperation.Add,
+        RenderBlendFactor.One,
+        RenderBlendFactor.OneMinusSrcAlpha,
+        RenderBlendOperation.Add);
+
+    public static RenderBlendState FromMode(RenderBlendMode blendMode) => blendMode switch
+    {
+        RenderBlendMode.Opaque => new(
+            false,
+            RenderBlendFactor.One,
+            RenderBlendFactor.Zero,
+            RenderBlendOperation.Add,
+            RenderBlendFactor.One,
+            RenderBlendFactor.Zero,
+            RenderBlendOperation.Add),
+        RenderBlendMode.Alpha => new(
+            true,
+            RenderBlendFactor.SrcAlpha,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add,
+            RenderBlendFactor.One,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add),
+        RenderBlendMode.PremultipliedAlpha => new(
+            true,
+            RenderBlendFactor.One,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add,
+            RenderBlendFactor.One,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add),
+        RenderBlendMode.Additive => new(
+            true,
+            RenderBlendFactor.SrcAlpha,
+            RenderBlendFactor.One,
+            RenderBlendOperation.Add,
+            RenderBlendFactor.One,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add),
+        RenderBlendMode.Multiply => new(
+            true,
+            RenderBlendFactor.DstColor,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add,
+            RenderBlendFactor.One,
+            RenderBlendFactor.OneMinusSrcAlpha,
+            RenderBlendOperation.Add),
+        _ => throw new ArgumentOutOfRangeException(nameof(blendMode), blendMode, "Unsupported render blend mode."),
+    };
 }
 
 public enum RenderCompareOperation : byte
@@ -80,7 +168,8 @@ public sealed record RasterPipelineDescription
         bool depthTest = false,
         bool depthWrite = false,
         RenderCompareOperation depthCompareOperation = RenderCompareOperation.LessOrEqual,
-        RenderStencilState stencilState = default)
+        RenderStencilState stencilState = default,
+        RenderBlendState? blendState = null)
     {
         ArgumentNullException.ThrowIfNull(shaderProgram);
         ShaderProgram = shaderProgram;
@@ -92,6 +181,7 @@ public sealed record RasterPipelineDescription
         DepthWrite = depthWrite;
         DepthCompareOperation = depthCompareOperation;
         StencilState = stencilState;
+        BlendState = blendState ?? RenderBlendState.FromMode(blendMode);
     }
 
     public IGraphicsShaderProgram ShaderProgram { get; }
@@ -103,6 +193,8 @@ public sealed record RasterPipelineDescription
     public RasterFrontFace FrontFace { get; }
 
     public RenderBlendMode BlendMode { get; }
+
+    public RenderBlendState BlendState { get; }
 
     public bool DepthTest { get; }
 
