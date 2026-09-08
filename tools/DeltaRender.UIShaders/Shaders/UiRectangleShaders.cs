@@ -92,6 +92,133 @@ public readonly struct RoundedRectangleVertexContext
 
 public readonly struct RoundedRectangleFragmentContext { }
 
+public readonly struct UiEffectLayerParameters
+{
+    public readonly float4 Color;
+    public readonly float2 Offset;
+    public readonly float Width;
+    public readonly float BlurRadius;
+    public readonly float Spread;
+    public readonly float Intensity;
+
+    public UiEffectLayerParameters(
+        float4 color,
+        float2 offset,
+        float width,
+        float blurRadius,
+        float spread,
+        float intensity)
+    {
+        Color = color;
+        Offset = offset;
+        Width = width;
+        BlurRadius = blurRadius;
+        Spread = spread;
+        Intensity = intensity;
+    }
+}
+
+public readonly struct UiEffectParameters
+{
+    public readonly UiEffectLayerParameters StrokeOrOutline;
+    public readonly UiEffectLayerParameters OuterShadow;
+    public readonly UiEffectLayerParameters Glow;
+
+    public UiEffectParameters(
+        UiEffectLayerParameters strokeOrOutline,
+        UiEffectLayerParameters outerShadow,
+        UiEffectLayerParameters glow)
+    {
+        StrokeOrOutline = strokeOrOutline;
+        OuterShadow = outerShadow;
+        Glow = glow;
+    }
+}
+
+public readonly struct AnalyticRoundedRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 FillColor;
+    public readonly float4 CornerRadii;
+    public readonly float4 StrokeColor;
+    public readonly float2 StrokeOffset;
+    public readonly float StrokeWidth;
+    public readonly float StrokeBlurRadius;
+    public readonly float StrokeSpread;
+    public readonly float StrokeIntensity;
+    public readonly float4 OuterShadowColor;
+    public readonly float2 OuterShadowOffset;
+    public readonly float OuterShadowWidth;
+    public readonly float OuterShadowBlurRadius;
+    public readonly float OuterShadowSpread;
+    public readonly float OuterShadowIntensity;
+    public readonly float4 GlowColor;
+    public readonly float2 GlowOffset;
+    public readonly float GlowWidth;
+    public readonly float GlowBlurRadius;
+    public readonly float GlowSpread;
+    public readonly float GlowIntensity;
+
+    public AnalyticRoundedRectangleParameters(
+        float4 rect,
+        float4 fillColor,
+        float4 cornerRadii,
+        UiEffectParameters effects)
+    {
+        Rect = rect;
+        FillColor = fillColor;
+        CornerRadii = cornerRadii;
+        StrokeColor = effects.StrokeOrOutline.Color;
+        StrokeOffset = effects.StrokeOrOutline.Offset;
+        StrokeWidth = effects.StrokeOrOutline.Width;
+        StrokeBlurRadius = effects.StrokeOrOutline.BlurRadius;
+        StrokeSpread = effects.StrokeOrOutline.Spread;
+        StrokeIntensity = effects.StrokeOrOutline.Intensity;
+        OuterShadowColor = effects.OuterShadow.Color;
+        OuterShadowOffset = effects.OuterShadow.Offset;
+        OuterShadowWidth = effects.OuterShadow.Width;
+        OuterShadowBlurRadius = effects.OuterShadow.BlurRadius;
+        OuterShadowSpread = effects.OuterShadow.Spread;
+        OuterShadowIntensity = effects.OuterShadow.Intensity;
+        GlowColor = effects.Glow.Color;
+        GlowOffset = effects.Glow.Offset;
+        GlowWidth = effects.Glow.Width;
+        GlowBlurRadius = effects.Glow.BlurRadius;
+        GlowSpread = effects.Glow.Spread;
+        GlowIntensity = effects.Glow.Intensity;
+    }
+}
+
+[Interstage]
+public struct AnalyticRoundedRectanglePayload
+{
+    public Position Position;
+    public Uv0 Uv;
+    public SegmentRect Rect;
+    public VertexColor FillColor;
+    public CornerRadii CornerRadii;
+    public EffectStrokeColor StrokeColor;
+    public EffectStrokeGeometry StrokeGeometry;
+    public EffectStrokeFalloff StrokeFalloff;
+    public EffectOuterShadowColor OuterShadowColor;
+    public EffectOuterShadowGeometry OuterShadowGeometry;
+    public EffectOuterShadowFalloff OuterShadowFalloff;
+    public EffectGlowColor GlowColor;
+    public EffectGlowGeometry GlowGeometry;
+    public EffectGlowFalloff GlowFalloff;
+}
+
+public readonly struct AnalyticRoundedRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<AnalyticRoundedRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct AnalyticRoundedRectangleFragmentContext { }
+
 public static class UiRectangleShaders
 {
     private static float2 GetQuadLocal(uint vertexIndex)
@@ -214,5 +341,155 @@ public static class UiRectangleShaders
         float4 border = new float4(b.xyz * b.w, b.w);
 
         return fill * innerCoverage + border * borderCoverage;
+    }
+
+    private static float GetRoundedDistance(float4 cornerRadii, float2 pixel, float2 size)
+    {
+        float4 cornerData = GetCornerData(cornerRadii, pixel, size);
+
+        if (cornerData.w > 0f)
+        {
+            return length(pixel - cornerData.yz) - cornerData.x;
+        }
+
+        float2 halfSize = size * 0.5f;
+        float2 q = abs(pixel - halfSize) - halfSize;
+        return length(max(q, 0f)) + min(max(q.x, q.y), 0f);
+    }
+
+    private static float Coverage(float distance)
+    {
+        float edge = max(fwidth(distance) * 0.5f, 0.0001f);
+        return 1f - smoothstep(-edge, edge, distance);
+    }
+
+    private static float4 Premultiply(float4 color, float coverage)
+    {
+        float alpha = color.w * coverage;
+        return new float4(color.xyz * alpha, alpha);
+    }
+
+    private static float4 Over(float4 source, float4 destination)
+    {
+        return source + destination * (1f - source.w);
+    }
+
+    private static float4 ApplyStroke(
+        float distance,
+        UiEffectLayerParameters stroke,
+        float4 destination)
+    {
+        float outer = Coverage(distance);
+        float inner = Coverage(distance + stroke.Width);
+        float coverage = max(outer - inner, 0f);
+        return Over(Premultiply(stroke.Color, coverage), destination);
+    }
+
+    private static float4 ApplyOuterShadow(
+        float4 cornerRadii,
+        float2 pixel,
+        float2 size,
+        UiEffectLayerParameters shadow,
+        float4 destination)
+    {
+        float distance = GetRoundedDistance(cornerRadii, pixel - shadow.Offset, size) - shadow.Spread;
+        float blur = max(shadow.BlurRadius, 0.0001f);
+        float coverage = 1f - smoothstep(0f, blur + fwidth(distance), max(distance, 0f));
+        return Over(Premultiply(shadow.Color, coverage * shadow.Intensity), destination);
+    }
+
+    private static float4 ApplyGlow(
+        float distance,
+        UiEffectLayerParameters glow,
+        float4 destination)
+    {
+        float blur = max(glow.BlurRadius, 0.0001f);
+        float outside = 1f - Coverage(distance);
+        float coverage = exp(-max(distance - glow.Spread, 0f) / blur) * outside * glow.Intensity;
+        return Over(Premultiply(glow.Color, coverage), destination);
+    }
+
+    [VertexShader("analytic-rounded-rectangle")]
+    public static AnalyticRoundedRectanglePayload AnalyticRoundedRectangleVertex(
+        in AnalyticRoundedRectangleVertexContext context,
+        in AnalyticRoundedRectanglePayload input)
+    {
+        AnalyticRoundedRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+
+        return new AnalyticRoundedRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Uv = new Uv0(local),
+            Rect = new SegmentRect(instance.Rect),
+            FillColor = new VertexColor(instance.FillColor),
+            CornerRadii = new CornerRadii(instance.CornerRadii),
+            StrokeColor = new EffectStrokeColor(instance.StrokeColor),
+            StrokeGeometry = new EffectStrokeGeometry(new float4(
+                instance.StrokeOffset,
+                instance.StrokeWidth,
+                instance.StrokeBlurRadius)),
+            StrokeFalloff = new EffectStrokeFalloff(new float2(
+                instance.StrokeSpread,
+                instance.StrokeIntensity)),
+            OuterShadowColor = new EffectOuterShadowColor(instance.OuterShadowColor),
+            OuterShadowGeometry = new EffectOuterShadowGeometry(new float4(
+                instance.OuterShadowOffset,
+                instance.OuterShadowWidth,
+                instance.OuterShadowBlurRadius)),
+            OuterShadowFalloff = new EffectOuterShadowFalloff(new float2(
+                instance.OuterShadowSpread,
+                instance.OuterShadowIntensity)),
+            GlowColor = new EffectGlowColor(instance.GlowColor),
+            GlowGeometry = new EffectGlowGeometry(new float4(
+                instance.GlowOffset,
+                instance.GlowWidth,
+                instance.GlowBlurRadius)),
+            GlowFalloff = new EffectGlowFalloff(new float2(
+                instance.GlowSpread,
+                instance.GlowIntensity))
+        };
+    }
+
+    [FragmentShader("analytic-rounded-rectangle")]
+    public static float4 AnalyticRoundedRectangleFragment(
+        in AnalyticRoundedRectangleFragmentContext context,
+        in AnalyticRoundedRectanglePayload input)
+    {
+        float2 size = input.Rect.Value.zw;
+        float2 pixel = input.Uv.Value * size;
+        UiEffectLayerParameters stroke = new(
+            input.StrokeColor.Value,
+            input.StrokeGeometry.Value.xy,
+            input.StrokeGeometry.Value.z,
+            input.StrokeGeometry.Value.w,
+            input.StrokeFalloff.Value.x,
+            input.StrokeFalloff.Value.y);
+        UiEffectLayerParameters shadow = new(
+            input.OuterShadowColor.Value,
+            input.OuterShadowGeometry.Value.xy,
+            input.OuterShadowGeometry.Value.z,
+            input.OuterShadowGeometry.Value.w,
+            input.OuterShadowFalloff.Value.x,
+            input.OuterShadowFalloff.Value.y);
+        UiEffectLayerParameters glow = new(
+            input.GlowColor.Value,
+            input.GlowGeometry.Value.xy,
+            input.GlowGeometry.Value.z,
+            input.GlowGeometry.Value.w,
+            input.GlowFalloff.Value.x,
+            input.GlowFalloff.Value.y);
+        float distance = GetRoundedDistance(input.CornerRadii.Value, pixel, size);
+
+        float4 color = ApplyOuterShadow(
+            input.CornerRadii.Value,
+            pixel,
+            size,
+            shadow,
+            new float4(0f, 0f, 0f, 0f));
+        color = ApplyGlow(distance, glow, color);
+        color = Over(Premultiply(input.FillColor.Value, Coverage(distance)), color);
+        return ApplyStroke(distance, stroke, color);
     }
 }

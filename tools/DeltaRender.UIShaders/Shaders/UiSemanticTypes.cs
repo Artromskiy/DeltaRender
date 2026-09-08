@@ -44,4 +44,58 @@ public readonly struct ClipRect
     public static implicit operator float4(ClipRect value) => value.Value;
 }
 
+public readonly struct EffectStrokeColor
+{
+    public readonly float4 Value;
+    public EffectStrokeColor(float4 value) => Value = value;
+}
+
+public readonly struct EffectStrokeGeometry
+{
+    public readonly float4 Value;
+    public EffectStrokeGeometry(float4 value) => Value = value;
+}
+
+public readonly struct EffectStrokeFalloff
+{
+    public readonly float2 Value;
+    public EffectStrokeFalloff(float2 value) => Value = value;
+}
+
+public readonly struct EffectOuterShadowColor
+{
+    public readonly float4 Value;
+    public EffectOuterShadowColor(float4 value) => Value = value;
+}
+
+public readonly struct EffectOuterShadowGeometry
+{
+    public readonly float4 Value;
+    public EffectOuterShadowGeometry(float4 value) => Value = value;
+}
+
+public readonly struct EffectOuterShadowFalloff
+{
+    public readonly float2 Value;
+    public EffectOuterShadowFalloff(float2 value) => Value = value;
+}
+
+public readonly struct EffectGlowColor
+{
+    public readonly float4 Value;
+    public EffectGlowColor(float4 value) => Value = value;
+}
+
+public readonly struct EffectGlowGeometry
+{
+    public readonly float4 Value;
+    public EffectGlowGeometry(float4 value) => Value = value;
+}
+
+public readonly struct EffectGlowFalloff
+{
+    public readonly float2 Value;
+    public EffectGlowFalloff(float2 value) => Value = value;
+}
+
 #pragma warning restore CA2225
