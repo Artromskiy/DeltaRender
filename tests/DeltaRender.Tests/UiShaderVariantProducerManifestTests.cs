@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using Delta.Shader.Compiler;
 using Delta.Shader.Compiler.Frontend;
@@ -10,9 +12,9 @@ public sealed class UiShaderVariantProducerManifestTests
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     [Theory]
-    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders")]
-    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text")]
-    public void ManifestMatchesBuiltProducer(string manifestRelativePath, string producerRelativePath)
+    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 4)]
+    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 4)]
+    public void ManifestMatchesBuiltProducer(string manifestRelativePath, string producerRelativePath, int expectedVariantCount)
     {
         var repositoryRoot = FindRepositoryRoot();
         var manifestPath = Path.Combine(repositoryRoot, manifestRelativePath);
@@ -30,8 +32,43 @@ public sealed class UiShaderVariantProducerManifestTests
             Path.Combine(producerRoot, manifest.ArtifactRoot));
 
         Assert.True(validation.IsValid, string.Join(Environment.NewLine, validation.Diagnostics));
+        Assert.Equal(expectedVariantCount, manifest.AllowlistedVariants.Count);
         Assert.Equal(manifest.AllowlistedVariants.Count, validation.AllowlistedVariants);
         Assert.Equal(manifest.Entries.Count, validation.ValidatedVariants);
+    }
+
+    [Theory]
+    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json")]
+    [InlineData("src/DeltaRender.Text/TextShaderVariants.json")]
+    public void ManifestDoesNotAliasArtifactsAcrossVariantKeys(string manifestRelativePath)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var manifest = JsonSerializer.Deserialize<Manifest>(
+            File.ReadAllText(Path.Combine(repositoryRoot, manifestRelativePath)),
+            JsonOptions);
+
+        Assert.NotNull(manifest);
+        var artifactKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in manifest!.Entries)
+        {
+            var key = string.Join(
+                "/",
+                entry.Key.Target,
+                entry.Key.Primitive,
+                entry.Key.Material,
+                entry.Key.TextRepresentation,
+                entry.Key.Effects,
+                entry.Key.Quality);
+            var artifact = string.Join("/", entry.GeneratedProgram, entry.VertexSpirv, entry.FragmentSpirv);
+            if (artifactKeys.TryGetValue(artifact, out var previousKey))
+            {
+                Assert.Equal(previousKey, key);
+            }
+            else
+            {
+                artifactKeys.Add(artifact, key);
+            }
+        }
     }
 
     private static UiShaderVariantKey ToKey(VariantKey value)
@@ -54,7 +91,10 @@ public sealed class UiShaderVariantProducerManifestTests
             value.VertexAbiAccessor,
             value.FragmentAbiAccessor,
             value.VertexEntryPoint,
-            value.FragmentEntryPoint);
+            value.FragmentEntryPoint)
+        {
+            LayerSetIdentity = value.LayerSetIdentity,
+        };
 
     private static T Parse<T>(string value) where T : struct, Enum
         => Enum.Parse<T>(value.Replace('|', ','), ignoreCase: true);
@@ -106,5 +146,6 @@ public sealed class UiShaderVariantProducerManifestTests
         public string FragmentAbiAccessor { get; set; } = string.Empty;
         public string VertexEntryPoint { get; set; } = string.Empty;
         public string FragmentEntryPoint { get; set; } = string.Empty;
+        public string LayerSetIdentity { get; set; } = string.Empty;
     }
 }

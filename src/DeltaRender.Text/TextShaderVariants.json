@@ -15,46 +15,6 @@
       "target": "Text",
       "primitive": "Solid",
       "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "Outline",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "OuterShadow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "Glow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "Outline|Glow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Sdf",
-      "effects": "Outline|OuterShadow|Glow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
       "textRepresentation": "Msdf",
       "effects": "None",
       "quality": "Analytic"
@@ -63,31 +23,7 @@
       "target": "Text",
       "primitive": "Solid",
       "material": "DistanceField",
-      "textRepresentation": "Msdf",
-      "effects": "Outline",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Msdf",
-      "effects": "OuterShadow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Msdf",
-      "effects": "Glow",
-      "quality": "Analytic"
-    },
-    {
-      "target": "Text",
-      "primitive": "Solid",
-      "material": "DistanceField",
-      "textRepresentation": "Msdf",
+      "textRepresentation": "Sdf",
       "effects": "Outline|Glow",
       "quality": "Analytic"
     },
@@ -96,7 +32,7 @@
       "primitive": "Solid",
       "material": "DistanceField",
       "textRepresentation": "Msdf",
-      "effects": "Outline|OuterShadow|Glow",
+      "effects": "Outline|Glow",
       "quality": "Analytic"
     }
   ],
@@ -118,102 +54,8 @@
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
       "vertexEntryPoint": "sdf-text",
-      "fragmentEntryPoint": "sdf-text"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "Outline",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "OuterShadow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "Glow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "Outline|Glow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "Outline|OuterShadow|Glow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "sdf-text-outline-glow",
-      "fragmentEntryPoint": "sdf-text-outline-glow"
+      "fragmentEntryPoint": "sdf-text",
+      "layerSetIdentity": "text.sdf"
     },
     {
       "key": {
@@ -232,64 +74,28 @@
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
       "vertexEntryPoint": "msdf-text",
-      "fragmentEntryPoint": "msdf-text"
+      "fragmentEntryPoint": "msdf-text",
+      "layerSetIdentity": "text.msdf"
     },
     {
       "key": {
         "target": "Text",
         "primitive": "Solid",
         "material": "DistanceField",
-        "textRepresentation": "Msdf",
-        "effects": "Outline",
+        "textRepresentation": "Sdf",
+        "effects": "Outline|Glow",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
+      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Msdf",
-        "effects": "OuterShadow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Msdf",
-        "effects": "Glow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow"
+      "vertexEntryPoint": "sdf-text-outline-glow",
+      "fragmentEntryPoint": "sdf-text-outline-glow",
+      "layerSetIdentity": "text.sdf.outline.glow"
     },
     {
       "key": {
@@ -308,26 +114,8 @@
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
       "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Msdf",
-        "effects": "Outline|OuterShadow|Glow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexEntryPoint": "msdf-text-outline-glow",
-      "fragmentEntryPoint": "msdf-text-outline-glow"
+      "fragmentEntryPoint": "msdf-text-outline-glow",
+      "layerSetIdentity": "text.msdf.outline.glow"
     }
   ]
 }
