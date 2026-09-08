@@ -137,6 +137,13 @@ public static class UiRenderHost
             TextShaderArtifacts.Abi.TextShaders.SdfText.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfText.Fragment());
 
+    private static GraphicsShaderProgram CreateTextOuterShadowProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextOuterShadow.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextOuterShadow.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Fragment());
+
     internal static UiDisplayListResourceRegistry CreateResourceRegistry(IUiResourceResolver resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -158,6 +165,18 @@ public static class UiRenderHost
                         CreateRoundedStrokeOuterGlowProgram(),
                         UiVisualKind.RoundedRectangle,
                         UiVisualShaderPath.RoundedStrokeOuterGlowEffect));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.OuterShadow)
+            {
+                registry.RegisterTextEffectResource(
+                    effect,
+                    new TextShaderVariant(
+                        CreateTextOuterShadowProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.OuterShadow));
             }
         }
 

@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DeltaRender.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Delta.Diagnostics.Contract" />
     <PackageReference Include="DeltaMaths" />
     <PackageReference Include="DeltaShader.Contract" />

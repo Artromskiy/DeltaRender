@@ -28,15 +28,23 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private const int InitialInstanceCapacity = 256;
     private const uint DefaultAtlasSize = 2048;
     private const uint DefaultPadding = 1;
+    private const float MaxAutomaticDistanceRange = 32f;
 
     private readonly IRenderFrameSession _session;
-    private readonly TextAtlas _atlas;
+    private readonly ITextService _textService;
     private readonly TextUploadPass _uploadPass;
     private readonly TextDrawPass _drawPass;
     private readonly RasterPipelineDescription _pipeline;
     private readonly RasterPassDescription _rasterPassDescription;
     private readonly GlyphImageMode _mode;
-    private readonly float _distanceRange;
+    private readonly GlyphImageEncoding _atlasEncoding;
+    private readonly RenderTextureFormat _atlasFormat;
+    private readonly int _atlasBytesPerPixel;
+    private readonly uint _atlasWidth;
+    private readonly uint _atlasHeight;
+    private readonly uint _atlasPadding;
+    private readonly float _minimumDistanceRange;
+    private readonly ColorGlyphOptions? _colorOptions;
     private readonly Dictionary<TextRunCacheKey, CachedRun> _runCache = new();
     private readonly ShaderBinding _instanceBinding;
     private readonly uint _instanceStride;
@@ -62,6 +70,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     private int _batchCount;
     private int _localRunBatchCount;
     private int _uploadedInstanceByteCount;
+    private TextAtlas _atlas;
+    private float _distanceRange;
     private PixelExtent _viewport;
     private bool _instancePayloadDirty;
     private bool _instanceBufferNeedsUpload = true;
@@ -113,20 +123,18 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _pushConstantBytes = new byte[checked((int)Maths.Max(_pushConstantSize, TextShaderPacking.MaxPushConstantSize))];
 
         _session = session;
+        _textService = textService;
         _mode = mode;
-        _distanceRange = mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf ? distanceRange : 0;
-        _atlas = new TextAtlas(
-            session,
-            textService,
-            mode,
-            shaderLayout.Encoding,
-            shaderLayout.AtlasFormat,
-            shaderLayout.AtlasBytesPerPixel,
-            atlasWidth,
-            atlasHeight,
-            padding,
-            _distanceRange,
-            colorOptions);
+        _atlasEncoding = shaderLayout.Encoding;
+        _atlasFormat = shaderLayout.AtlasFormat;
+        _atlasBytesPerPixel = shaderLayout.AtlasBytesPerPixel;
+        _atlasWidth = atlasWidth;
+        _atlasHeight = atlasHeight;
+        _atlasPadding = padding;
+        _minimumDistanceRange = mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf ? distanceRange : 0;
+        _distanceRange = _minimumDistanceRange;
+        _colorOptions = colorOptions;
+        _atlas = CreateAtlas(_distanceRange);
         _viewport = viewport;
         _pageGraphHandles = new RenderGraphTextureHandle[4];
         _uploadPageIndices = new int[4];
@@ -567,6 +575,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     {
         _instanceCount = 0;
         _batchCount = 0;
+        EnsureEffectDistanceRange();
         var useStamp = _atlas.NextUseStamp();
         EnsureRunBatchCapacity(_pendingRunCount);
         for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
@@ -662,6 +671,69 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             byteCount != _uploadedInstanceByteCount ||
             !_instanceBytes.AsSpan(0, byteCount).SequenceEqual(_uploadedInstanceBytes.AsSpan(0, byteCount));
     }
+
+    private void EnsureEffectDistanceRange()
+    {
+        if (_mode is not (GlyphImageMode.Sdf or GlyphImageMode.Msdf))
+        {
+            return;
+        }
+
+        var required = _minimumDistanceRange;
+        for (var runIndex = 0; runIndex < _pendingRunCount; runIndex++)
+        {
+            var effects = _pendingRuns.RefAt(runIndex).EffectValues;
+            required = Maths.Max(required, effects.StrokeWidth);
+            required = Maths.Max(required, effects.OuterGlowRadius);
+            var shadowWidth = Maths.Max(effects.OuterShadowWidth + effects.OuterShadowSpread, 0f);
+            var shadowOffset = Maths.Max(Maths.Abs(effects.OuterShadowOffset.X), Maths.Abs(effects.OuterShadowOffset.Y));
+            required = Maths.Max(required, shadowOffset + shadowWidth + effects.OuterShadowBlurRadius);
+        }
+
+        if (required <= _distanceRange)
+        {
+            return;
+        }
+
+        var selected = SelectDistanceRangeTier(required);
+        var replacement = CreateAtlas(selected);
+        var previous = _atlas;
+        _atlas = replacement;
+        _distanceRange = selected;
+        _runCache.Clear();
+        _instanceBufferNeedsUpload = true;
+        _uploadedInstanceByteCount = 0;
+        previous.Dispose();
+    }
+
+    private float SelectDistanceRangeTier(float required)
+    {
+        var selected = required <= 4f ? 4f :
+            required <= 8f ? 8f :
+            required <= 16f ? 16f :
+            required <= MaxAutomaticDistanceRange ? MaxAutomaticDistanceRange : 0f;
+        if (selected == 0f && required > _minimumDistanceRange)
+        {
+            throw new InvalidOperationException(
+                $"Analytic text effect reach {required} exceeds the maximum automatic distance-field tier {MaxAutomaticDistanceRange}; use a CachedMask effect or configure a larger text distance range explicitly.");
+        }
+
+        return Maths.Max(selected, _minimumDistanceRange);
+    }
+
+    private TextAtlas CreateAtlas(float distanceRange) =>
+        new(
+            _session,
+            _textService,
+            _mode,
+            _atlasEncoding,
+            _atlasFormat,
+            _atlasBytesPerPixel,
+            _atlasWidth,
+            _atlasHeight,
+            _atlasPadding,
+            distanceRange,
+            _colorOptions);
 
     private int AppendBatch(PixelRect clip, int pageIndex, int instance, bool allowMerge, int count = 1)
     {

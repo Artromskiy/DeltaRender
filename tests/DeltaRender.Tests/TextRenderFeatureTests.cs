@@ -142,6 +142,139 @@ public sealed class TextRenderFeatureTests
         Assert.Equal(300f, ReadFloat(secondCommands.LastPushConstants, 4));
     }
 
+    [Theory]
+    [InlineData(GlyphImageMode.Sdf)]
+    [InlineData(GlyphImageMode.Msdf)]
+    public void OuterShadowPromotesDistanceRangeAndExpandsGlyphQuad(GlyphImageMode mode)
+    {
+        using var textService = new DeltaTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var shaped = textService.Shape(new TextShapeRequest("AB".AsMemory(), 32, new[] { font }));
+        var standardProgram = mode == GlyphImageMode.Sdf
+            ? SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv)
+            : MsdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var shadowProgram = mode == GlyphImageMode.Sdf
+            ? SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv)
+            : MsdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            standardProgram,
+            new PixelExtent(800, 500),
+            mode,
+            atlasWidth: 256,
+            atlasHeight: 256);
+        var effects = new TextEffectValues(
+            Vector4.Zero,
+            0,
+            Vector4.Zero,
+            0,
+            0,
+            new Vector4(0, 0, 0, 0.5f),
+            new Vector2(0, 6),
+            0,
+            3,
+            0,
+            1);
+
+        feature.QueueCompositeRun(
+            shaped,
+            100,
+            100,
+            Vector4.One,
+            new PixelRect(0, 0, 800, 500),
+            mergeWithPrevious: true,
+            shaderVariant: new TextShaderVariant(shadowProgram, mode, TextShaderPath.OuterShadow),
+            effectValues: effects);
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = graph.RecordRaster();
+        var upload = graph.RecordTransfer();
+
+        Assert.Equal(16f, ReadFloat(commands.LastPushConstants, 32));
+        var bytes = upload.LastBufferUpload;
+        Assert.Equal(96, bytes.Length);
+        var run = shaped.Runs.Span[0];
+        var glyph = run.Glyphs.Span[0];
+        var defaultImage = textService.GenerateGlyphImage(new GlyphImageRequest(
+            run.Font,
+            glyph.GlyphId,
+            run.PixelsPerEm,
+            mode,
+            4f,
+            null));
+        var expandedImage = textService.GenerateGlyphImage(new GlyphImageRequest(
+            run.Font,
+            glyph.GlyphId,
+            run.PixelsPerEm,
+            mode,
+            16f,
+            null));
+        Assert.Equal(100f + glyph.OffsetX + expandedImage.PlaneBounds.Left, ReadFloat(bytes, 0));
+        Assert.Equal(100f + glyph.OffsetY + expandedImage.PlaneBounds.Top, ReadFloat(bytes, 4));
+        Assert.Equal(100f + glyph.OffsetX + expandedImage.PlaneBounds.Right, ReadFloat(bytes, 8));
+        Assert.Equal(100f + glyph.OffsetY + expandedImage.PlaneBounds.Bottom, ReadFloat(bytes, 12));
+
+        const float defaultGuard = 5f;
+        const float expandedGuard = 17f;
+        Assert.Equal(defaultImage.PlaneBounds.Left + defaultGuard, expandedImage.PlaneBounds.Left + expandedGuard, 4);
+        Assert.Equal(defaultImage.PlaneBounds.Top + defaultGuard, expandedImage.PlaneBounds.Top + expandedGuard, 4);
+        Assert.Equal(defaultImage.PlaneBounds.Right - defaultGuard, expandedImage.PlaneBounds.Right - expandedGuard, 4);
+        Assert.Equal(defaultImage.PlaneBounds.Bottom - defaultGuard, expandedImage.PlaneBounds.Bottom - expandedGuard, 4);
+        Assert.True(expandedGuard >= effects.OuterShadowOffset.Y + effects.OuterShadowBlurRadius);
+
+        var firstUvMaxX = ReadFloat(bytes, 24);
+        var secondUvMinX = ReadFloat(bytes, 48 + 16);
+        Assert.True((secondUvMinX - firstUvMaxX) * 256f >= 1f);
+    }
+
+    [Fact]
+    public void AnalyticTextEffectBeyondAutomaticRangeFailsDeterministically()
+    {
+        using var textService = new DeltaTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var shaped = textService.Shape(new TextShapeRequest("A".AsMemory(), 32, new[] { font }));
+        var standardProgram = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var shadowProgram = SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var feature = new TextRenderFeature(
+            new FakeSession(),
+            textService,
+            standardProgram,
+            new PixelExtent(800, 500));
+        var effects = new TextEffectValues(
+            Vector4.Zero,
+            0,
+            Vector4.Zero,
+            0,
+            0,
+            Vector4.One,
+            new Vector2(0, 40),
+            0,
+            1,
+            0,
+            1);
+        feature.QueueCompositeRun(
+            shaped,
+            0,
+            0,
+            Vector4.One,
+            new PixelRect(0, 0, 800, 500),
+            mergeWithPrevious: true,
+            shaderVariant: new TextShaderVariant(shadowProgram, GlyphImageMode.Sdf, TextShaderPath.OuterShadow),
+            effectValues: effects);
+
+        var error = Assert.Throws<InvalidOperationException>(() => feature.AddPasses(new RecordingGraphBuilder(), 1));
+        Assert.Contains("maximum automatic distance-field tier 32", error.Message, StringComparison.Ordinal);
+        Assert.Contains("CachedMask", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void InstanceUploadSkipsUnchangedPayloadAndResizeButKeepsChangesDirty()
     {

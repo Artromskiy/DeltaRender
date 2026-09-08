@@ -134,14 +134,30 @@ effects without changing shaping, glyph metrics or atlas encoding:
   constant root and retain the glyph storage buffer at set `0`, binding `0`;
 - `OuterGlowColor`, `OuterGlowRadius` and `OuterGlowIntensity` use the same distance-field
   units as `DistanceRange` and `StrokeWidth`;
+- SDF/MSDF samples use `0.5 + signedDistance / (2 * DistanceRange)` and every
+  shader variant decodes with the matching `2 * DistanceRange` scale;
 - `OuterShadowColor`, `OuterShadowOffset`, `OuterShadowWidth`,
   `OuterShadowBlurRadius`, `OuterShadowSpread` and `OuterShadowIntensity` are
   packed in the same root; offset is converted to atlas UV using the generated
   glyph pixel/UV-size interstage values;
+- shadow offsets follow the UI top-left convention: positive X moves the
+  shadow right and positive Y moves it down; the fragment samples the source
+  distance field at `uv - offset`;
+- analytic stroke, glow and shadow extents must fit the glyph image distance
+  range and atlas padding; larger effects require a glyph image prepared with
+  a sufficient range rather than extrapolation by the renderer;
 - fragment application order is outer shadow, outer glow, stroke, then fill;
 - the generated program exposes the corresponding typed root packers and
   `VertexAbi`/`FragmentAbi`; consumers must use those generated members rather
   than recreate the layout.
+
+`TextRenderFeature` receives effect dimensions in device pixels and promotes
+its persistent SDF/MSDF atlas monotonically through `4`, `8`, `16` and `32`
+pixel distance-range tiers. DeltaText derives matching glyph-image padding and
+expanded plane bounds from the selected range, so the packed destination quad
+covers fill and analytic paint while each atlas cell remains isolated. A reach
+above the maximum automatic tier fails deterministically and requires a
+`CachedMask` effect or an explicitly configured larger base range.
 
 These are fixed producer artifacts, not runtime shader composition. A general
 ordered effect chain and cached-mask/backdrop-blur paths remain explicit

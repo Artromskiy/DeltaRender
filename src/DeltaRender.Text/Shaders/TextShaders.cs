@@ -100,6 +100,13 @@ public readonly struct GlyphUvSize
     public GlyphUvSize(float2 value) => Value = value;
 }
 
+public readonly struct GlyphUvBounds
+{
+    public readonly float4 Value;
+
+    public GlyphUvBounds(float4 value) => Value = value;
+}
+
 [Interstage]
 public struct TextEffectVarying
 {
@@ -108,6 +115,16 @@ public struct TextEffectVarying
     public VertexColor GlyphColor;
     public GlyphPixelSize PixelSize;
     public GlyphUvSize UvSize;
+}
+
+[Interstage]
+public struct TextShadowVarying
+{
+    public Position Position;
+    public Uv0 Uv;
+    public VertexColor GlyphColor;
+    public GlyphPixelSize PixelSize;
+    public GlyphUvBounds UvBounds;
 }
 
 public readonly struct TextVertexContext
@@ -418,7 +435,7 @@ public static class TextShaders
     public static float4 SdfTextFragment(in SdfTextFragmentContext context, in TextVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -501,7 +518,7 @@ public static class TextShaders
         in TextVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -587,7 +604,7 @@ public static class TextShaders
         var median = maths.max(
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
-        var signedDistance = (median - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -684,7 +701,7 @@ public static class TextShaders
         in TextEffectVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var outerGlowRadius = maths.max(context.Parameters.OuterGlowRadius, edge);
@@ -696,7 +713,7 @@ public static class TextShaders
     }
 
     [VertexShader("sdf-text-outer-shadow")]
-    public static TextEffectVarying SdfTextOuterShadowVertex(
+    public static TextShadowVarying SdfTextOuterShadowVertex(
         in SdfTextOuterShadowVertexContext context,
         in TextVarying input)
     {
@@ -708,89 +725,98 @@ public static class TextShaders
         var uvMin = new float2(glyph.UvRect.x, glyph.UvRect.y);
         var uvMax = new float2(glyph.UvRect.z, glyph.UvRect.w);
         var pixelSize = new GlyphPixelSize(max - min);
-        var uvSize = new GlyphUvSize(uvMax - uvMin);
+        var uvSize = new GlyphUvBounds(glyph.UvRect);
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = pixelSize,
-            UvSize = uvSize
+            UvBounds = uvSize
         };
     }
 
     [FragmentShader("sdf-text-outer-shadow")]
     public static float4 SdfTextOuterShadowFragment(
         in SdfTextOuterShadowFragmentContext context,
-        in TextEffectVarying input)
+        in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
-        var shadowDistance = (shadowTexel.x - 0.5f) * context.Parameters.DistanceRange;
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
+        var shadowDistance = (shadowTexel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
@@ -805,7 +831,7 @@ public static class TextShaders
     }
 
     [VertexShader("msdf-text-outer-shadow")]
-    public static TextEffectVarying MsdfTextOuterShadowVertex(
+    public static TextShadowVarying MsdfTextOuterShadowVertex(
         in MsdfTextOuterShadowVertexContext context,
         in TextVarying input)
     {
@@ -817,95 +843,104 @@ public static class TextShaders
         var uvMin = new float2(glyph.UvRect.x, glyph.UvRect.y);
         var uvMax = new float2(glyph.UvRect.z, glyph.UvRect.w);
         var pixelSize = new GlyphPixelSize(max - min);
-        var uvSize = new GlyphUvSize(uvMax - uvMin);
+        var uvSize = new GlyphUvBounds(glyph.UvRect);
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = pixelSize,
-            UvSize = uvSize
+            UvBounds = uvSize
         };
     }
 
     [FragmentShader("msdf-text-outer-shadow")]
     public static float4 MsdfTextOuterShadowFragment(
         in MsdfTextOuterShadowFragmentContext context,
-        in TextEffectVarying input)
+        in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
         var median = maths.max(
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
-        var signedDistance = (median - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
         var shadowMedian = maths.max(
             maths.min(shadowTexel.x, shadowTexel.y),
             maths.min(maths.max(shadowTexel.x, shadowTexel.y), shadowTexel.z));
-        var shadowDistance = (shadowMedian - 0.5f) * context.Parameters.DistanceRange;
+        var shadowDistance = (shadowMedian - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
@@ -1009,7 +1044,7 @@ public static class TextShaders
         var median = maths.max(
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
-        var signedDistance = (median - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var outerGlowRadius = maths.max(context.Parameters.OuterGlowRadius, edge);
@@ -1093,7 +1128,7 @@ public static class TextShaders
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
         var signedDistance = median - 0.5f;
-        signedDistance *= context.Parameters.DistanceRange;
+        signedDistance *= 2f * context.Parameters.DistanceRange;
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -1104,7 +1139,7 @@ public static class TextShaders
     }
 
     [VertexShader("sdf-text-stroke-outer-shadow-outer-glow")]
-    public static TextEffectVarying SdfTextStrokeOuterShadowOuterGlowVertex(
+    public static TextShadowVarying SdfTextStrokeOuterShadowOuterGlowVertex(
         in SdfTextStrokeOuterShadowOuterGlowVertexContext context,
         in TextVarying input)
     {
@@ -1116,81 +1151,81 @@ public static class TextShaders
         var uvMin = new float2(glyph.UvRect.x, glyph.UvRect.y);
         var uvMax = new float2(glyph.UvRect.z, glyph.UvRect.w);
         var pixelSize = new GlyphPixelSize(max - min);
-        var uvSize = new GlyphUvSize(uvMax - uvMin);
+        var uvSize = new GlyphUvBounds(glyph.UvRect);
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = pixelSize,
-            UvSize = uvSize
+            UvBounds = uvSize
         };
     }
 
     [FragmentShader("sdf-text-stroke-outer-shadow-outer-glow")]
     public static float4 SdfTextStrokeOuterShadowOuterGlowFragment(
         in SdfTextStrokeOuterShadowOuterGlowFragmentContext context,
-        in TextEffectVarying input)
+        in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -1202,9 +1237,18 @@ public static class TextShaders
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
-        var shadowDistance = (shadowTexel.x - 0.5f) * context.Parameters.DistanceRange;
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
+        var shadowDistance = (shadowTexel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
@@ -1221,7 +1265,7 @@ public static class TextShaders
     }
 
     [VertexShader("msdf-text-stroke-outer-shadow-outer-glow")]
-    public static TextEffectVarying MsdfTextStrokeOuterShadowOuterGlowVertex(
+    public static TextShadowVarying MsdfTextStrokeOuterShadowOuterGlowVertex(
         in MsdfTextStrokeOuterShadowOuterGlowVertexContext context,
         in TextVarying input)
     {
@@ -1233,84 +1277,84 @@ public static class TextShaders
         var uvMin = new float2(glyph.UvRect.x, glyph.UvRect.y);
         var uvMax = new float2(glyph.UvRect.z, glyph.UvRect.w);
         var pixelSize = new GlyphPixelSize(max - min);
-        var uvSize = new GlyphUvSize(uvMax - uvMin);
+        var uvSize = new GlyphUvBounds(glyph.UvRect);
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = pixelSize,
-                UvSize = uvSize
+                UvBounds = uvSize
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = pixelSize,
-            UvSize = uvSize
+            UvBounds = uvSize
         };
     }
 
     [FragmentShader("msdf-text-stroke-outer-shadow-outer-glow")]
     public static float4 MsdfTextStrokeOuterShadowOuterGlowFragment(
         in MsdfTextStrokeOuterShadowOuterGlowFragmentContext context,
-        in TextEffectVarying input)
+        in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
         var median = maths.max(
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
-        var signedDistance = (median - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -1322,12 +1366,21 @@ public static class TextShaders
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
         var shadowMedian = maths.max(
             maths.min(shadowTexel.x, shadowTexel.y),
             maths.min(maths.max(shadowTexel.x, shadowTexel.y), shadowTexel.z));
-        var shadowDistance = (shadowMedian - 0.5f) * context.Parameters.DistanceRange;
+        var shadowDistance = (shadowMedian - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
@@ -1344,7 +1397,7 @@ public static class TextShaders
     }
 
     [VertexShader("sdf-text-stroke-outer-glow")]
-    public static TextEffectVarying SdfTextStrokeOuterGlowVertex(in TextEffectVertexContext context, in TextVarying input)
+    public static TextShadowVarying SdfTextStrokeOuterGlowVertex(in TextEffectVertexContext context, in TextVarying input)
     {
         uint instanceIndex = ShaderBuiltins.InstanceIndex;
         uint vertexIndex = ShaderBuiltins.VertexIndex;
@@ -1356,75 +1409,75 @@ public static class TextShaders
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = new GlyphPixelSize(max - min),
-            UvSize = new GlyphUvSize(uvMax - uvMin)
+            UvBounds = new GlyphUvBounds(glyph.UvRect)
         };
     }
 
     [FragmentShader("sdf-text-stroke-outer-glow")]
-    public static float4 SdfTextStrokeOuterGlowFragment(in SdfTextEffectFragmentContext context, in TextEffectVarying input)
+    public static float4 SdfTextStrokeOuterGlowFragment(in SdfTextEffectFragmentContext context, in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
-        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (texel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -1436,9 +1489,18 @@ public static class TextShaders
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
-        var shadowDistance = (shadowTexel.x - 0.5f) * context.Parameters.DistanceRange;
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
+        var shadowDistance = (shadowTexel.x - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
@@ -1455,7 +1517,7 @@ public static class TextShaders
     }
 
     [VertexShader("msdf-text-stroke-outer-glow")]
-    public static TextEffectVarying MsdfTextStrokeOuterGlowVertex(in TextEffectVertexContext context, in TextVarying input)
+    public static TextShadowVarying MsdfTextStrokeOuterGlowVertex(in TextEffectVertexContext context, in TextVarying input)
     {
         uint instanceIndex = ShaderBuiltins.InstanceIndex;
         uint vertexIndex = ShaderBuiltins.VertexIndex;
@@ -1467,78 +1529,78 @@ public static class TextShaders
 
         if (vertexIndex == 0u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = uvMin,
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 1u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 2u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 3u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMin.x, uvMax.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
         else if (vertexIndex == 4u)
         {
-            return new TextEffectVarying
+            return new TextShadowVarying
             {
                 Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
                 Uv = new float2(uvMax.x, uvMin.y),
                 GlyphColor = glyph.Color,
                 PixelSize = new GlyphPixelSize(max - min),
-                UvSize = new GlyphUvSize(uvMax - uvMin)
+                UvBounds = new GlyphUvBounds(glyph.UvRect)
             };
         }
 
-        return new TextEffectVarying
+        return new TextShadowVarying
         {
             Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
             Uv = uvMax,
             GlyphColor = glyph.Color,
             PixelSize = new GlyphPixelSize(max - min),
-            UvSize = new GlyphUvSize(uvMax - uvMin)
+            UvBounds = new GlyphUvBounds(glyph.UvRect)
         };
     }
 
     [FragmentShader("msdf-text-stroke-outer-glow")]
-    public static float4 MsdfTextStrokeOuterGlowFragment(in MsdfTextEffectFragmentContext context, in TextEffectVarying input)
+    public static float4 MsdfTextStrokeOuterGlowFragment(in MsdfTextEffectFragmentContext context, in TextShadowVarying input)
     {
         var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
         var median = maths.max(
             maths.min(texel.x, texel.y),
             maths.min(maths.max(texel.x, texel.y), texel.z));
-        var signedDistance = (median - 0.5f) * context.Parameters.DistanceRange;
+        var signedDistance = (median - 0.5f) * (2f * context.Parameters.DistanceRange);
         var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
         var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
         var strokeWidth = maths.max(context.Parameters.StrokeWidth, 0f);
@@ -1550,12 +1612,21 @@ public static class TextShaders
         var glyphSize = new float2(
             maths.max(input.PixelSize.Value.x, 1f),
             maths.max(input.PixelSize.Value.y, 1f));
-        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * input.UvSize.Value;
-        var shadowTexel = context.Atlas.Sample<float2, float4>(input.Uv.Value + shadowUvOffset);
+        var uvBounds = input.UvBounds.Value;
+        var uvMin = uvBounds.xy;
+        var uvMax = uvBounds.zw;
+        var uvSize = uvMax - uvMin;
+        var texelHalf = uvSize / glyphSize * 0.5f;
+        var shadowUvOffset = context.Parameters.OuterShadowOffset / glyphSize * uvSize;
+        var shadowUv = maths.clamp(
+            input.Uv.Value - shadowUvOffset,
+            uvMin + texelHalf,
+            uvMax - texelHalf);
+        var shadowTexel = context.Atlas.Sample<float2, float4>(shadowUv);
         var shadowMedian = maths.max(
             maths.min(shadowTexel.x, shadowTexel.y),
             maths.min(maths.max(shadowTexel.x, shadowTexel.y), shadowTexel.z));
-        var shadowDistance = (shadowMedian - 0.5f) * context.Parameters.DistanceRange;
+        var shadowDistance = (shadowMedian - 0.5f) * (2f * context.Parameters.DistanceRange);
         var shadowWidth = maths.max(
             context.Parameters.OuterShadowWidth + context.Parameters.OuterShadowSpread,
             0f);
