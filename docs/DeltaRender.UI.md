@@ -1,20 +1,21 @@
 # DeltaRender.UI
 
-`DeltaRender.UI` is the reusable host bundle for DeltaXAML applications. It
-brings the published DeltaXAML, DeltaRender, Vulkan/SDL3, DeltaText and
-shader-contract dependencies together, and packages the runtime UI/text
-adapters plus the generated UI/text shader assemblies.
+`DeltaRender.UI` packages the runtime UI/text adapters and generated UI/text
+shader assemblies. `UiRenderHost` is an obsolete compatibility runner. New
+applications own their render session and frame loop, then compose
+`TextRenderFeature`, `UiDisplayListResourceRegistry` and
+`UiDisplayListGraphFeature` directly.
 
 The package does not contain samples or discover sample files. A consumer owns
-its `.dxaml` and generated document artifact, then uses `UiRenderHost` to create
-the matching text and display-list features:
+its `.dxaml`, generated document artifact, renderer lifetime and frame loop.
+The following compatibility factory calls remain available only for migration:
 
 ```csharp
 using var textFeature = UiRenderHost.CreateTextFeature(session, textService, extent);
 using var uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature);
 ```
 
-For the standard path, the host also owns the SDL/Vulkan lifetime, XAML loading,
+The obsolete standard host owns the SDL/Vulkan lifetime, XAML loading,
 window event pump, resize/DPI propagation, one retained document, graph loop,
 watch reload and optional headless readback. A sample supplies only its XAML
 source and font registrations:
@@ -24,7 +25,7 @@ var options = new UiRenderHostOptions("Main.dxaml", "My UI", Width: 1280, Height
 return await UiRenderHost.RunAsync(args, options, fonts);
 ```
 
-Dynamic samples use the same host with an application-owned content hook. The
+Legacy dynamic samples can use the same host with an application-owned content hook. The
 factory runs once during setup; the sample keeps its model and calls its own
 document update code before each host layout pass:
 

@@ -15,6 +15,9 @@ namespace Delta.Render.UI;
 /// Creates the canonical renderer features and generated shader programs for a
 /// DeltaXAML display list. The caller owns the returned features and render session.
 /// </summary>
+[Obsolete(
+    "UiRenderHost is a compatibility runner. Own the render session and loop in the application, then use TextRenderFeature, UiDisplayListResourceRegistry and UiDisplayListGraphFeature directly.",
+    error: false)]
 public static class UiRenderHost
 {
     /// <summary>
@@ -69,7 +72,8 @@ public static class UiRenderHost
     public static UiDisplayListGraphFeature CreateDisplayListFeature(
         IRenderFrameSession session,
         PixelExtent viewport,
-        TextRenderFeature? textFeature = null)
+        TextRenderFeature? textFeature = null,
+        UiDisplayListResourceRegistry? registry = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         var rounded = CreateRoundedRectangleProgram();
@@ -77,6 +81,7 @@ public static class UiRenderHost
             session,
             rounded,
             viewport,
+            registry: registry,
             textFeature: textFeature,
             solidVisualProgram: CreateSolidRectangleProgram(),
             roundedSliceVisualProgram: rounded,
@@ -99,6 +104,14 @@ public static class UiRenderHost
             UiShaders.Spv.UiRectangleShaders.RoundedRectangle.Fragment(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Fragment());
+
+    /// <summary>Creates the generated rounded stroke-and-glow graphics program.</summary>
+    public static GraphicsShaderProgram CreateRoundedStrokeGlowProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.RoundedStrokeGlow.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedStrokeGlow.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStrokeGlow.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedStrokeGlow.Fragment());
 
     /// <summary>Creates the generated linear-gradient graphics program.</summary>
     public static GraphicsShaderProgram CreateLinearGradientProgram() =>
@@ -123,6 +136,33 @@ public static class UiRenderHost
             TextShaderArtifacts.Spv.TextShaders.SdfText.Fragment(),
             TextShaderArtifacts.Abi.TextShaders.SdfText.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfText.Fragment());
+
+    internal static UiDisplayListResourceRegistry CreateResourceRegistry(IUiResourceResolver resources)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        var registry = new UiDisplayListResourceRegistry();
+        if (resources is not UiResourceCatalog catalog)
+        {
+            return registry;
+        }
+
+        foreach (var effect in catalog.GetEffectResources())
+        {
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.Glow))
+            {
+                registry.RegisterVisualEffectResource(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedStrokeGlowProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.RoundedStrokeGlowEffect));
+            }
+        }
+
+        return registry;
+    }
 
     private static GraphicsShaderProgram CreateProgram(
         ReadOnlySpan<byte> vertexSpirv,

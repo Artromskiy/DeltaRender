@@ -86,7 +86,20 @@ variants are reported rather than silently falling back to the no-effect path.
 
 Visual registration accepts `UiVisualShaderVariant` together with a typed
 `UiEffectResource`. Registration validates the complete program against the
-selected generated ABI and packer before it reaches graph submission. A future effect shape must provide a
+selected generated ABI and packer before it reaches graph submission. An
+application-owned render loop can update effect values without recreating the
+prepared program or pipeline:
+
+```csharp
+registry.UpdateVisualEffectResource(updatedEffectResource);
+feature.Consume(displayList);
+```
+
+The updated resource must retain its `UiResourceId`, target, capabilities and
+quality. Layer values and outsets may change; the matching updated effect set
+must be present in the display list. The next `Consume` repacks and uploads
+only visuals that reference the updated resource; it retains their prepared
+pipeline and instance layout. A future effect shape must provide a
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 

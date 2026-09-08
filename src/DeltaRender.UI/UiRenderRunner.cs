@@ -16,6 +16,7 @@ using SDL3;
 
 namespace Delta.Render.UI;
 
+[Obsolete("Compatibility implementation for UiRenderHost; new applications own their render loop.", error: false)]
 internal static class UiRenderRunner
 {
     internal static async Task<int> RunAsync(
@@ -229,7 +230,8 @@ internal static class UiRenderRunner
         var extent = initialExtent;
         session.ResizeTarget(in extent);
         using var textFeature = UiRenderHost.CreateTextFeature(session, textService, extent);
-        var uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature);
+        var resourceRegistry = UiRenderHost.CreateResourceRegistry(loadContext.Resources);
+        var uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature, resourceRegistry);
         var clearFeature = new ClearFeature(session.Target, extent, UiRenderHost.CreateSolidRectangleProgram());
         var readbackFeature = window is null && readbackPath is not null
             ? new HeadlessReadbackFeature(session.Target, extent.Width, extent.Height)
@@ -274,7 +276,7 @@ internal static class UiRenderRunner
                     session.ResizeTarget(in nextExtent);
                     textFeature.Resize(nextExtent);
                     uiFeature.Dispose();
-                    uiFeature = UiRenderHost.CreateDisplayListFeature(session, nextExtent, textFeature);
+                    uiFeature = UiRenderHost.CreateDisplayListFeature(session, nextExtent, textFeature, resourceRegistry);
                     clearFeature = new ClearFeature(session.Target, nextExtent, UiRenderHost.CreateSolidRectangleProgram());
                     readbackFeature = window is null && readbackPath is not null
                         ? new HeadlessReadbackFeature(session.Target, nextExtent.Width, nextExtent.Height)

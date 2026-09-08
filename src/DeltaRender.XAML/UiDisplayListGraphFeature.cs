@@ -74,6 +74,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private int _orderCount;
     private int[] _visualInstanceOffsets = [];
     private bool[] _visualPayloadDirtyByIndex = [];
+    private ulong[] _visualEffectRevisionsByIndex = [];
     private BufferRange[] _visualUploadRanges = [];
     private int _visualUploadRangeCount;
     private int _visualInstanceByteCount;
@@ -280,6 +281,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualMaskSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskUvRects, displayList.Order.Length);
         EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
+        EnsureCapacity(ref _visualEffectRevisionsByIndex, displayList.Visuals.Length);
 
         displayList.Visuals.CopyTo(_visuals);
         displayList.Clips.CopyTo(_clips);
@@ -1316,8 +1318,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         var visualVariant = default(UiVisualShaderVariant);
         UiEffectResource effectResource = default;
+        var effectRevision = 0UL;
         if (visual.Paint.EffectSet.IsValid &&
-            !_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant, out effectResource))
+            (!_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant, out effectResource) ||
+             !_registry.TryGetVisualEffectRevision(visual.Paint.EffectSet, out effectRevision)))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] references an unregistered effect-set resource.");
             return false;
@@ -1346,6 +1350,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             AddDiagnostic($"Visual at Order[{orderIndex}] requests stroke or rounded geometry without a registered effect shader.");
             return false;
         }
+
+        _visualEffectRevisionsByIndex.RefAt(_order.RefAt(orderIndex).Index) = effectRevision;
 
         switch (visual.Kind)
         {
@@ -1531,6 +1537,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
+        EnsureCapacity(ref _visualEffectRevisionsByIndex, displayList.Visuals.Length);
         for (var index = 0; index < displayList.Visuals.Length; index++)
         {
             var previous = _visuals.RefAt(index);
@@ -1540,7 +1547,16 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 return false;
             }
 
-            _visualPayloadDirtyByIndex.RefAt(index) = !previous.Equals(current);
+            var effectRevision = 0UL;
+            if (current.Paint.EffectSet.IsValid &&
+                !_registry.TryGetVisualEffectRevision(current.Paint.EffectSet, out effectRevision))
+            {
+                return false;
+            }
+
+            _visualPayloadDirtyByIndex.RefAt(index) = !previous.Equals(current) ||
+                                                     _visualEffectRevisionsByIndex.RefAt(index) != effectRevision;
+            _visualEffectRevisionsByIndex.RefAt(index) = effectRevision;
         }
 
         return true;

@@ -21,6 +21,7 @@ public sealed class UiDisplayListResourceRegistry
     private readonly Dictionary<UiResourceId, MaskRegistration> _masks = [];
     private readonly Dictionary<UiResourceId, VisualEffectSetRegistration> _visualEffectSets = [];
     private readonly Dictionary<UiResourceId, TextEffectSetRegistration> _textEffectSets = [];
+    private ulong _nextVisualEffectRevision;
 
     /// <summary>Associates a custom visual identity with its graphics program.</summary>
     public void RegisterVisualType(UiVisualTypeId type, IGraphicsShaderProgram program)
@@ -217,7 +218,39 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(variant));
         }
 
-        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, variant, NextVisualEffectRevision());
+    }
+
+    /// <summary>
+    /// Replaces the values of an already registered visual effect resource while
+    /// retaining its prepared shader variant and program.
+    /// </summary>
+    /// <remarks>
+    /// The resource identity and variant key (target, capabilities and quality)
+    /// must remain unchanged. Call before <c>UiDisplayListGraphFeature.Consume</c>
+    /// with the matching updated <see cref="UiEffectSet"/> in the display list.
+    /// </remarks>
+    public void UpdateVisualEffectResource(UiEffectResource effectResource)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Visual);
+        if (!_visualEffectSets.TryGetValue(effectResource.Set.Resource, out var registration))
+        {
+            throw new ArgumentException(
+                "The visual effect resource must be registered before it can be updated.",
+                nameof(effectResource));
+        }
+
+        var previousSet = registration.EffectResource.Set;
+        if (previousSet.Target != effectResource.Set.Target ||
+            previousSet.Capabilities != effectResource.Set.Capabilities ||
+            previousSet.Quality != effectResource.Set.Quality)
+        {
+            throw new ArgumentException(
+                "Updating a visual effect resource cannot change its target, capabilities or quality.",
+                nameof(effectResource));
+        }
+
+        _visualEffectSets[effectResource.Set.Resource] = new(effectResource, registration.Variant, NextVisualEffectRevision());
     }
 
     /// <summary>
@@ -331,6 +364,19 @@ public sealed class UiDisplayListResourceRegistry
         return false;
     }
 
+    internal bool TryGetVisualEffectRevision(UiEffectSet effectSet, out ulong revision)
+    {
+        if (_visualEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
+            registration.EffectResource.Set == effectSet)
+        {
+            revision = registration.Revision;
+            return true;
+        }
+
+        revision = 0;
+        return false;
+    }
+
     internal bool TryResolveTextEffectSet(
         UiEffectSet effectSet,
         out TextShaderVariant variant,
@@ -424,7 +470,8 @@ public sealed class UiDisplayListResourceRegistry
 
     private readonly record struct VisualEffectSetRegistration(
         UiEffectResource EffectResource,
-        UiVisualShaderVariant Variant);
+        UiVisualShaderVariant Variant,
+        ulong Revision);
 
     private readonly record struct TextEffectSetRegistration(
         UiEffectResource EffectResource,
@@ -436,6 +483,20 @@ public sealed class UiDisplayListResourceRegistry
         {
             throw new ArgumentException($"The typed effect resource must be valid and target {expectedTarget}.", nameof(effectResource));
         }
+    }
+
+    private ulong NextVisualEffectRevision()
+    {
+        if (_nextVisualEffectRevision == ulong.MaxValue)
+        {
+            _nextVisualEffectRevision = 1;
+        }
+        else
+        {
+            _nextVisualEffectRevision++;
+        }
+
+        return _nextVisualEffectRevision;
     }
 
     private static void ValidateLinearGradient(UiLinearGradientResource resource)

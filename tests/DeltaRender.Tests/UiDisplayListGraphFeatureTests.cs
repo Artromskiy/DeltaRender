@@ -1009,6 +1009,123 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void UpdatingVisualEffectResourceRetainsPreparedVariant()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.Stroke,
+            UiEffectQuality.Analytic,
+            default);
+        var variant = new UiVisualShaderVariant(
+            AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            UiVisualKind.RoundedRectangle,
+            UiVisualShaderPath.AnalyticEffect);
+        registry.RegisterVisualEffectResource(
+            new UiEffectResource(
+                effectSet,
+                new XamlEffectParameters(
+                    new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                    default,
+                    default,
+                    default,
+                    default)),
+            variant);
+        var updated = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(0, 1, 0, 1), default, 2, 0, 0, 1),
+                default,
+                default,
+                default,
+                default));
+
+        registry.UpdateVisualEffectResource(updated);
+
+        Assert.True(registry.TryResolveVisualEffectSet(effectSet, out var resolvedVariant, out var resolvedResource));
+        Assert.Equal(variant, resolvedVariant);
+        Assert.Equal(updated, resolvedResource);
+        Assert.Throws<ArgumentException>(() => registry.UpdateVisualEffectResource(
+            new UiEffectResource(
+                effectSet with { Capabilities = UiEffectCapabilities.Glow },
+                updated.Parameters)));
+    }
+
+    [Fact]
+    public void UpdatingVisualEffectResourceRepacksOnlyReferencingVisuals()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.Glow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectProgram = RoundedGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        registry.RegisterVisualEffectResource(
+            new UiEffectResource(
+                effectSet,
+                new XamlEffectParameters(
+                    default,
+                    default,
+                    default,
+                    new UiEffectLayer(new float4(0, 0, 1, 1), default, 0, 4, 0, 1),
+                    default)),
+            new UiVisualShaderVariant(effectProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.GlowEffect));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            registry: registry);
+        var displayList = UiDisplayListTestFactory.Create(
+            new[]
+            {
+                UiVisualDraw.WithPaint(
+                    UiVisualKind.RoundedRectangle,
+                    default,
+                    new float4(5, 5, 20, 20),
+                    UiVisualPaint.Solid(new float4(1, 1, 1, 1)) with { EffectSet = effectSet },
+                    UiClipId.None,
+                    UiResourceId.Empty),
+                Solid(2),
+            },
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            new[]
+            {
+                new UiDrawRef(UiDrawKind.Visual, 0),
+                new UiDrawRef(UiDrawKind.Visual, 1),
+            });
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+        var firstGraph = new RecordingGraphBuilder();
+        feature.AddPasses(firstGraph, 1);
+        var firstUpload = firstGraph.RecordTransfer();
+        Assert.Equal(1, firstUpload.UploadBufferCount);
+
+        registry.UpdateVisualEffectResource(
+            new UiEffectResource(
+                effectSet,
+                new XamlEffectParameters(
+                    default,
+                    default,
+                    default,
+                    new UiEffectLayer(new float4(0, 1, 0, 1), default, 0, 8, 0, 2),
+                    default)));
+
+        Assert.True(feature.Consume(displayList), string.Join(" | ", feature.Diagnostics));
+        var updatedGraph = new RecordingGraphBuilder();
+        feature.AddPasses(updatedGraph, 2);
+        var updatedUpload = updatedGraph.RecordTransfer();
+
+        Assert.Equal(1, updatedUpload.UploadBufferCount);
+        Assert.True(updatedUpload.UploadedByteCount < firstUpload.UploadedByteCount);
+    }
+
+    [Fact]
     public void VisualEffectRegistryAcceptsCachedMaskOnlyWithRegisteredMask()
     {
         var registry = new UiDisplayListResourceRegistry();

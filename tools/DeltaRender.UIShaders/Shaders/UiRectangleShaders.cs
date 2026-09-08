@@ -720,6 +720,23 @@ public static class UiRectangleShaders
         return (pixel / resolution) * 2f - 1f;
     }
 
+    private static float4 GetGlowRasterRect(
+        float4 rect,
+        float2 offset,
+        float spread,
+        float blurRadius)
+    {
+        float extent = max(spread + blurRadius, 0f);
+        float2 padding = abs(offset) + new float2(extent);
+        return new float4(rect.xy - padding, rect.zw + padding * 2f);
+    }
+
+    private static float2 GetSourceUv(float4 sourceRect, float4 rasterRect, float2 local)
+    {
+        float2 pixel = rasterRect.xy + local * rasterRect.zw;
+        return (pixel - sourceRect.xy) / sourceRect.zw;
+    }
+
     private static float4 GetCornerData(float4 cornerRadii, float2 pixel, float2 size)
     {
         float4 d = new float4(pixel, size - pixel);
@@ -1111,11 +1128,16 @@ public static class UiRectangleShaders
     {
         RoundedStrokeGlowParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
         float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
-        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        float4 rasterRect = GetGlowRasterRect(
+            instance.Rect,
+            instance.GlowOffset,
+            instance.GlowSpread,
+            instance.GlowRadius);
+        float2 clip = ToClipPosition(rasterRect, local, context.Frame.Resolution);
         return new RoundedStrokeGlowPayload
         {
             Position = new float4(clip.x, clip.y, 0f, 1f),
-            Uv = new Uv0(local),
+            Uv = new Uv0(GetSourceUv(instance.Rect, rasterRect, local)),
             Rect = new SegmentRect(instance.Rect),
             FillColor = new VertexColor(instance.FillColor),
             CornerRadii = new CornerRadii(instance.CornerRadii),
@@ -1160,8 +1182,17 @@ public static class UiRectangleShaders
             input.GlowGeometry.Value.w,
             input.GlowFalloff.Value.x,
             input.GlowFalloff.Value.y);
-        float4 color = ApplyStroke(distance, stroke, Premultiply(input.FillColor.Value, Coverage(distance)));
-        return ApplyGlow(distance, glow, color);
+        float outer = Coverage(distance);
+        float inner = min(Coverage(distance + stroke.Width), outer);
+        float4 fill = Premultiply(input.FillColor.Value, 1f);
+        float4 strokedFill = Over(Premultiply(stroke.Color, 1f), fill);
+        // Interior and stroke cover disjoint portions of the same pixel.
+        float4 color = fill * inner + strokedFill * (outer - inner);
+        float glowDistance = GetRoundedDistance(
+            input.CornerRadii.Value,
+            pixel - glow.Offset,
+            size);
+        return Over(color, Premultiply(glow.Color, GlowCoverage(glowDistance, glow)));
     }
 
     [VertexShader("rounded-inset-shadow")]
@@ -1320,10 +1351,15 @@ public static class UiRectangleShaders
         UiEffectLayerParameters glow,
         float4 destination)
     {
-        float blur = max(glow.BlurRadius, 0.0001f);
         float outside = 1f - Coverage(distance);
-        float coverage = exp(-max(distance - glow.Spread, 0f) / blur) * outside * glow.Intensity;
+        float coverage = GlowCoverage(distance, glow) * outside;
         return Over(Premultiply(glow.Color, coverage), destination);
+    }
+
+    private static float GlowCoverage(float distance, UiEffectLayerParameters glow)
+    {
+        float blur = max(glow.BlurRadius, 0.0001f);
+        return (1f - smoothstep(0f, blur, max(distance - glow.Spread, 0f))) * glow.Intensity;
     }
 
     [VertexShader("analytic-rounded-rectangle")]

@@ -34,12 +34,12 @@
 
   <ItemGroup>
     <!-- These source-only adapters are bundled here so consumers do not reference samples or checkout-relative projects. -->
-    <ProjectReference Include="../DeltaRender.Text/DeltaRender.Text.csproj" />
-    <ProjectReference Include="../DeltaRender.XAML/DeltaRender.XAML.csproj" />
-    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
+    <ProjectReference Include="../DeltaRender.Text/DeltaRender.Text.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../DeltaRender.XAML/DeltaRender.XAML.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" PrivateAssets="all" />
   </ItemGroup>
   <PropertyGroup>
-    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaXamlGeneratorFiles</TargetsForTfmSpecificContentInPackage>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaXamlGeneratorFiles;CollectUiBundleFiles</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
   <Target Name="CollectDeltaXamlGeneratorFiles" Returns="@(TfmSpecificPackageFile)">
@@ -47,6 +47,20 @@
       <_DeltaXamlGeneratorFile Include="$(PkgDeltaXAML_Generator)/analyzers/dotnet/cs/**/*.dll" />
       <TfmSpecificPackageFile Include="@(_DeltaXamlGeneratorFile)">
         <PackagePath>analyzers/dotnet/cs/%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CollectUiBundleFiles" Returns="@(TfmSpecificPackageFile)">
+    <ItemGroup>
+      <_UiBundleAssembly Include="$(TargetDir)Delta.Graphics.Semantics.dll;$(TargetDir)DeltaShader.dll;$(TargetDir)DeltaRender.Text.dll;$(TargetDir)DeltaRender.XAML.dll;$(TargetDir)DeltaRender.UIShaders.dll" />
+      <TfmSpecificPackageFile Include="@(_UiBundleAssembly)">
+        <PackagePath>lib/$(TargetFramework)/%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
+
+      <_UiBundleShaderArtifact Include="$(MSBuildProjectDirectory)/../DeltaRender.Text/$(OutputPath)DeltaShader/DeltaRender.Text/**/*.spv;$(MSBuildProjectDirectory)/../DeltaRender.Text/$(OutputPath)DeltaShader/DeltaRender.Text/**/*.glsl;$(MSBuildProjectDirectory)/../DeltaRender.Text/$(OutputPath)DeltaShader/DeltaRender.Text/**/*.shader.json;$(MSBuildProjectDirectory)/../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.spv;$(MSBuildProjectDirectory)/../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.glsl;$(MSBuildProjectDirectory)/../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.shader.json" />
+      <TfmSpecificPackageFile Include="@(_UiBundleShaderArtifact)">
+        <PackagePath>contentFiles/any/any/DeltaShader/%(Filename)%(Extension)</PackagePath>
       </TfmSpecificPackageFile>
     </ItemGroup>
   </Target>
