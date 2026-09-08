@@ -69,6 +69,20 @@ public readonly struct RoundedRectangleParameters
     }
 }
 
+public readonly struct CachedMaskRoundedRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 MaskUvRect;
+    public readonly float4 Color;
+
+    public CachedMaskRoundedRectangleParameters(float4 rect, float4 maskUvRect, float4 color)
+    {
+        Rect = rect;
+        MaskUvRect = maskUvRect;
+        Color = color;
+    }
+}
+
 [Interstage]
 public struct RoundedRectanglePayload
 {
@@ -91,6 +105,29 @@ public readonly struct RoundedRectangleVertexContext
 }
 
 public readonly struct RoundedRectangleFragmentContext { }
+
+[Interstage]
+public struct CachedMaskRoundedRectanglePayload
+{
+    public Position Position;
+    public Uv0 MaskUv;
+    public VertexColor Color;
+}
+
+public readonly struct CachedMaskRoundedRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<CachedMaskRoundedRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct CachedMaskRoundedRectangleFragmentContext
+{
+    [Layout(0, 1)]
+    public readonly SampledTexture2D Mask;
+}
 
 public readonly struct UiEffectLayerParameters
 {
@@ -359,6 +396,32 @@ public static class UiRectangleShaders
         float4 border = new float4(b.xyz * b.w, b.w);
 
         return fill * innerCoverage + border * borderCoverage;
+    }
+
+    [VertexShader("cached-mask-rounded-rectangle")]
+    public static CachedMaskRoundedRectanglePayload CachedMaskRoundedRectangleVertex(
+        in CachedMaskRoundedRectangleVertexContext context,
+        in CachedMaskRoundedRectanglePayload input)
+    {
+        CachedMaskRoundedRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        return new CachedMaskRoundedRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            MaskUv = new Uv0(instance.MaskUvRect.xy + local * instance.MaskUvRect.zw),
+            Color = new VertexColor(instance.Color)
+        };
+    }
+
+    [FragmentShader("cached-mask-rounded-rectangle")]
+    public static float4 CachedMaskRoundedRectangleFragment(
+        in CachedMaskRoundedRectangleFragmentContext context,
+        in CachedMaskRoundedRectanglePayload input)
+    {
+        float4 mask = context.Mask.Sample<float2, float4>(input.MaskUv.Value);
+        float4 color = input.Color.Value;
+        return new float4(mask.xyz * color.xyz, mask.w * color.w);
     }
 
     private static float GetRoundedDistance(float4 cornerRadii, float2 pixel, float2 size)

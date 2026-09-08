@@ -14,6 +14,13 @@ Use the generated program/factory API for `ShaderArtifact`, `ShaderAbi`,
 calculate ABI offsets in the renderer; those sidecars are inspection output.
 This source project is not the UI layout or renderer submission boundary.
 
+The `cached-mask-rounded-rectangle` pair is the prepared cached-mask quality
+tier. It consumes one premultiplied RGBA mask texture at set `0`, binding `1`,
+while its instance record remains at set `0`, binding `0`; generated ABI and
+pack helpers are authoritative for both resources. The mask is sampled in
+`MaskUv` space and multiplied by the typed instance color. This is a fixed
+artifact, not runtime shader composition or file probing.
+
 The analytic rounded-rectangle source also publishes `InsetShadow` in the
 typed `UiEffectParameters` payload. Its fragment order is outer shadow, glow,
 fill, inset shadow, then stroke; the generated instance packer remains the
