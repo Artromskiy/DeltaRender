@@ -106,7 +106,7 @@ to duplicate XAML state or silently fall back to a solid rectangle.
 - [x] Solid rectangles, rounded rectangles and local border/stroke data are
   accepted by the matching generated `DeltaRender.UIShaders` artifacts. Independent
   corner radii are preserved in the packed instance payload; the rounded-slice
-  path is covered by headless readback evidence.
+  path and registered visual cached-mask path are covered by headless evidence.
 - [ ] Complete `UiVisualKind.Image`: `DeltaXAML` emits an image resource identity
   and the registry can import its texture, but `UiVisualShaderContract` has no
   image ABI classifier, so `AddPasses` currently diagnoses the visual as an
@@ -121,11 +121,11 @@ to duplicate XAML state or silently fall back to a solid rectangle.
   with four radii and parent links, but `UiClipResolver` currently accepts only
   rectangular regions and reports rounded clips as unsupported. Add the
   renderer-owned stencil/mask/analytic path while preserving nested clip order.
-- [ ] Complete text paint submission. `DeltaXAML` emits outline color/width and
-  a text-effect resource identity, but `ValidateText` rejects non-zero effect
-  data and `TextShaderPacking` always packs zero outline parameters. Add a
-  matching generated text-effect artifact/resource path; do not ignore these
-  fields or substitute another shader.
+- [x] Complete text paint submission for the current generated text-effect path.
+  Registered outline/glow/shadow resources are routed to the matching text shader
+  variant, and `UiEffectParameters.Units` is converted at the Render boundary so
+  logical effect geometry is scaled while device geometry is preserved. Text
+  CachedMask remains a separate explicitly unsupported path.
 - [ ] Close native text pixel evidence for the XAML adapter. Graph construction,
   atlas allocation and cache/version forwarding are covered, but the latest
   2048/Snake headless evidence still records text commands without non-clear
