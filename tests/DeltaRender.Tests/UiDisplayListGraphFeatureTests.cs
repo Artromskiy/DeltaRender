@@ -906,6 +906,13 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default));
         registry.RegisterVisualEffectResource(visualResource, visualVariant);
+        var standardError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterVisualEffectResource(
+                visualResource,
+                new UiVisualShaderVariant(
+                    RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                    UiVisualKind.RoundedRectangle)));
+        Assert.Contains("analytic effect UI artifact", standardError.Message, StringComparison.Ordinal);
         var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf);
         var textResource = new UiEffectResource(
             textEffect,
