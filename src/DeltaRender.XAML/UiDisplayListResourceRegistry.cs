@@ -4,6 +4,7 @@ using Delta;
 using Delta.Render.Text;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
+using Delta.Text.Contract;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;
@@ -114,6 +115,15 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
+        if (variant.Path == UiVisualShaderPath.GlowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != UiEffectCapabilities.Glow))
+        {
+            throw new ArgumentException(
+                "The rounded glow UI artifact requires an Analytic effect set with Glow only.",
+                nameof(effectResource));
+        }
+
         if (variant.Path == UiVisualShaderPath.CachedMask)
         {
             if (effectResource.Set.Quality != UiEffectQuality.CachedMask)
@@ -158,6 +168,15 @@ public sealed class UiDisplayListResourceRegistry
             effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
             effectResource.Set.Quality == UiEffectQuality.CachedMask)
         {
+            if (variant.Path == TextShaderPath.Outline &&
+                variant.Mode == GlyphImageMode.Sdf &&
+                effectResource.Set.Quality == UiEffectQuality.Analytic &&
+                effectResource.Set.Capabilities == UiEffectCapabilities.Outline)
+            {
+                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+                return;
+            }
+
             throw new ArgumentException(
                 "The text outline/glow artifact supports analytic OuterShadow, Outline and Glow layers only; InsetShadow and CachedMask are unsupported.",
                 nameof(effectResource));

@@ -8,6 +8,7 @@ namespace Delta.Render.Text;
 public enum TextShaderPath : byte
 {
     Standard,
+    Outline,
     OutlineGlow,
 }
 
@@ -51,6 +52,6 @@ public readonly record struct TextShaderVariant(
 {
     /// <summary>Gets whether the descriptor can use the generated text packer path.</summary>
     public bool IsValid => Program is not null &&
-        Mode is (GlyphImageMode.Sdf or GlyphImageMode.Msdf) &&
-        Path is TextShaderPath.Standard or TextShaderPath.OutlineGlow;
+        (Mode is (GlyphImageMode.Sdf or GlyphImageMode.Msdf) && Path is TextShaderPath.Standard or TextShaderPath.OutlineGlow) ||
+        (Mode == GlyphImageMode.Sdf && Path == TextShaderPath.Outline);
 }

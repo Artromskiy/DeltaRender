@@ -106,6 +106,58 @@ public readonly struct RoundedRectangleVertexContext
 
 public readonly struct RoundedRectangleFragmentContext { }
 
+public readonly struct GlowRoundedRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 FillColor;
+    public readonly float4 CornerRadii;
+    public readonly float4 GlowColor;
+    public readonly float2 GlowOffset;
+    public readonly float GlowRadius;
+    public readonly float GlowSpread;
+    public readonly float GlowIntensity;
+
+    public GlowRoundedRectangleParameters(
+        float4 rect,
+        float4 fillColor,
+        float4 cornerRadii,
+        UiEffectLayerParameters glow)
+    {
+        Rect = rect;
+        FillColor = fillColor;
+        CornerRadii = cornerRadii;
+        GlowColor = glow.Color;
+        GlowOffset = glow.Offset;
+        GlowRadius = glow.BlurRadius;
+        GlowSpread = glow.Spread;
+        GlowIntensity = glow.Intensity;
+    }
+}
+
+[Interstage]
+public struct GlowRoundedRectanglePayload
+{
+    public Position Position;
+    public Uv0 Uv;
+    public SegmentRect Rect;
+    public VertexColor FillColor;
+    public CornerRadii CornerRadii;
+    public EffectGlowColor GlowColor;
+    public EffectGlowGeometry GlowGeometry;
+    public EffectGlowFalloff GlowFalloff;
+}
+
+public readonly struct GlowRoundedRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlowRoundedRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct GlowRoundedRectangleFragmentContext { }
+
 [Interstage]
 public struct CachedMaskRoundedRectanglePayload
 {
@@ -396,6 +448,52 @@ public static class UiRectangleShaders
         float4 border = new float4(b.xyz * b.w, b.w);
 
         return fill * innerCoverage + border * borderCoverage;
+    }
+
+    [VertexShader("rounded-glow")]
+    public static GlowRoundedRectanglePayload GlowRoundedRectangleVertex(
+        in GlowRoundedRectangleVertexContext context,
+        in GlowRoundedRectanglePayload input)
+    {
+        GlowRoundedRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+
+        return new GlowRoundedRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Uv = new Uv0(local),
+            Rect = new SegmentRect(instance.Rect),
+            FillColor = new VertexColor(instance.FillColor),
+            CornerRadii = new CornerRadii(instance.CornerRadii),
+            GlowColor = new EffectGlowColor(instance.GlowColor),
+            GlowGeometry = new EffectGlowGeometry(new float4(
+                instance.GlowOffset,
+                0f,
+                instance.GlowRadius)),
+            GlowFalloff = new EffectGlowFalloff(new float2(
+                instance.GlowSpread,
+                instance.GlowIntensity))
+        };
+    }
+
+    [FragmentShader("rounded-glow")]
+    public static float4 GlowRoundedRectangleFragment(
+        in GlowRoundedRectangleFragmentContext context,
+        in GlowRoundedRectanglePayload input)
+    {
+        float2 size = input.Rect.Value.zw;
+        float2 pixel = input.Uv.Value * size;
+        float distance = GetRoundedDistance(input.CornerRadii.Value, pixel, size);
+        float4 color = Premultiply(input.FillColor.Value, Coverage(distance));
+        UiEffectLayerParameters glow = new(
+            input.GlowColor.Value,
+            input.GlowGeometry.Value.xy,
+            input.GlowGeometry.Value.z,
+            input.GlowGeometry.Value.w,
+            input.GlowFalloff.Value.x,
+            input.GlowFalloff.Value.y);
+        return ApplyGlow(distance, glow, color);
     }
 
     [VertexShader("cached-mask-rounded-rectangle")]

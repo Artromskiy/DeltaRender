@@ -34,6 +34,14 @@
       "textRepresentation": "None",
       "effects": "OuterShadow",
       "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Glow",
+      "quality": "Analytic"
     }
   ],
   "entries": [
@@ -116,6 +124,26 @@
       "vertexEntryPoint": "cached-mask-rounded-rectangle",
       "fragmentEntryPoint": "cached-mask-rounded-rectangle",
       "layerSetIdentity": "visual.rounded.outer-shadow.cached-mask"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "GlowRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "GlowRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "RoundedGlowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "rounded-glow",
+      "fragmentEntryPoint": "rounded-glow",
+      "layerSetIdentity": "visual.rounded.glow"
     }
   ]
 }

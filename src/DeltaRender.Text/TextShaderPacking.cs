@@ -25,6 +25,7 @@ internal static class TextShaderPacking
     {
         var size = SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
         size = Math.Max(size, MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Math.Max(size, SdfTextOutlineGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         return Math.Max(size, MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
     }
@@ -46,7 +47,9 @@ internal static class TextShaderPacking
             "vertex instance buffer");
         var atlasBinding = FindTextureBinding(program, "fragment atlas texture");
         var pushConstantSize = FindPushConstantSize(program);
-        var expectedPushConstantSize = path == TextShaderPath.OutlineGlow
+        var expectedPushConstantSize = path == TextShaderPath.Outline
+            ? SdfTextOutlineGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
                 : SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
@@ -79,7 +82,9 @@ internal static class TextShaderPacking
         GlyphImageMode mode,
         ReadOnlySpan<GlyphInstance> values,
         Span<byte> destination)
-        => path == TextShaderPath.OutlineGlow
+        => path == TextShaderPath.Outline
+            ? SdfTextOutlineGraphicsShaderProgram.PackSdfTextOutlineVertexGlyphsElements(values, destination)
+            : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.PackMsdfTextOutlineGlowVertexGlyphsElements(values, destination)
                 : SdfTextOutlineGlowGraphicsShaderProgram.PackSdfTextOutlineGlowVertexGlyphsElements(values, destination)
@@ -102,6 +107,19 @@ internal static class TextShaderPacking
         in TextEffectValues effects,
         Span<byte> destination)
     {
+        if (path == TextShaderPath.Outline)
+        {
+            var outlineParameters = new TextOutlineParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                TextColor = new float4(1, 1, 1, 1),
+                OutlineColor = new float4(effects.OutlineColor.X, effects.OutlineColor.Y, effects.OutlineColor.Z, effects.OutlineColor.W),
+                OutlineWidth = effects.OutlineWidth,
+                DistanceRange = distanceRange,
+            };
+            return SdfTextOutlineGraphicsShaderProgram.PackSdfTextOutlineVertexParameters(in outlineParameters, destination);
+        }
+
         if (path == TextShaderPath.OutlineGlow)
         {
             var effectParameters = new TextEffectParameters
