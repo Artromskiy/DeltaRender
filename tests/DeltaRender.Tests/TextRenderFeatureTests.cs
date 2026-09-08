@@ -5,9 +5,7 @@ using System.Numerics;
 using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
-using Delta.Render.Text.Shaders;
 using Delta.Shader.Contract;
-using Delta.Render.Text;
 using Delta.Text;
 using Delta.Text.Contract;
 using Xunit;
@@ -22,6 +20,39 @@ public sealed class TextRenderFeatureTests
     public TextRenderFeatureTests(ITestOutputHelper output)
     {
         _output = output;
+    }
+
+    [Fact]
+    public void CompatibleTextVariantUsesGeneratedPackerPath()
+    {
+        using var textService = new DeltaTextService();
+        var program = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var feature = new TextRenderFeature(
+            new FakeSession(),
+            textService,
+            program,
+            new PixelExtent(100, 80));
+
+        var variant = new TextShaderVariant(program, GlyphImageMode.Sdf);
+
+        Assert.True(feature.TryResolveTextVariant(variant, out var pipeline));
+        Assert.Same(program, pipeline.ShaderProgram);
+    }
+
+    [Fact]
+    public void InvalidTextVariantIsRejectedWithoutFallback()
+    {
+        using var textService = new DeltaTextService();
+        var program = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var feature = new TextRenderFeature(
+            new FakeSession(),
+            textService,
+            program,
+            new PixelExtent(100, 80));
+
+        var variant = new TextShaderVariant(null!, GlyphImageMode.Sdf);
+
+        Assert.False(feature.TryResolveTextVariant(variant, out _));
     }
 
     [Fact]

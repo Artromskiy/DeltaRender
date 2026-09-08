@@ -2,12 +2,11 @@ using Delta.Render.RenderGraph;
 using Delta.Render.Text;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Render.Text;
 using Delta.Render.UIShaders;
 using Delta.Text.Contract;
 using Delta.XAML;
 using Delta.XAML.Contract;
-using TextShaders = Delta.Render.Text.Shaders;
+using TextShaderArtifacts = Delta.Render.Text.Shaders;
 using UiShaders = Delta.Render.UIShaders.Shaders;
 
 namespace Delta.Render.UI;
@@ -102,10 +101,10 @@ public static class UiRenderHost
     /// <summary>Creates the generated SDF text graphics program.</summary>
     public static GraphicsShaderProgram CreateTextProgram() =>
         CreateProgram(
-            TextShaders.Spv.TextShaders.SdfText.Vertex(),
-            TextShaders.Spv.TextShaders.SdfText.Fragment(),
-            TextShaders.Abi.TextShaders.SdfText.Vertex(),
-            TextShaders.Abi.TextShaders.SdfText.Fragment());
+            TextShaderArtifacts.Spv.TextShaders.SdfText.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfText.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfText.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfText.Fragment());
 
     private static GraphicsShaderProgram CreateProgram(
         ReadOnlySpan<byte> vertexSpirv,

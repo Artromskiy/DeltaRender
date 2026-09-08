@@ -7,10 +7,7 @@ using Delta.Render.RenderGraph;
 using Delta.Render.Text;
 using Delta.Render.XAML;
 using Delta.Shader.Contract;
-using Delta.Render.Text;
 using Delta.Render.UIShaders;
-using Delta.Render.Text.Shaders;
-using Delta.Render.UIShaders.Shaders;
 using Delta.Text;
 using Delta.Text.Contract;
 using Delta.XAML.Contract;
@@ -418,6 +415,93 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void RegisteredCompatibleTextEffectSetIsAccepted()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        var textProgram = SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            textProgram,
+            new PixelExtent(100, 80));
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Text,
+            UiEffectCapabilities.Outline,
+            UiEffectQuality.Analytic,
+            default);
+        var registry = new UiDisplayListResourceRegistry();
+        registry.RegisterTextEffectSet(effectSet, new TextShaderVariant(textProgram, GlyphImageMode.Sdf));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            registry: registry,
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with { EffectSet = effectSet },
+            UiClipId.None);
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.NotEmpty(graph.RasterPasses);
+    }
+
+    [Fact]
+    public void MissingTextEffectVariantIsRejectedDeterministically()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with
+            {
+                EffectSet = new UiEffectSet(
+                    new UiResourceId(Guid.NewGuid()),
+                    UiEffectTarget.Text,
+                    UiEffectCapabilities.Outline,
+                    UiEffectQuality.Analytic,
+                    default)
+            },
+            UiClipId.None);
+
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })));
+        Assert.Contains(
+            "references an unregistered text effect-set resource.",
+            feature.Diagnostics.Single());
+    }
+
+    [Fact]
     public void MixedVisualAndTextUseOneTransferPass()
     {
         using var textService = new DeltaTextService();
@@ -782,6 +866,49 @@ public sealed class UiDisplayListGraphFeatureTests
 
         Assert.True(registry.UnregisterImage(resource));
         Assert.False(registry.UnregisterImage(resource));
+    }
+
+    [Fact]
+    public void ResourceRegistrySeparatesPreparedVisualAndTextEffectSets()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var visualEffect = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.Stroke,
+            UiEffectQuality.Analytic,
+            default);
+        var textEffect = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Text,
+            UiEffectCapabilities.Outline,
+            UiEffectQuality.Analytic,
+            default);
+        var visualProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+
+        var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.SolidRectangle);
+        registry.RegisterVisualEffectSet(visualEffect, visualVariant);
+        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf);
+        registry.RegisterTextEffectSet(textEffect, textVariant);
+
+        Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual));
+        Assert.Equal(visualVariant, resolvedVisual);
+        Assert.False(registry.TryResolveVisualEffectSet(
+            visualEffect with { Quality = UiEffectQuality.CachedMask }, out _));
+        Assert.False(registry.TryResolveVisualEffectSet(textEffect, out _));
+        Assert.True(registry.TryResolveTextEffectSet(textEffect, out var resolvedText));
+        Assert.Equal(textVariant, resolvedText);
+        Assert.False(registry.TryResolveTextEffectSet(visualEffect, out _));
+        Assert.Throws<ArgumentException>(() => registry.RegisterVisualEffectSet(
+            visualEffect,
+            new UiVisualShaderVariant(
+                SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.SolidRectangle)));
+        Assert.True(registry.UnregisterVisualEffectSet(visualEffect.Resource));
+        Assert.False(registry.UnregisterVisualEffectSet(visualEffect.Resource));
+        Assert.True(registry.UnregisterTextEffectSet(textEffect.Resource));
+        Assert.False(registry.UnregisterTextEffectSet(textEffect.Resource));
     }
 
     [Fact]

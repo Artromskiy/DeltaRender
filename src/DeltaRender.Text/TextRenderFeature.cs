@@ -9,7 +9,6 @@ using Delta.Render;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Render.Text;
-using Delta.Render.Text.Shaders;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
@@ -183,6 +182,66 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
     internal RasterPipelineDescription CompositePipeline => _pipeline;
 
+    internal bool TryResolveTextVariant(TextShaderVariant variant, out RasterPipelineDescription pipeline)
+    {
+        pipeline = _pipeline;
+        if (!variant.IsValid || variant.Mode != _mode)
+        {
+            return false;
+        }
+
+        TextShaderLayout layout;
+        try
+        {
+            layout = TextShaderPacking.Resolve(variant.Program, variant.Mode);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (layout.InstanceBinding != _instanceBinding ||
+            layout.InstanceStride != _instanceStride ||
+            layout.AtlasBinding != _atlasBinding ||
+            layout.PushConstantSize != _pushConstantSize)
+        {
+            return false;
+        }
+
+        pipeline = new RasterPipelineDescription(
+            variant.Program,
+            topology: PrimitiveTopology.TriangleList,
+            cullMode: RasterCullMode.None,
+            blendMode: RenderBlendMode.Alpha);
+        return true;
+    }
+
+    internal bool AreRunVariantsCompatible(int firstRun, int secondRun)
+        => _pendingRuns.RefAt(firstRun).ShaderVariant == _pendingRuns.RefAt(secondRun).ShaderVariant;
+
+    internal bool TryGetCompositePipeline(
+        int firstRun,
+        int runCount,
+        out RasterPipelineDescription pipeline)
+    {
+        pipeline = _pipeline;
+        if (firstRun < 0 || runCount <= 0 || firstRun > _pendingRunCount - runCount)
+        {
+            return false;
+        }
+
+        var variant = _pendingRuns.RefAt(firstRun).ShaderVariant;
+        for (var runIndex = firstRun + 1; runIndex < firstRun + runCount; runIndex++)
+        {
+            if (_pendingRuns.RefAt(runIndex).ShaderVariant != variant)
+            {
+                return false;
+            }
+        }
+
+        return !variant.HasValue || TryResolveTextVariant(variant.Value, out pipeline);
+    }
+
     internal int QueueCompositeRun(
         ShapedText text,
         float originX,
@@ -192,7 +251,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         bool mergeWithPrevious,
         uint producerRunId = 0,
         uint producerRunGeneration = 0,
-        uint producerRunVersion = 0)
+        uint producerRunVersion = 0,
+        TextShaderVariant? shaderVariant = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -214,6 +274,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             color,
             clip,
             mergeWithPrevious,
+            shaderVariant,
             new TextRunCacheKey(producerRunId, producerRunGeneration),
             producerRunVersion);
         return _pendingRunCount++;
@@ -646,6 +707,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             cachedRun.Color != pending.Color ||
             cachedRun.Clip != pending.Clip ||
             cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
+            cachedRun.ShaderVariant != pending.ShaderVariant ||
             cachedRun.AtlasEpoch != _atlas.Epoch)
         {
             return false;
@@ -694,6 +756,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         cachedRun.Color = pending.Color;
         cachedRun.Clip = pending.Clip;
         cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
+        cachedRun.ShaderVariant = pending.ShaderVariant;
         cachedRun.AtlasEpoch = _atlas.Epoch;
     }
 

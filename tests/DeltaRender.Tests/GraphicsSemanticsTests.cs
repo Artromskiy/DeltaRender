@@ -17,13 +17,13 @@ public sealed class GraphicsSemanticsTests
         ];
 
         Assert.All(types, type => Assert.Equal("Delta.Graphics.Semantics", type.Assembly.GetName().Name));
-        Assert.Equal(1, types.Select(type => type.Assembly).Distinct().Count());
+        Assert.Single(types.Select(type => type.Assembly).Distinct());
     }
 
     [Fact]
     public void ShaderBuiltinsHaveDeltaShaderIdentity()
     {
-        Assert.Equal("Delta.Shader", typeof(Position).Assembly.GetName().Name);
-        Assert.Equal("Delta.Shader", typeof(FragmentColor).Assembly.GetName().Name);
+        Assert.Equal("DeltaShader", typeof(Position).Assembly.GetName().Name);
+        Assert.Equal("DeltaShader", typeof(FragmentColor).Assembly.GetName().Name);
     }
 }

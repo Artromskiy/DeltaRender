@@ -2,7 +2,6 @@ using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Render.UIShaders;
-using Delta.Render.UIShaders.Shaders;
 using Delta.XAML.Contract;
 
 namespace Delta.Render.XAML;

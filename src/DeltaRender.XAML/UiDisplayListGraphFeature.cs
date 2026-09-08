@@ -402,6 +402,20 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     }
 
                     var text = _texts.RefAt(draw.Index);
+                    TextShaderVariant? shaderVariant = null;
+                    if (text.Paint.EffectSet.IsValid)
+                    {
+                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant) ||
+                            !_textFeature.TryResolveTextVariant(registeredVariant, out _))
+                        {
+                            AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
+                            previousWasText = false;
+                            continue;
+                        }
+
+                        shaderVariant = registeredVariant;
+                    }
+
                     var color = text.Paint.FillColor;
                     var identity = _identities.RefAt(index);
                     var origin = _coordinates.ToPhysical(text.BaselineOrigin);
@@ -412,6 +426,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         new Vector4(color.x, color.y, color.z, color.w),
                         _coordinates.ToPhysical(_commandClips.RefAt(index)),
                         mergeWithPrevious: previousWasText,
+                        shaderVariant: shaderVariant,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
                         producerRunVersion: identity.Version);
@@ -492,7 +507,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 while (end < _orderCount &&
                        _order.RefAt(end).Kind == UiDrawKind.Text &&
                        !_commandClips.RefAt(end).IsEmpty &&
-                       _textRunIndices.RefAt(end) == lastRun + 1)
+                       _textRunIndices.RefAt(end) == lastRun + 1 &&
+                       _textFeature.AreRunVariantsCompatible(lastRun, _textRunIndices.RefAt(end)))
                 {
                     lastRun++;
                     runCount++;
@@ -500,6 +516,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 }
 
                 var textFeaturePass = GetTextPass(firstRun, runCount);
+                if (textFeaturePass is null)
+                {
+                    AddDiagnostic($"Text at Order[{index}] has no compatible prepared shader variant.");
+                    index = end - 1;
+                    continue;
+                }
+
                 var textPass = graph.AddRasterPass(textFeaturePass.Description, textFeaturePass);
                 graph.UseColorAttachment(
                     textPass,
@@ -577,7 +600,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         return pass;
     }
 
-    private UiTextPass GetTextPass(int firstRun, int runCount)
+    private UiTextPass? GetTextPass(int firstRun, int runCount)
     {
         if (_textPassCount == _textPasses.Length)
         {
@@ -592,7 +615,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _textPasses[_textPassCount] = pass;
         }
 
-        pass.SetRange(firstRun, runCount);
+        if (!pass.SetRange(firstRun, runCount))
+        {
+            return null;
+        }
+
         _textPassCount++;
         return pass;
     }
@@ -1087,6 +1114,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private IGraphicsShaderProgram ResolveVisualProgram(UiVisualDraw visual, out UiVisualKind shaderVisualKind)
     {
         shaderVisualKind = visual.Kind;
+        if (visual.Paint.EffectSet.IsValid && _registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out var effectVariant))
+        {
+            shaderVisualKind = effectVariant.Kind;
+            return effectVariant.Program;
+        }
+
         if (visual.Kind == UiVisualKind.Custom && _registry.TryResolveVisualType(visual.VisualType, out var registered))
         {
             return registered ?? throw new InvalidOperationException("The visual registry returned a null program.");
@@ -1130,6 +1163,27 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             visual.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] contains non-finite geometry or paint.");
+            return false;
+        }
+
+        if (visual.Paint.EffectSet != UiEffectSet.None &&
+            (!visual.Paint.EffectSet.IsValid || visual.Paint.EffectSet.Target != UiEffectTarget.Visual))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] contains an invalid visual effect set.");
+            return false;
+        }
+
+        var visualVariant = default(UiVisualShaderVariant);
+        if (visual.Paint.EffectSet.IsValid && !_registry.TryResolveVisualEffectSet(visual.Paint.EffectSet, out visualVariant))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] references an unregistered effect-set resource.");
+            return false;
+        }
+
+        if (visual.Paint.EffectSet.IsValid &&
+            !IsCompatibleVisualVariant(visual.Kind, visualVariant.Kind))
+        {
+            AddDiagnostic($"Visual at Order[{orderIndex}] uses an effect shader variant for {visualVariant.Kind}, not {visual.Kind}.");
             return false;
         }
 
@@ -1204,6 +1258,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         return true;
     }
 
+    private static bool IsCompatibleVisualVariant(UiVisualKind visualKind, UiVisualKind variantKind)
+        => visualKind == variantKind ||
+            visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border &&
+            variantKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border;
+
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)
     {
         clip = default;
@@ -1220,7 +1279,30 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (text.Paint.OutlineWidth != 0 || text.Paint.Effect.IsValid)
+        if (text.Paint.EffectSet != UiEffectSet.None &&
+            (!text.Paint.EffectSet.IsValid || text.Paint.EffectSet.Target != UiEffectTarget.Text))
+        {
+            AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid text effect set.");
+            return false;
+        }
+
+        var textVariant = default(TextShaderVariant);
+        if (text.Paint.EffectSet.IsValid && !_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out textVariant))
+        {
+            AddDiagnostic($"Text at Order[{orderIndex}] references an unregistered text effect-set resource.");
+            return false;
+        }
+
+        if (text.Paint.EffectSet.IsValid)
+        {
+            if (_textFeature is null || !_textFeature.TryResolveTextVariant(textVariant, out _))
+            {
+                AddDiagnostic($"Text at Order[{orderIndex}] references a registered text effect set without a compatible generated text packer.");
+                return false;
+            }
+        }
+
+        if (text.Paint.OutlineWidth != 0 || text.Paint.EffectResource.IsValid)
         {
             AddDiagnostic($"Text at Order[{orderIndex}] requests outline/effect data without a registered text effect shader.");
             return false;

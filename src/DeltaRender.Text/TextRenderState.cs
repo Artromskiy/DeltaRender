@@ -11,6 +11,7 @@ internal readonly record struct PendingRun(
     Vector4 Color,
     PixelRect Clip,
     bool MergeWithPrevious,
+    TextShaderVariant? ShaderVariant,
     TextRunCacheKey CacheKey,
     uint Version);
 
@@ -32,6 +33,7 @@ internal sealed class CachedRun
     internal Vector4 Color;
     internal PixelRect Clip;
     internal bool MergeWithPrevious;
+    internal TextShaderVariant? ShaderVariant;
     internal ulong AtlasEpoch;
 }
 

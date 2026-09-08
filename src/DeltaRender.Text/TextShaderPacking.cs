@@ -4,7 +4,6 @@ using Delta;
 using Delta.Render.RenderGraph;
 using Delta.Shader.Contract;
 using Delta.Render.Text;
-using Delta.Render.Text.Shaders;
 using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
