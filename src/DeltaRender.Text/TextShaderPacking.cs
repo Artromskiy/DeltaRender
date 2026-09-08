@@ -30,6 +30,8 @@ internal static class TextShaderPacking
         size = Math.Max(size, MsdfTextGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, MsdfTextOutlineGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Math.Max(size, MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Math.Max(size, SdfTextOutlineOuterShadowGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         return Math.Max(size, MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
     }
@@ -60,7 +62,13 @@ internal static class TextShaderPacking
                 ? MsdfTextGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
                 : SdfTextGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
             : path == TextShaderPath.OuterShadow
-            ? SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.OutlineOuterShadowGlow
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineOuterShadowGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextOutlineOuterShadowGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
             : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
@@ -103,7 +111,13 @@ internal static class TextShaderPacking
                 ? MsdfTextGlowGraphicsShaderProgram.PackMsdfTextGlowVertexGlyphsElements(values, destination)
                 : SdfTextGlowGraphicsShaderProgram.PackSdfTextGlowVertexGlyphsElements(values, destination)
             : path == TextShaderPath.OuterShadow
-            ? SdfTextOuterShadowGraphicsShaderProgram.PackSdfTextOuterShadowVertexGlyphsElements(values, destination)
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOuterShadowGraphicsShaderProgram.PackMsdfTextOuterShadowVertexGlyphsElements(values, destination)
+                : SdfTextOuterShadowGraphicsShaderProgram.PackSdfTextOuterShadowVertexGlyphsElements(values, destination)
+            : path == TextShaderPath.OutlineOuterShadowGlow
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineOuterShadowGlowGraphicsShaderProgram.PackMsdfTextOutlineOuterShadowGlowVertexGlyphsElements(values, destination)
+                : SdfTextOutlineOuterShadowGlowGraphicsShaderProgram.PackSdfTextOutlineOuterShadowGlowVertexGlyphsElements(values, destination)
             : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.PackMsdfTextOutlineGlowVertexGlyphsElements(values, destination)
@@ -173,6 +187,30 @@ internal static class TextShaderPacking
                 OuterShadowIntensity = effects.OuterShadowIntensity,
             };
             return SdfTextOuterShadowGraphicsShaderProgram.PackSdfTextOuterShadowVertexParameters(in shadowParameters, destination);
+        }
+
+        if (path == TextShaderPath.OutlineOuterShadowGlow)
+        {
+            var effectParameters = new TextOutlineOuterShadowGlowParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                TextColor = new float4(1, 1, 1, 1),
+                OutlineColor = new float4(effects.OutlineColor.X, effects.OutlineColor.Y, effects.OutlineColor.Z, effects.OutlineColor.W),
+                OutlineWidth = effects.OutlineWidth,
+                DistanceRange = distanceRange,
+                GlowColor = new float4(effects.GlowColor.X, effects.GlowColor.Y, effects.GlowColor.Z, effects.GlowColor.W),
+                GlowRadius = effects.GlowRadius,
+                GlowIntensity = effects.GlowIntensity,
+                OuterShadowColor = new float4(effects.OuterShadowColor.X, effects.OuterShadowColor.Y, effects.OuterShadowColor.Z, effects.OuterShadowColor.W),
+                OuterShadowOffset = new float2(effects.OuterShadowOffset.X, effects.OuterShadowOffset.Y),
+                OuterShadowWidth = effects.OuterShadowWidth,
+                OuterShadowBlurRadius = effects.OuterShadowBlurRadius,
+                OuterShadowSpread = effects.OuterShadowSpread,
+                OuterShadowIntensity = effects.OuterShadowIntensity,
+            };
+            return mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineOuterShadowGlowGraphicsShaderProgram.PackMsdfTextOutlineOuterShadowGlowVertexParameters(in effectParameters, destination)
+                : SdfTextOutlineOuterShadowGlowGraphicsShaderProgram.PackSdfTextOutlineOuterShadowGlowVertexParameters(in effectParameters, destination);
         }
 
         if (path == TextShaderPath.OutlineGlow)

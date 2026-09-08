@@ -125,6 +125,33 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
+        if (variant.Path == UiVisualShaderPath.SolidOuterShadowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != UiEffectCapabilities.OuterShadow))
+        {
+            throw new ArgumentException(
+                "The solid outer-shadow UI artifact requires an Analytic effect set with OuterShadow only.",
+                nameof(effectResource));
+        }
+
+        if (variant.Path == UiVisualShaderPath.RoundedStrokeOuterShadowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow)))
+        {
+            throw new ArgumentException(
+                "The rounded stroke/outer-shadow UI artifact requires an Analytic effect set with Stroke and OuterShadow only.",
+                nameof(effectResource));
+        }
+
+        if (variant.Path == UiVisualShaderPath.RoundedStrokeGlowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.Glow)))
+        {
+            throw new ArgumentException(
+                "The rounded stroke/glow UI artifact requires an Analytic effect set with Stroke and Glow only.",
+                nameof(effectResource));
+        }
+
         if (variant.Path == UiVisualShaderPath.GlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
              effectResource.Set.Capabilities != UiEffectCapabilities.Glow))
@@ -215,9 +242,18 @@ public sealed class UiDisplayListResourceRegistry
             }
 
             if (variant.Path == TextShaderPath.OuterShadow &&
-                variant.Mode == GlyphImageMode.Sdf &&
+                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
                 effectResource.Set.Capabilities == UiEffectCapabilities.OuterShadow)
+            {
+                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+                return;
+            }
+
+            if (variant.Path == TextShaderPath.OutlineOuterShadowGlow &&
+                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
+                effectResource.Set.Quality == UiEffectQuality.Analytic &&
+                effectResource.Set.Capabilities == (UiEffectCapabilities.Outline | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.Glow))
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;
