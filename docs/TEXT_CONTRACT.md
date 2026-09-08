@@ -172,10 +172,10 @@ of the analytic path.
 
 ## Prepared variant matrix
 
-The current producer catalog has 10 exact artifact identities:
+The current producer catalog has 8 exact artifact identities:
 
-- SDF: standard, stroke, outer glow, outer shadow and stroke + outer glow;
-- MSDF: standard, stroke, outer glow, outer shadow and stroke + outer glow.
+- SDF: standard, stroke, outer glow-only and outer shadow;
+- MSDF: standard, stroke, outer glow-only and outer shadow.
 
 Each base/effect identity maps to its own generated graphics program and typed
 instance and parameter packers. The SDF and MSDF `OuterGlowOnly` companions
@@ -185,9 +185,9 @@ use the same glyph-instance payload and are selected by layered registration.
 that identity. `TextShaderPacking` then selects the corresponding generated
 packer; it does not duplicate ShaderAbi layout or infer a different variant.
 An `OuterShadow` or `OuterGlow` effect plan combines its prepared layer with
-the standard base layer. `Stroke | OuterShadow | OuterGlow` combines prepared
-outer-shadow and outer-glow layers with the prepared stroke base; there is no
-combined outer-shadow shader artifact. Text `CachedMask` has no prepared entry
+the standard base layer. `Stroke | OuterShadow | OuterGlow` records the
+prepared outer-shadow and outer-glow layers before the prepared stroke base;
+there are no combined shadow or glow shader artifacts. Text `CachedMask` has no prepared entry
 and is intentionally rejected until a producer-owned text artifact and
 matching atlas contract exist.
 

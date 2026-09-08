@@ -94,17 +94,6 @@ public readonly struct SolidImageRectangleFragmentContext
 
 public static class UiResourceShaders
 {
-    private static float2 GetQuadLocal(uint vertexIndex)
-        => vertexIndex switch
-        {
-            0u => new float2(0f, 0f),
-            1u => new float2(1f, 0f),
-            2u => new float2(1f, 1f),
-            3u => new float2(0f, 0f),
-            4u => new float2(1f, 1f),
-            _ => new float2(0f, 1f),
-        };
-
     private static float2 ToClipPosition(float4 rect, float2 local, float2 resolution)
     {
         float2 pixel = rect.xy + local * rect.zw;
@@ -115,7 +104,7 @@ public static class UiResourceShaders
     public static SolidLinearGradientPayload SolidLinearGradientVertex(in SolidLinearGradientVertexContext context, in SolidLinearGradientPayload input)
     {
         SolidLinearGradientParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
-        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 local = QuadGeometry.GetLocal(ShaderBuiltins.VertexIndex);
         float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
         return new SolidLinearGradientPayload
         {
@@ -166,7 +155,7 @@ public static class UiResourceShaders
     public static SolidImageRectanglePayload SolidImageRectangleVertex(in SolidImageRectangleVertexContext context, in SolidImageRectanglePayload input)
     {
         SolidImageRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
-        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 local = QuadGeometry.GetLocal(ShaderBuiltins.VertexIndex);
         float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
         return new SolidImageRectanglePayload
         {

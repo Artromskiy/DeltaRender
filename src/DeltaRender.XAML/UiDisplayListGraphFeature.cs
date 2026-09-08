@@ -1780,9 +1780,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (visual.Paint.EffectSet.IsValid &&
-            ((visualVariant.Path == UiVisualShaderPath.AnalyticEffect &&
-              effectResource.Set.Quality != UiEffectQuality.Analytic) ||
-             (visualVariant.Path == UiVisualShaderPath.CachedMask &&
+            ((visualVariant.Path == UiVisualShaderPath.CachedMask &&
               effectResource.Set.Quality != UiEffectQuality.CachedMask)))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] requests an effect layer incompatible with its registered UI shader ABI.");

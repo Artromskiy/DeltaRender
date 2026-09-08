@@ -9,10 +9,8 @@ public enum TextShaderPath : byte
 {
     Standard,
     Stroke,
-    OuterGlow,
     OuterGlowOnly,
     OuterShadow,
-    StrokeOuterGlow,
 }
 
 /// <summary>Neutral stroke, outer-shadow and outer-glow values selected from a typed UI effect resource.</summary>
@@ -56,6 +54,6 @@ public readonly record struct TextShaderVariant(
     /// <summary>Gets whether the descriptor can use the generated text packer path.</summary>
     public bool IsValid => Program is not null &&
         Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
-        Path is TextShaderPath.Standard or TextShaderPath.Stroke or TextShaderPath.OuterGlow or
-            TextShaderPath.OuterGlowOnly or TextShaderPath.OuterShadow or TextShaderPath.StrokeOuterGlow;
+        Path is TextShaderPath.Standard or TextShaderPath.Stroke or TextShaderPath.OuterGlowOnly or
+            TextShaderPath.OuterShadow;
 }

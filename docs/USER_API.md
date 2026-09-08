@@ -44,13 +44,13 @@ registry.RegisterVisualEffectResource(
     new UiVisualShaderVariant(
         preparedVisualProgram,
         UiVisualKind.RoundedRectangle,
-        UiVisualShaderPath.AnalyticEffect));
+        UiVisualShaderPath.RoundedStrokeEffect));
 registry.RegisterTextEffectResource(
     textEffectResource,
     new TextShaderVariant(
         preparedTextProgram,
         GlyphImageMode.Sdf,
-        TextShaderPath.StrokeOuterGlow));
+        TextShaderPath.Stroke));
 ```
 
 The registry does not own or dispose the program. During display-list
@@ -61,10 +61,11 @@ identity with different metadata is rejected; it cannot silently reuse another
 prepared variant. The registry does not compose shader layers, inspect files,
 or infer effect parameters from a CLR object.
 
-The generated analytic rounded artifact accepts typed stroke, outer-shadow,
-inner-shadow and outer-glow layers through its producer-owned packer. The
-canonical `InnerGlow` capability is diagnosed until a matching generated
-artifact is registered.
+Outer glow is available only through a separate `OuterGlowOnlyEffect` layer;
+the registry does not accept a composite glow artifact. The generated base and
+effect-layer packers remain the single ABI authority, and the canonical
+`InnerGlow` capability is diagnosed until a matching generated artifact is
+registered.
 
 For a long visual outer shadow, register the generated shadow-only artifact
 next to the generated base artifact:
@@ -111,9 +112,10 @@ paint quad; the base pass keeps the original geometry. Text uses the equivalent
 `RegisterTextEffectResourceGlowLayers` registration with
 `TextShaderPath.OuterGlowOnly`. Its glyph quad is expanded by the typed glow
 radius, while shaping, font metrics, baseline and layout bounds stay unchanged.
-For an effect set containing stroke, shadow and glow, use the four-argument
+For an effect set containing stroke, shadow and glow, use the three-argument
 `RegisterTextEffectResourceLayers` overload to register shadow, glow-only and
-stroke-base variants in that order.
+stroke-base variants in that order. There is no combined text stroke/glow
+artifact.
 
 A cached-mask visual uses the separate generated
 `CachedMaskRoundedRectangle` artifact. Register its session-owned texture,
@@ -126,11 +128,11 @@ registry.RegisterVisualEffectResource(cachedMaskResource, cachedMaskVariant);
 
 The adapter binds the sampled mask according to the generated `ShaderAbi` and
 uses the generated instance packer. Missing mask registration is rejected; no
-analytic or solid fallback is used. A registered visual effect program must
+solid fallback is used. A registered visual effect program must
 therefore expose the matching prepared ABI before it can be submitted; a
 different ABI is rejected with a diagnostic until its generated packer/adapter
-is available. The generated text stroke/outer-glow artifact also
-accepts typed outer-shadow values. A text variant is accepted only when its
+is available. The generated text glow-only artifact is registered separately
+from the text base artifact. A text variant is accepted only when its
 mode and resolved bindings, stride and
 push-constant range match the configured `TextRenderFeature`; adjacent runs
 with different variants become separate raster passes. Missing or incompatible
@@ -155,16 +157,14 @@ pipeline and instance layout. A future effect shape must provide a
 producer-generated variant and packer, not a Render-local layout or runtime
 delegate.
 
-The current prepared catalog contains 17 visual entries: 15 base/composite
+The current prepared catalog contains 15 visual entries: base and effect-layer
 entries for solid, rounded, gradient and image rendering, plus the
 `solid.outer-shadow.shadow-only` and
 `rounded.outer-shadow.shadow-only` layer artifacts. It contains 12 text
 entries:
 `text.sdf`, `text.msdf`, `text.sdf.stroke`, `text.msdf.stroke`,
-`text.sdf.outer-glow`, `text.msdf.outer-glow`, `text.sdf.stroke.outer-glow`,
-`text.msdf.stroke.outer-glow`, `text.sdf.outer-shadow`, `text.msdf.outer-shadow`,
-`text.sdf.stroke.outer-shadow.outer-glow` and
-`text.msdf.stroke.outer-shadow.outer-glow`.
+`text.sdf.outer-glow`, `text.msdf.outer-glow`, `text.sdf.outer-shadow` and
+`text.msdf.outer-shadow`.
 The generated SDF/MSDF `OuterGlowOnly` programs are companion layer artifacts
 selected by layered registration; they do not create a runtime shader
 composition path or a second text representation.

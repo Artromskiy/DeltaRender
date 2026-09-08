@@ -9,14 +9,12 @@ public sealed class TextShaderDistanceConventionTests
     [
         "SdfTextFragment.frag.glsl",
         "SdfTextStrokeFragment.frag.glsl",
-        "SdfTextOuterGlowFragment.frag.glsl",
         "SdfTextOuterShadowFragment.frag.glsl",
-        "SdfTextStrokeOuterGlowFragment.frag.glsl",
+        "SdfTextOuterGlowOnlyFragment.frag.glsl",
         "MsdfTextFragment.frag.glsl",
         "MsdfTextStrokeFragment.frag.glsl",
-        "MsdfTextOuterGlowFragment.frag.glsl",
         "MsdfTextOuterShadowFragment.frag.glsl",
-        "MsdfTextStrokeOuterGlowFragment.frag.glsl",
+        "MsdfTextOuterGlowOnlyFragment.frag.glsl",
     ];
 
     private static readonly string[] ShadowFragmentShaders =

@@ -40,15 +40,7 @@ public static class UiPanel
     public static VertexOutput Vertex(in VertexContext context, in VertexOutput input)
     {
         var vertexIndex = ShaderBuiltins.VertexIndex;
-        var local = new float2(0f, 0f);
-        if (vertexIndex == 1u || vertexIndex == 2u || vertexIndex == 4u)
-        {
-            local = new float2(1f, local.y);
-        }
-        if (vertexIndex == 2u || vertexIndex == 4u || vertexIndex == 5u)
-        {
-            local = new float2(local.x, 1f);
-        }
+        var local = QuadGeometry.GetLocal(vertexIndex);
 
         var pixel = new float2(
             context.Constants.Rect.x + local.x * context.Constants.Rect.z,

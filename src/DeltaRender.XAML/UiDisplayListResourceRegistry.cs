@@ -122,19 +122,9 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(variant));
         }
 
-        if (variant.Path == UiVisualShaderPath.AnalyticEffect &&
+        if (variant.Path == UiVisualShaderPath.SolidStrokeEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Has(UiEffectCapabilities.InnerGlow)))
-        {
-            throw new ArgumentException(
-                "The analytic rounded UI artifact requires an Analytic effect set without InnerGlow.",
-                nameof(effectResource));
-        }
-
-        if (variant.Path is UiVisualShaderPath.SolidStrokeEffect or UiVisualShaderPath.SolidOuterGlowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             (variant.Path == UiVisualShaderPath.SolidStrokeEffect && effectResource.Set.Capabilities != UiEffectCapabilities.Stroke) ||
-             (variant.Path == UiVisualShaderPath.SolidOuterGlowEffect && effectResource.Set.Capabilities != UiEffectCapabilities.OuterGlow)))
+             effectResource.Set.Capabilities != UiEffectCapabilities.Stroke))
         {
             throw new ArgumentException(
                 "The solid visual effect artifact requires an Analytic effect set with exactly its declared effect.",
@@ -156,24 +146,6 @@ public sealed class UiDisplayListResourceRegistry
         {
             throw new ArgumentException(
                 "The rounded stroke/outer-shadow UI artifact requires an Analytic effect set with Stroke and OuterShadow only.",
-                nameof(effectResource));
-        }
-
-        if (variant.Path == UiVisualShaderPath.RoundedStrokeOuterGlowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow)))
-        {
-            throw new ArgumentException(
-                "The rounded stroke/outer-glow UI artifact requires an Analytic effect set with Stroke and OuterGlow only.",
-                nameof(effectResource));
-        }
-
-        if (variant.Path == UiVisualShaderPath.OuterGlowEffect &&
-            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.OuterGlow))
-        {
-            throw new ArgumentException(
-                "The rounded outer-glow UI artifact requires an Analytic effect set with OuterGlow only.",
                 nameof(effectResource));
         }
 
@@ -215,7 +187,7 @@ public sealed class UiDisplayListResourceRegistry
         if (variant.Path == UiVisualShaderPath.Standard)
         {
             throw new ArgumentException(
-                "A visual effect resource requires the generated analytic effect UI artifact.",
+                "A visual effect resource requires a generated effect UI artifact.",
                 nameof(variant));
         }
 
@@ -424,9 +396,6 @@ public sealed class UiDisplayListResourceRegistry
         var isBaseVariant = variant.Path switch
         {
             TextShaderPath.Stroke => capabilities == UiEffectCapabilities.Stroke,
-            TextShaderPath.OuterGlow => capabilities == UiEffectCapabilities.OuterGlow,
-            TextShaderPath.StrokeOuterGlow =>
-                capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow),
             _ => false,
         };
         if (isBaseVariant)
@@ -443,34 +412,8 @@ public sealed class UiDisplayListResourceRegistry
         }
 
         throw new ArgumentException(
-            "Text effects require one generated base variant or an OuterShadow-only variant; combined shadow artifacts, InnerShadow, InnerGlow and CachedMask are unsupported.",
+            "Text effects require a generated base or OuterShadow-only variant; use layered glow registration for OuterGlow, while InnerShadow, InnerGlow and CachedMask are unsupported.",
             nameof(effectResource));
-    }
-
-    /// <summary>
-    /// Associates one immutable text effect resource with separate prepared
-    /// outer-shadow and base shader variants. Program ownership remains with
-    /// the caller.
-    /// </summary>
-    public void RegisterTextEffectResourceLayers(
-        UiEffectResource effectResource,
-        TextShaderVariant shadowVariant,
-        TextShaderVariant baseVariant)
-    {
-        ValidateEffectResource(effectResource, UiEffectTarget.Text);
-        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-            effectResource.Set.Capabilities !=
-                (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow) ||
-            !shadowVariant.IsValid || shadowVariant.Path != TextShaderPath.OuterShadow ||
-            !baseVariant.IsValid || baseVariant.Path != TextShaderPath.StrokeOuterGlow ||
-            shadowVariant.Mode != baseVariant.Mode)
-        {
-            throw new ArgumentException(
-                "Combined text effects require matching generated OuterShadow and StrokeOuterGlow variants.",
-                nameof(effectResource));
-        }
-
-        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant, null);
     }
 
     /// <summary>

@@ -105,14 +105,6 @@ public static class UiRenderHost
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedRectangle.Fragment());
 
-    /// <summary>Creates the generated rounded stroke-and-outer-glow graphics program.</summary>
-    public static GraphicsShaderProgram CreateRoundedStrokeOuterGlowProgram() =>
-        CreateProgram(
-            UiShaders.Spv.UiRectangleShaders.RoundedStrokeOuterGlow.Vertex(),
-            UiShaders.Spv.UiRectangleShaders.RoundedStrokeOuterGlow.Fragment(),
-            UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Vertex(),
-            UiShaders.Abi.UiRectangleShaders.RoundedStrokeOuterGlow.Fragment());
-
     /// <summary>Creates the generated rounded-stroke graphics program.</summary>
     public static GraphicsShaderProgram CreateRoundedStrokeProgram() =>
         CreateProgram(
@@ -197,13 +189,6 @@ public static class UiRenderHost
             TextShaderArtifacts.Spv.TextShaders.SdfTextOuterGlowOnly.Fragment(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Fragment());
-
-    private static GraphicsShaderProgram CreateTextStrokeOuterGlowProgram() =>
-        CreateProgram(
-            TextShaderArtifacts.Spv.TextShaders.SdfTextStrokeOuterGlow.Vertex(),
-            TextShaderArtifacts.Spv.TextShaders.SdfTextStrokeOuterGlow.Fragment(),
-            TextShaderArtifacts.Abi.TextShaders.SdfTextStrokeOuterGlow.Vertex(),
-            TextShaderArtifacts.Abi.TextShaders.SdfTextStrokeOuterGlow.Fragment());
 
     internal static UiDisplayListResourceRegistry CreateResourceRegistry(IUiResourceResolver resources)
     {
