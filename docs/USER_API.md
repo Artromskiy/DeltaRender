@@ -47,7 +47,10 @@ registry.RegisterVisualEffectResource(
         UiVisualShaderPath.AnalyticEffect));
 registry.RegisterTextEffectResource(
     textEffectResource,
-    new TextShaderVariant(preparedTextProgram, GlyphImageMode.Sdf));
+    new TextShaderVariant(
+        preparedTextProgram,
+        GlyphImageMode.Sdf,
+        TextShaderPath.OutlineGlow));
 ```
 
 The registry does not own or dispose the program. During display-list

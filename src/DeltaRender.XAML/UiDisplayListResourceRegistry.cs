@@ -106,6 +106,17 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException("A text effect set requires a valid generated text shader variant.", nameof(variant));
         }
 
+        if (variant.Path != TextShaderPath.OutlineGlow ||
+            effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            effectResource.Set.Has(UiEffectCapabilities.OuterShadow) ||
+            effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
+            effectResource.Set.Quality == UiEffectQuality.CachedMask)
+        {
+            throw new ArgumentException(
+                "The text outline/glow artifact supports analytic Outline and Glow layers only; OuterShadow, InsetShadow and CachedMask are unsupported.",
+                nameof(effectResource));
+        }
+
         _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
     }
 

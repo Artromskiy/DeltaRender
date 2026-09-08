@@ -422,11 +422,12 @@ public sealed class UiDisplayListGraphFeatureTests
         var font = OpenTestFont(textService);
         var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
         using var session = new RecordingSession();
-        var textProgram = SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SdfTextOutlineGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var standardTextProgram = SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
         using var textFeature = new TextRenderFeature(
             session,
             textService,
-            textProgram,
+            standardTextProgram,
             new PixelExtent(100, 80));
         var effectSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
@@ -443,7 +444,9 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default));
         var registry = new UiDisplayListResourceRegistry();
-        registry.RegisterTextEffectResource(effectResource, new TextShaderVariant(textProgram, GlyphImageMode.Sdf));
+        registry.RegisterTextEffectResource(
+            effectResource,
+            new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.OutlineGlow));
         using var feature = new UiDisplayListGraphFeature(
             session,
             SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
@@ -894,7 +897,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiEffectQuality.Analytic,
             default);
         var visualProgram = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
-        var textProgram = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SdfTextOutlineGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
 
         var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.AnalyticEffect);
         var visualResource = new UiEffectResource(
@@ -913,7 +916,7 @@ public sealed class UiDisplayListGraphFeatureTests
                     RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                     UiVisualKind.RoundedRectangle)));
         Assert.Contains("analytic effect UI artifact", standardError.Message, StringComparison.Ordinal);
-        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf);
+        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.OutlineGlow);
         var textResource = new UiEffectResource(
             textEffect,
             new XamlEffectParameters(
@@ -923,6 +926,23 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default));
         registry.RegisterTextEffectResource(textResource, textVariant);
+        var unsupportedTextSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Text,
+            UiEffectCapabilities.OuterShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var unsupportedTextResource = new UiEffectResource(
+            unsupportedTextSet,
+            new XamlEffectParameters(
+                default,
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                default,
+                default,
+                default));
+        var unsupportedTextError = Assert.Throws<ArgumentException>(() =>
+            registry.RegisterTextEffectResource(unsupportedTextResource, textVariant));
+        Assert.Contains("OuterShadow", unsupportedTextError.Message, StringComparison.Ordinal);
 
         Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual, out var resolvedVisualResource));
         Assert.Equal(visualVariant, resolvedVisual);

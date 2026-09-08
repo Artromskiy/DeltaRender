@@ -12,6 +12,7 @@ internal readonly record struct PendingRun(
     PixelRect Clip,
     bool MergeWithPrevious,
     TextShaderVariant? ShaderVariant,
+    TextEffectValues EffectValues,
     TextRunCacheKey CacheKey,
     uint Version);
 
@@ -34,6 +35,7 @@ internal sealed class CachedRun
     internal PixelRect Clip;
     internal bool MergeWithPrevious;
     internal TextShaderVariant? ShaderVariant;
+    internal TextEffectValues EffectValues;
     internal ulong AtlasEpoch;
 }
 

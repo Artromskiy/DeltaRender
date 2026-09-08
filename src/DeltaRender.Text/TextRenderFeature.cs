@@ -110,7 +110,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         _instanceStride = shaderLayout.InstanceStride;
         _atlasBinding = shaderLayout.AtlasBinding;
         _pushConstantSize = shaderLayout.PushConstantSize;
-        _pushConstantBytes = new byte[checked((int)_pushConstantSize)];
+        _pushConstantBytes = new byte[checked((int)Maths.Max(_pushConstantSize, TextShaderPacking.MaxPushConstantSize))];
 
         _session = session;
         _mode = mode;
@@ -193,7 +193,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         TextShaderLayout layout;
         try
         {
-            layout = TextShaderPacking.Resolve(variant.Program, variant.Mode);
+            layout = TextShaderPacking.Resolve(variant.Program, variant.Mode, variant.Path);
         }
         catch (ArgumentException)
         {
@@ -203,7 +203,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         if (layout.InstanceBinding != _instanceBinding ||
             layout.InstanceStride != _instanceStride ||
             layout.AtlasBinding != _atlasBinding ||
-            layout.PushConstantSize != _pushConstantSize)
+            variant.Path == TextShaderPath.Standard && layout.PushConstantSize != _pushConstantSize)
         {
             return false;
         }
@@ -217,7 +217,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
     }
 
     internal bool AreRunVariantsCompatible(int firstRun, int secondRun)
-        => _pendingRuns.RefAt(firstRun).ShaderVariant == _pendingRuns.RefAt(secondRun).ShaderVariant;
+        => _pendingRuns.RefAt(firstRun).ShaderVariant == _pendingRuns.RefAt(secondRun).ShaderVariant &&
+           _pendingRuns.RefAt(firstRun).EffectValues == _pendingRuns.RefAt(secondRun).EffectValues;
 
     internal bool TryGetCompositePipeline(
         int firstRun,
@@ -233,7 +234,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         var variant = _pendingRuns.RefAt(firstRun).ShaderVariant;
         for (var runIndex = firstRun + 1; runIndex < firstRun + runCount; runIndex++)
         {
-            if (_pendingRuns.RefAt(runIndex).ShaderVariant != variant)
+            if (!AreRunVariantsCompatible(firstRun, runIndex))
             {
                 return false;
             }
@@ -252,7 +253,8 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         uint producerRunId = 0,
         uint producerRunGeneration = 0,
         uint producerRunVersion = 0,
-        TextShaderVariant? shaderVariant = null)
+        TextShaderVariant? shaderVariant = null,
+        TextEffectValues effectValues = default)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(text);
@@ -266,6 +268,13 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             throw new ArgumentException("Text color must contain finite components.", nameof(color));
         }
 
+        if (!effectValues.IsValid ||
+            (shaderVariant is null && effectValues != TextEffectValues.Empty) ||
+            (shaderVariant is { Path: TextShaderPath.Standard } && effectValues != TextEffectValues.Empty))
+        {
+            throw new ArgumentException("Text effects require a valid generated outline/glow shader variant.", nameof(effectValues));
+        }
+
         EnsureArrayCapacity(ref _pendingRuns, _pendingRunCount + 1);
         _pendingRuns.RefAt(_pendingRunCount) = new PendingRun(
             text,
@@ -275,6 +284,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             clip,
             mergeWithPrevious,
             shaderVariant,
+            effectValues,
             new TextRunCacheKey(producerRunId, producerRunGeneration),
             producerRunVersion);
         return _pendingRunCount++;
@@ -406,11 +416,25 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         }
 
         commands.SetViewport(new RenderViewport(0, 0, _viewport.Width, _viewport.Height));
-        var pushConstantBytes = _pushConstantBytes.AsSpan(0, checked((int)_pushConstantSize));
+        var variant = _pendingRuns.RefAt(firstRun).ShaderVariant;
+        var path = variant?.Path ?? TextShaderPath.Standard;
+        var layout = variant.HasValue
+            ? TextShaderPacking.Resolve(variant.Value.Program, variant.Value.Mode, path)
+            : new TextShaderLayout(
+                GlyphImageEncoding.SdfR8,
+                RenderTextureFormat.R8Unorm,
+                1,
+                _instanceBinding,
+                _instanceStride,
+                _atlasBinding,
+                _pushConstantSize);
+        var pushConstantBytes = _pushConstantBytes.AsSpan(0, checked((int)layout.PushConstantSize));
         var packedPushConstantSize = TextShaderPacking.PackTextParameters(
+            path,
             _mode,
             _viewport,
             _distanceRange,
+            _pendingRuns.RefAt(firstRun).EffectValues,
             pushConstantBytes);
         if (packedPushConstantSize != pushConstantBytes.Length)
         {
@@ -612,7 +636,9 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             {
                 var destinationOffset = checked((int)((ulong)runInstanceStart * _instanceStride));
                 var runByteCount = checked((int)((ulong)runInstanceCount * _instanceStride));
+                var path = pending.ShaderVariant?.Path ?? TextShaderPath.Standard;
                 var written = TextShaderPacking.PackInstances(
+                    path,
                     _mode,
                     _instances.AsSpan(runInstanceStart, runInstanceCount),
                     _instanceBytes.AsSpan(destinationOffset, runByteCount));
@@ -708,6 +734,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
             cachedRun.Clip != pending.Clip ||
             cachedRun.MergeWithPrevious != pending.MergeWithPrevious ||
             cachedRun.ShaderVariant != pending.ShaderVariant ||
+            cachedRun.EffectValues != pending.EffectValues ||
             cachedRun.AtlasEpoch != _atlas.Epoch)
         {
             return false;
@@ -757,6 +784,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
         cachedRun.Clip = pending.Clip;
         cachedRun.MergeWithPrevious = pending.MergeWithPrevious;
         cachedRun.ShaderVariant = pending.ShaderVariant;
+        cachedRun.EffectValues = pending.EffectValues;
         cachedRun.AtlasEpoch = _atlas.Epoch;
     }
 

@@ -19,7 +19,23 @@ internal readonly record struct TextShaderLayout(
 
 internal static class TextShaderPacking
 {
+    internal static uint MaxPushConstantSize { get; } = GetMaxPushConstantSize();
+
+    private static uint GetMaxPushConstantSize()
+    {
+        var size = SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
+        size = Math.Max(size, MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Math.Max(size, SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        return Math.Max(size, MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+    }
+
     internal static TextShaderLayout Resolve(IGraphicsShaderProgram program, GlyphImageMode mode)
+        => Resolve(program, mode, TextShaderPath.Standard);
+
+    internal static TextShaderLayout Resolve(
+        IGraphicsShaderProgram program,
+        GlyphImageMode mode,
+        TextShaderPath path)
     {
         ArgumentNullException.ThrowIfNull(program);
         var imageFormat = DescribeImageFormat(mode);
@@ -29,6 +45,18 @@ internal static class TextShaderPacking
             ShaderStageMask.Vertex,
             "vertex instance buffer");
         var atlasBinding = FindTextureBinding(program, "fragment atlas texture");
+        var pushConstantSize = FindPushConstantSize(program);
+        var expectedPushConstantSize = path == TextShaderPath.OutlineGlow
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : mode == GlyphImageMode.Msdf
+                ? MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
+        if (pushConstantSize != expectedPushConstantSize)
+        {
+            throw new ArgumentException("The text shader push-constant range does not match its generated shader path.", nameof(program));
+        }
 
         return new TextShaderLayout(
             imageFormat.Encoding,
@@ -37,14 +65,25 @@ internal static class TextShaderPacking
             instanceBinding,
             FindInstanceStride(program, instanceBinding),
             atlasBinding,
-            FindPushConstantSize(program));
+            pushConstantSize);
     }
 
     internal static int PackInstances(
         GlyphImageMode mode,
         ReadOnlySpan<GlyphInstance> values,
         Span<byte> destination)
-        => mode == GlyphImageMode.Msdf
+        => PackInstances(TextShaderPath.Standard, mode, values, destination);
+
+    internal static int PackInstances(
+        TextShaderPath path,
+        GlyphImageMode mode,
+        ReadOnlySpan<GlyphInstance> values,
+        Span<byte> destination)
+        => path == TextShaderPath.OutlineGlow
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineGlowGraphicsShaderProgram.PackMsdfTextOutlineGlowVertexGlyphsElements(values, destination)
+                : SdfTextOutlineGlowGraphicsShaderProgram.PackSdfTextOutlineGlowVertexGlyphsElements(values, destination)
+            : mode == GlyphImageMode.Msdf
             ? MsdfTextGraphicsShaderProgram.PackMsdfTextVertexGlyphsElements(values, destination)
             : SdfTextGraphicsShaderProgram.PackSdfTextVertexGlyphsElements(values, destination);
 
@@ -53,7 +92,35 @@ internal static class TextShaderPacking
         PixelExtent viewport,
         float distanceRange,
         Span<byte> destination)
+        => PackTextParameters(TextShaderPath.Standard, mode, viewport, distanceRange, TextEffectValues.Empty, destination);
+
+    internal static int PackTextParameters(
+        TextShaderPath path,
+        GlyphImageMode mode,
+        PixelExtent viewport,
+        float distanceRange,
+        in TextEffectValues effects,
+        Span<byte> destination)
     {
+        if (path == TextShaderPath.OutlineGlow)
+        {
+            var effectParameters = new TextEffectParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                TextColor = new float4(1, 1, 1, 1),
+                OutlineColor = new float4(effects.OutlineColor.X, effects.OutlineColor.Y, effects.OutlineColor.Z, effects.OutlineColor.W),
+                OutlineWidth = effects.OutlineWidth,
+                DistanceRange = distanceRange,
+                GlowColor = new float4(effects.GlowColor.X, effects.GlowColor.Y, effects.GlowColor.Z, effects.GlowColor.W),
+                GlowRadius = effects.GlowRadius,
+                GlowIntensity = effects.GlowIntensity,
+            };
+
+            return mode == GlyphImageMode.Msdf
+                ? MsdfTextOutlineGlowGraphicsShaderProgram.PackMsdfTextOutlineGlowVertexParameters(in effectParameters, destination)
+                : SdfTextOutlineGlowGraphicsShaderProgram.PackSdfTextOutlineGlowVertexParameters(in effectParameters, destination);
+        }
+
         var parameters = new TextParameters
         {
             Resolution = new float2(viewport.Width, viewport.Height),

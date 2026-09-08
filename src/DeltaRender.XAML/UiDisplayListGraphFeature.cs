@@ -408,9 +408,10 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                     var text = _texts.RefAt(draw.Index);
                     TextShaderVariant? shaderVariant = null;
+                    var effectValues = TextEffectValues.Empty;
                     if (text.Paint.EffectSet.IsValid)
                     {
-                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant, out _) ||
+                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant, out var effectResource) ||
                             !_textFeature.TryResolveTextVariant(registeredVariant, out _))
                         {
                             AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
@@ -419,6 +420,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         }
 
                         shaderVariant = registeredVariant;
+                        effectValues = ToTextEffectValues(effectResource);
                     }
 
                     var color = text.Paint.FillColor;
@@ -432,9 +434,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         _coordinates.ToPhysical(_commandClips.RefAt(index)),
                         mergeWithPrevious: previousWasText,
                         shaderVariant: shaderVariant,
+                        effectValues: effectValues,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
                         producerRunVersion: identity.Version);
+
                     textRunCount++;
                     previousWasText = true;
                 }
@@ -1294,6 +1298,18 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             visualKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border &&
             variantKind is UiVisualKind.RoundedRectangle or UiVisualKind.Border;
 
+    private static TextEffectValues ToTextEffectValues(UiEffectResource effectResource)
+    {
+        var outline = effectResource.Parameters.StrokeOrOutline;
+        var glow = effectResource.Parameters.Glow;
+        return new TextEffectValues(
+            new Vector4(outline.Color.x, outline.Color.y, outline.Color.z, outline.Color.w),
+            outline.Width,
+            new Vector4(glow.Color.x, glow.Color.y, glow.Color.z, glow.Color.w),
+            glow.BlurRadius,
+            glow.Intensity);
+    }
+
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)
     {
         clip = default;
@@ -1333,7 +1349,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
         }
 
-        if (text.Paint.OutlineWidth != 0 || text.Paint.EffectResource.IsValid)
+        if ((text.Paint.OutlineWidth != 0 || text.Paint.EffectResource.IsValid) &&
+            !text.Paint.EffectSet.IsValid)
         {
             AddDiagnostic($"Text at Order[{orderIndex}] requests outline/effect data without a registered text effect shader.");
             return false;
