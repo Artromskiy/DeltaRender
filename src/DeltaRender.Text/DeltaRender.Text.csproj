@@ -8,10 +8,13 @@
     <IsPackable>true</IsPackable>
     <Nullable>enable</Nullable>
     <DeltaShaderEnabled>true</DeltaShaderEnabled>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Generated/TextShaders</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <DeltaShaderSource Include="Shaders/**/*.cs" />
+    <None Update="TextShaderVariants.json" Pack="true" PackagePath="build/DeltaRender.Text/TextShaderVariants.json" />
   </ItemGroup>
 
   <ItemGroup>

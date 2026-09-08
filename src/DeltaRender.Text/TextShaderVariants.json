@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "artifactRoot": "bin/Release/net10.0/DeltaShader/DeltaRender.Text",
+  "generatedSourceRoot": "obj/Release/net10.0/Generated/TextShaders",
+  "allowlistedVariants": [
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Sdf",
+      "effects": "None",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Msdf",
+      "effects": "None",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Sdf",
+      "effects": "Outline|Glow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Msdf",
+      "effects": "Outline|Glow",
+      "quality": "Analytic"
+    }
+  ],
+  "entries": [
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Sdf",
+        "effects": "None",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextVertex.vert.spv",
+      "fragmentSpirv": "SdfTextFragment.frag.spv",
+      "generatedProgramType": "SdfTextGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "sdf-text",
+      "fragmentEntryPoint": "sdf-text"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Msdf",
+        "effects": "None",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextFragment.frag.spv",
+      "generatedProgramType": "MsdfTextGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "msdf-text",
+      "fragmentEntryPoint": "msdf-text"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Sdf",
+        "effects": "Outline|Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextOutlineGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "SdfTextOutlineGlowVertex.vert.spv",
+      "fragmentSpirv": "SdfTextOutlineGlowFragment.frag.spv",
+      "generatedProgramType": "SdfTextOutlineGlowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "sdf-text-outline-glow",
+      "fragmentEntryPoint": "sdf-text-outline-glow"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Msdf",
+        "effects": "Outline|Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextOutlineGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextOutlineGlowVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextOutlineGlowFragment.frag.spv",
+      "generatedProgramType": "MsdfTextOutlineGlowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "msdf-text-outline-glow",
+      "fragmentEntryPoint": "msdf-text-outline-glow"
+    }
+  ]
+}

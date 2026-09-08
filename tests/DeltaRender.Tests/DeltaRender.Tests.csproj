@@ -13,6 +13,7 @@
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <ProjectReference Include="../../src/DeltaRender.Text/DeltaRender.Text.csproj" />
     <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader.Compiler/DeltaShader.Compiler.csproj" />
     <PackageReference Include="DeltaRender" />
     <PackageReference Include="DeltaRender.Platform.SDL3" />
     <PackageReference Include="DeltaRender.Vulkan" />
