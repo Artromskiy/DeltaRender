@@ -11,23 +11,36 @@ public enum TextShaderPath : byte
     OutlineGlow,
 }
 
-/// <summary>Neutral outline/glow values selected from a typed UI effect resource.</summary>
+/// <summary>Neutral outline, outer-shadow and glow values selected from a typed UI effect resource.</summary>
 public readonly record struct TextEffectValues(
     Vector4 OutlineColor,
     float OutlineWidth,
     Vector4 GlowColor,
     float GlowRadius,
-    float GlowIntensity)
+    float GlowIntensity,
+    Vector4 OuterShadowColor,
+    Vector2 OuterShadowOffset,
+    float OuterShadowWidth,
+    float OuterShadowBlurRadius,
+    float OuterShadowSpread,
+    float OuterShadowIntensity)
 {
     /// <summary>Gets an empty no-effect payload.</summary>
     public static TextEffectValues Empty => default;
 
     internal bool IsValid => IsFinite(OutlineColor) && float.IsFinite(OutlineWidth) && OutlineWidth >= 0 &&
         IsFinite(GlowColor) && float.IsFinite(GlowRadius) && GlowRadius >= 0 &&
-        float.IsFinite(GlowIntensity) && GlowIntensity >= 0;
+        float.IsFinite(GlowIntensity) && GlowIntensity >= 0 &&
+        IsFinite(OuterShadowColor) && IsFinite(OuterShadowOffset) &&
+        float.IsFinite(OuterShadowWidth) && OuterShadowWidth >= 0 &&
+        float.IsFinite(OuterShadowBlurRadius) && OuterShadowBlurRadius >= 0 &&
+        float.IsFinite(OuterShadowSpread) && float.IsFinite(OuterShadowIntensity) && OuterShadowIntensity >= 0;
 
     private static bool IsFinite(Vector4 value)
         => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) && float.IsFinite(value.W);
+
+    private static bool IsFinite(Vector2 value)
+        => float.IsFinite(value.X) && float.IsFinite(value.Y);
 }
 
 /// <summary>Describes one prepared text shader and its generated packing mode.</summary>

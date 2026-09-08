@@ -76,11 +76,10 @@ public sealed class UiDisplayListResourceRegistry
 
         if (variant.Path == UiVisualShaderPath.AnalyticEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities.HasFlag(UiEffectCapabilities.InsetShadow) ||
              effectResource.Set.Quality == UiEffectQuality.CachedMask))
         {
             throw new ArgumentException(
-                "The analytic rounded UI artifact supports analytic stroke/outline, outer-shadow and glow layers only; InsetShadow and CachedMask are unsupported.",
+                "The analytic rounded UI artifact supports analytic stroke/outline, outer-shadow, inset-shadow and glow layers only; CachedMask is unsupported.",
                 nameof(effectResource));
         }
 
@@ -108,12 +107,11 @@ public sealed class UiDisplayListResourceRegistry
 
         if (variant.Path != TextShaderPath.OutlineGlow ||
             effectResource.Set.Quality != UiEffectQuality.Analytic ||
-            effectResource.Set.Has(UiEffectCapabilities.OuterShadow) ||
             effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
             effectResource.Set.Quality == UiEffectQuality.CachedMask)
         {
             throw new ArgumentException(
-                "The text outline/glow artifact supports analytic Outline and Glow layers only; OuterShadow, InsetShadow and CachedMask are unsupported.",
+                "The text outline/glow artifact supports analytic OuterShadow, Outline and Glow layers only; InsetShadow and CachedMask are unsupported.",
                 nameof(effectResource));
         }
 

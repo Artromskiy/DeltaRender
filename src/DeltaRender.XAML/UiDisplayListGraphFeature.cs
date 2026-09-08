@@ -1215,7 +1215,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         if (visual.Paint.EffectSet.IsValid && visualVariant.Path == UiVisualShaderPath.AnalyticEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Has(UiEffectCapabilities.InsetShadow) ||
              effectResource.Set.Quality == UiEffectQuality.CachedMask))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] requests an effect layer not supported by the analytic rounded UI ABI.");
@@ -1302,12 +1301,19 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     {
         var outline = effectResource.Parameters.StrokeOrOutline;
         var glow = effectResource.Parameters.Glow;
+        var outerShadow = effectResource.Parameters.OuterShadow;
         return new TextEffectValues(
             new Vector4(outline.Color.x, outline.Color.y, outline.Color.z, outline.Color.w),
             outline.Width,
             new Vector4(glow.Color.x, glow.Color.y, glow.Color.z, glow.Color.w),
             glow.BlurRadius,
-            glow.Intensity);
+            glow.Intensity,
+            new Vector4(outerShadow.Color.x, outerShadow.Color.y, outerShadow.Color.z, outerShadow.Color.w),
+            new Vector2(outerShadow.Offset.x, outerShadow.Offset.y),
+            outerShadow.Width,
+            outerShadow.BlurRadius,
+            outerShadow.Spread,
+            outerShadow.Intensity);
     }
 
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)

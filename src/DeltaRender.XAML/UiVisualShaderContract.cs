@@ -252,6 +252,7 @@ internal static class UiVisualShaderContract
         var effects = new ShaderEffectParameters(
             ToShaderEffectLayer(parameters.StrokeOrOutline),
             ToShaderEffectLayer(parameters.OuterShadow),
+            ToShaderEffectLayer(parameters.InsetShadow),
             ToShaderEffectLayer(parameters.Glow));
         return AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexInstancesElement(
             new AnalyticRoundedRectangleParameters(

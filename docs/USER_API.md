@@ -62,13 +62,14 @@ prepared variant. The registry does not compose shader layers, inspect files,
 or infer effect parameters from a CLR object.
 
 The generated analytic rounded artifact accepts typed stroke/outline,
-outer-shadow and glow layers through its producer-owned packer. Inset-shadow
-and cached-mask resources are rejected because this ABI does not expose those
-fields. No local CLR ABI or fallback packer is used. A registered visual effect
+outer-shadow, inset-shadow and glow layers through its producer-owned packer.
+Cached-mask resources are rejected because this graph path has no sampled-mask
+ABI. No local CLR ABI or fallback packer is used. A registered visual effect
 program must therefore expose the matching prepared ABI before it can be
 submitted; a different ABI is rejected with a diagnostic until its generated
-packer/adapter is available. A text variant is accepted only when its mode and
-resolved bindings, stride and
+packer/adapter is available. The generated text outline/glow artifact also
+accepts typed outer-shadow values. A text variant is accepted only when its
+mode and resolved bindings, stride and
 push-constant range match the configured `TextRenderFeature`; adjacent runs
 with different variants become separate raster passes. Missing or incompatible
 variants are reported rather than silently falling back to the no-effect path.

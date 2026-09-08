@@ -114,6 +114,12 @@ internal static class TextShaderPacking
                 GlowColor = new float4(effects.GlowColor.X, effects.GlowColor.Y, effects.GlowColor.Z, effects.GlowColor.W),
                 GlowRadius = effects.GlowRadius,
                 GlowIntensity = effects.GlowIntensity,
+                OuterShadowColor = new float4(effects.OuterShadowColor.X, effects.OuterShadowColor.Y, effects.OuterShadowColor.Z, effects.OuterShadowColor.W),
+                OuterShadowOffset = new float2(effects.OuterShadowOffset.X, effects.OuterShadowOffset.Y),
+                OuterShadowWidth = effects.OuterShadowWidth,
+                OuterShadowBlurRadius = effects.OuterShadowBlurRadius,
+                OuterShadowSpread = effects.OuterShadowSpread,
+                OuterShadowIntensity = effects.OuterShadowIntensity,
             };
 
             return mode == GlyphImageMode.Msdf

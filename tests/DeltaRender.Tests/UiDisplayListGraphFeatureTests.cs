@@ -926,23 +926,24 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default));
         registry.RegisterTextEffectResource(textResource, textVariant);
-        var unsupportedTextSet = new UiEffectSet(
+        var outerTextSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
             UiEffectCapabilities.OuterShadow,
             UiEffectQuality.Analytic,
             default);
-        var unsupportedTextResource = new UiEffectResource(
-            unsupportedTextSet,
+        var outerTextResource = new UiEffectResource(
+            outerTextSet,
             new XamlEffectParameters(
                 default,
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
                 default,
                 default,
                 default));
-        var unsupportedTextError = Assert.Throws<ArgumentException>(() =>
-            registry.RegisterTextEffectResource(unsupportedTextResource, textVariant));
-        Assert.Contains("OuterShadow", unsupportedTextError.Message, StringComparison.Ordinal);
+        registry.RegisterTextEffectResource(outerTextResource, textVariant);
+        Assert.True(registry.TryResolveTextEffectSet(outerTextSet, out var outerTextVariant, out var resolvedOuterTextResource));
+        Assert.Equal(textVariant, outerTextVariant);
+        Assert.Equal(outerTextResource, resolvedOuterTextResource);
 
         Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual, out var resolvedVisualResource));
         Assert.Equal(visualVariant, resolvedVisual);
@@ -967,7 +968,7 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
-    public void AnalyticVisualEffectRejectsUnsupportedInsetShadowAndCachedMask()
+    public void AnalyticVisualEffectAcceptsInsetShadowAndRejectsCachedMask()
     {
         var registry = new UiDisplayListResourceRegistry();
         var program = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
@@ -979,20 +980,21 @@ public sealed class UiDisplayListGraphFeatureTests
         var insetSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Visual,
-            UiEffectCapabilities.InsetShadow,
+            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.InsetShadow | UiEffectCapabilities.Glow,
             UiEffectQuality.Analytic,
             default);
         var insetResource = new UiEffectResource(
             insetSet,
             new XamlEffectParameters(
-                default,
-                default,
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
-                default,
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 2, 0, 1),
+                new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
                 default));
-        var insetError = Assert.Throws<ArgumentException>(() =>
-            registry.RegisterVisualEffectResource(insetResource, variant));
-        Assert.Contains("InsetShadow", insetError.Message, StringComparison.Ordinal);
+        registry.RegisterVisualEffectResource(insetResource, variant);
+        Assert.True(registry.TryResolveVisualEffectSet(insetSet, out var insetVariant, out var resolvedInsetResource));
+        Assert.Equal(variant, insetVariant);
+        Assert.Equal(insetResource, resolvedInsetResource);
 
         var cachedSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
