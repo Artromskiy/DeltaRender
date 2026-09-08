@@ -1274,7 +1274,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if ((visual.Kind == UiVisualKind.RoundedRectangle || visual.Kind == UiVisualKind.Border) &&
-            visual.Paint.StrokeWidth == 0f &&
             UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii) &&
             _solidVisualProgram is not null)
         {
@@ -1301,9 +1300,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (!UiDisplayListGeometry.IsFinite(visual.Bounds) || !UiDisplayListGeometry.IsFinite(visual.Paint.FillColor) ||
-            !UiDisplayListGeometry.IsFinite(visual.Paint.StrokeColor) || !UiDisplayListGeometry.IsFinite(visual.Paint.CornerRadii) ||
-            !float.IsFinite(visual.Paint.StrokeWidth) ||
-            visual.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
+            !UiDisplayListGeometry.IsFinite(visual.Paint.CornerRadii))
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] contains non-finite geometry or paint.");
             return false;
@@ -1345,9 +1342,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (visual.Kind == UiVisualKind.SolidRectangle &&
-            (visual.Paint.StrokeWidth != 0 || !UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii)))
+            !UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii))
         {
-            AddDiagnostic($"Visual at Order[{orderIndex}] requests stroke or rounded geometry without a registered effect shader.");
+            AddDiagnostic($"Visual at Order[{orderIndex}] requests rounded geometry from a solid visual kind.");
             return false;
         }
 
@@ -1394,12 +1391,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         if (radii.x < 0 || radii.y < 0 || radii.z < 0 || radii.w < 0)
         {
             AddDiagnostic($"Visual at Order[{orderIndex}] has negative corner radii.");
-            return false;
-        }
-
-        if (visual.Paint.StrokeWidth < 0)
-        {
-            AddDiagnostic($"Visual at Order[{orderIndex}] has a negative stroke width.");
             return false;
         }
 
@@ -1461,9 +1452,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return false;
         }
 
-        if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) || !UiDisplayListGeometry.IsFinite(text.Paint.FillColor) ||
-            !UiDisplayListGeometry.IsFinite(text.Paint.StrokeColor) || !float.IsFinite(text.Paint.StrokeWidth) ||
-            text.Paint.Units is not (PaintUnits.Logical or PaintUnits.Device))
+        if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) ||
+            !UiDisplayListGeometry.IsFinite(text.Paint.FillColor))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid shaped value or paint.");
             return false;
@@ -1496,13 +1486,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 AddDiagnostic($"Text at Order[{orderIndex}] references a registered text effect set without a compatible generated text packer.");
                 return false;
             }
-        }
-
-        if ((text.Paint.StrokeWidth != 0 || text.Paint.EffectResource.IsValid) &&
-            !text.Paint.EffectSet.IsValid)
-        {
-            AddDiagnostic($"Text at Order[{orderIndex}] requests stroke/effect data without a registered text effect shader.");
-            return false;
         }
 
         return true;
@@ -1575,7 +1558,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                previous.Clip.Equals(current.Clip) &&
                previous.Resource.Equals(current.Resource) &&
                previous.Paint.CornerRadii.Equals(current.Paint.CornerRadii) &&
-               previous.Paint.StrokeWidth == current.Paint.StrokeWidth &&
                previous.Paint.EffectSet.Equals(current.Paint.EffectSet);
     }
 
@@ -1633,14 +1615,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             var paint = visual.Paint;
             var physicalPaint = paint with
             {
-                StrokeWidth = paint.Units switch
-                {
-                    PaintUnits.Logical => paint.StrokeWidth * _dpiScale,
-                    PaintUnits.Device => paint.StrokeWidth,
-                    _ => throw new ArgumentOutOfRangeException(nameof(visual), paint.Units, "Unknown paint unit system."),
-                },
                 CornerRadii = ToPhysical(paint.CornerRadii),
-                Units = PaintUnits.Device,
             };
             return visual with
             {

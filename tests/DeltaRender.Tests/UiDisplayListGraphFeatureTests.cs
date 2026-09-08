@@ -246,7 +246,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiVisualKind.RoundedRectangle,
             default,
             new float4(100, 100, 600, 300),
-            new UiVisualPaint(new float4(0.2f, 0.5f, 0.9f, 1), default, 0, default),
+            new UiVisualPaint(new float4(0.2f, 0.5f, 0.9f, 1), default, UiEffectSet.None),
             UiClipId.None,
             default);
         var order = new[] { new UiDrawRef(UiDrawKind.Visual, 0) };
@@ -279,9 +279,8 @@ public sealed class UiDisplayListGraphFeatureTests
             new float4(10, 10, 40, 30),
             new UiVisualPaint(
                 new float4(0.2f, 0.5f, 0.9f, 1),
-                new float4(1, 1, 1, 1),
-                1,
-                new float4(8, 8, 8, 8)),
+                new float4(8, 8, 8, 8),
+                UiEffectSet.None),
             UiClipId.None,
             UiResourceId.Empty);
 
@@ -813,7 +812,7 @@ public sealed class UiDisplayListGraphFeatureTests
             UiVisualKind.SolidRectangle,
             default,
             new float4(0, 0, 10, 10),
-            new UiVisualPaint(new float4(1, 1, 1, 1), default, 0, new float4(2, 2, 2, 2)),
+            new UiVisualPaint(new float4(1, 1, 1, 1), new float4(2, 2, 2, 2), UiEffectSet.None),
             UiClipId.None,
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
@@ -823,7 +822,7 @@ public sealed class UiDisplayListGraphFeatureTests
             Array.Empty<UiClipRegion>(),
             Array.Empty<UiTextDraw>(),
             new[] { new UiDrawRef(UiDrawKind.Visual, 0) })));
-        Assert.Contains(feature.Diagnostics, static message => message.Contains("stroke or rounded", StringComparison.Ordinal));
+        Assert.Contains(feature.Diagnostics, static message => message.Contains("rounded geometry", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -835,9 +834,8 @@ public sealed class UiDisplayListGraphFeatureTests
             new float4(0, 0, 20, 10),
             new UiVisualPaint(
                 new float4(1, 1, 1, 1),
-                new float4(0, 0, 0, 1),
-                1,
-                new float4(1, 2, 3, 4)),
+                new float4(1, 2, 3, 4),
+                UiEffectSet.None),
             UiClipId.None,
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));
@@ -858,9 +856,8 @@ public sealed class UiDisplayListGraphFeatureTests
             new float4(0, 0, 10, 10),
             new UiVisualPaint(
                 new float4(1, 1, 1, 1),
-                default,
-                0,
-                new float4(6, 6, 1, 1)),
+                new float4(6, 6, 1, 1),
+                UiEffectSet.None),
             UiClipId.None,
             UiResourceId.Empty);
         using var feature = new UiDisplayListGraphFeature(new PixelExtent(32, 32));

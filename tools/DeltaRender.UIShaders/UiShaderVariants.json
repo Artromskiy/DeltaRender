@@ -32,7 +32,7 @@
       "primitive": "Rounded",
       "material": "FlatColor",
       "textRepresentation": "None",
-      "effects": "Stroke",
+      "effects": "None",
       "quality": "Analytic"
     },
     {
@@ -189,7 +189,7 @@
         "primitive": "Rounded",
         "material": "FlatColor",
         "textRepresentation": "None",
-        "effects": "Stroke",
+        "effects": "None",
         "quality": "Analytic"
       },
       "producerSource": "Shaders/UiRectangleShaders.cs",
@@ -203,7 +203,7 @@
       "fragmentPacker": "PackRoundedRectangleVertexFrame",
       "vertexEntryPoint": "rounded-rectangle",
       "fragmentEntryPoint": "rounded-rectangle",
-      "layerSetIdentity": "visual.rounded.stroke"
+      "layerSetIdentity": "visual.rounded"
     },
     {
       "key": {

@@ -406,9 +406,7 @@ internal static class UiVisualShaderContract
                 new RoundedRectangleParameters(
                     visual.Bounds,
                     visual.Paint.FillColor,
-                    visual.Paint.StrokeColor,
-                    visual.Paint.CornerRadii,
-                    visual.Paint.StrokeWidth),
+                    visual.Paint.CornerRadii),
                 destination),
             UiRectangleShaderKind.SolidImage => SolidImageGraphicsShaderProgram.PackSolidImageRectangleVertexInstancesElement(
                 new SolidImageRectangleParameters(visual.Bounds, visual.Paint.FillColor, new float4(0f, 0f, 1f, 1f)),

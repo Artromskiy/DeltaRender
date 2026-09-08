@@ -160,9 +160,8 @@ public sealed class UiVisualShaderContractTests
             new float4(10, 20, 30, 40),
             new UiVisualPaint(
                 new float4(0.1f, 0.2f, 0.3f, 0.4f),
-                new float4(0.5f, 0.6f, 0.7f, 0.8f),
-                2.5f,
-                new float4(1, 2, 3, 4)),
+                new float4(1, 2, 3, 4),
+                UiEffectSet.None),
             UiClipId.None,
             UiResourceId.Empty);
 
@@ -180,15 +179,14 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(800f, ReadFloat(frame, 0));
         Assert.Equal(600f, ReadFloat(frame, 4));
 
-        Span<byte> packed = stackalloc byte[80];
-        Assert.Equal(80, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
+        Span<byte> packed = stackalloc byte[48];
+        Assert.Equal(48, UiVisualShaderContract.PackInstance(shaderKind, in visual, packed));
         Assert.Equal(10f, ReadFloat(packed, 0));
         Assert.Equal(20f, ReadFloat(packed, 4));
-        Assert.Equal(1f, ReadFloat(packed, 48));
-        Assert.Equal(2f, ReadFloat(packed, 52));
-        Assert.Equal(3f, ReadFloat(packed, 56));
-        Assert.Equal(4f, ReadFloat(packed, 60));
-        Assert.Equal(2.5f, ReadFloat(packed, 64));
+        Assert.Equal(1f, ReadFloat(packed, 32));
+        Assert.Equal(2f, ReadFloat(packed, 36));
+        Assert.Equal(3f, ReadFloat(packed, 40));
+        Assert.Equal(4f, ReadFloat(packed, 44));
     }
 
     [Fact]

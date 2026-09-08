@@ -180,22 +180,16 @@ public readonly struct RoundedRectangleParameters
 {
     public readonly float4 Rect;
     public readonly float4 FillColor;
-    public readonly float4 BorderColor;
     public readonly float4 CornerRadii;
-    public readonly float BorderWidth;
 
     public RoundedRectangleParameters(
         float4 rect,
         float4 fillColor,
-        float4 borderColor,
-        float4 cornerRadii,
-        float borderWidth)
+        float4 cornerRadii)
     {
         Rect = rect;
         FillColor = fillColor;
-        BorderColor = borderColor;
         CornerRadii = cornerRadii;
-        BorderWidth = borderWidth;
     }
 }
 
@@ -220,9 +214,7 @@ public struct RoundedRectanglePayload
     public Uv0 Uv;
     public SegmentRect Rect;
     public VertexColor FillColor;
-    public FragmentColor BorderColor;
     public CornerRadii CornerRadii;
-    public BorderWidth BorderWidth;
 }
 
 public readonly struct RoundedRectangleVertexContext
@@ -915,9 +907,7 @@ public static class UiRectangleShaders
             Uv = new Uv0(local),
             Rect = new SegmentRect(instance.Rect),
             FillColor = new VertexColor(instance.FillColor),
-            BorderColor = new FragmentColor(instance.BorderColor),
-            CornerRadii = new CornerRadii(instance.CornerRadii),
-            BorderWidth = new BorderWidth(instance.BorderWidth)
+            CornerRadii = new CornerRadii(instance.CornerRadii)
         };
     }
 
@@ -951,16 +941,9 @@ public static class UiRectangleShaders
             _ = discard;
         }
 
-        float innerCoverage = 1f - smoothstep(-edge, edge, distance + input.BorderWidth.Value);
-        float borderCoverage = outerCoverage - innerCoverage;
-
-        // Предварительное умножение альфы (Premultiply Alpha) исходных цветов
         float4 f = input.FillColor.Value;
-        float4 b = input.BorderColor.Value;
         float4 fill = new float4(f.xyz * f.w, f.w);
-        float4 border = new float4(b.xyz * b.w, b.w);
-
-        return fill * innerCoverage + border * borderCoverage;
+        return fill * outerCoverage;
     }
 
     [VertexShader("rounded-outer-glow")]
