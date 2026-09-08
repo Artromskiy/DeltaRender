@@ -1502,7 +1502,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         if (!ReferenceEquals(_visualPrograms.RefAt(firstOrderIndex), _visualPrograms.RefAt(nextOrderIndex)) ||
             _visualPushConstantSizes.RefAt(firstOrderIndex) != _visualPushConstantSizes.RefAt(nextOrderIndex) ||
             _visualInstanceStrides.RefAt(firstOrderIndex) != _visualInstanceStrides.RefAt(nextOrderIndex) ||
-            _visualInstanceBindings.RefAt(firstOrderIndex) != _visualInstanceBindings.RefAt(nextOrderIndex))
+            _visualInstanceBindings.RefAt(firstOrderIndex) != _visualInstanceBindings.RefAt(nextOrderIndex) ||
+            _visualBlendStates.RefAt(firstOrderIndex) != _visualBlendStates.RefAt(nextOrderIndex))
         {
             return false;
         }

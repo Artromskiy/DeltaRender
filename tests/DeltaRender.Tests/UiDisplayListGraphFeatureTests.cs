@@ -340,6 +340,55 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void ContiguousVisualsWithDifferentBlendModesUseSeparateSegments()
+    {
+        var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(session, program, new PixelExtent(100, 80));
+        var alpha = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(0, 0, 40, 30),
+            new UiVisualPaint(new float4(1, 0, 0, 1), default, UiEffectSet.None)
+            with
+            { BlendMode = UiBlendMode.Alpha },
+            UiClipId.None,
+            UiResourceId.Empty);
+        var multiply = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(40, 0, 40, 30),
+            new UiVisualPaint(new float4(0, 1, 0, 1), default, UiEffectSet.None)
+            with
+            { BlendMode = UiBlendMode.Multiply },
+            UiClipId.None,
+            UiResourceId.Empty);
+
+        Assert.True(
+            feature.Consume(UiDisplayListTestFactory.Create(
+                new[] { alpha, multiply },
+                Array.Empty<UiClipRegion>(),
+                Array.Empty<UiTextDraw>(),
+                new[]
+                {
+                    new UiDrawRef(UiDrawKind.Visual, 0),
+                    new UiDrawRef(UiDrawKind.Visual, 1),
+                })),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.Alpha),
+            graph.RasterDescriptions[0].Pipeline.BlendState);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.Multiply),
+            graph.RasterDescriptions[1].Pipeline.BlendState);
+    }
+
+    [Fact]
     public void CompatibleVisualsWithDifferentClipsUseOnePassAndPreserveScissorCommands()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
