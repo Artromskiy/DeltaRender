@@ -50,6 +50,14 @@
       "textRepresentation": "Sdf",
       "effects": "Glow",
       "quality": "Analytic"
+    },
+    {
+      "target": "Text",
+      "primitive": "Solid",
+      "material": "DistanceField",
+      "textRepresentation": "Msdf",
+      "effects": "Glow",
+      "quality": "Analytic"
     }
   ],
   "entries": [
@@ -184,6 +192,28 @@
       "vertexEntryPoint": "sdf-text-glow",
       "fragmentEntryPoint": "sdf-text-glow",
       "layerSetIdentity": "text.sdf.glow"
+    },
+    {
+      "key": {
+        "target": "Text",
+        "primitive": "Solid",
+        "material": "DistanceField",
+        "textRepresentation": "Msdf",
+        "effects": "Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/TextShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextGlowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "MsdfTextGlowVertex.vert.spv",
+      "fragmentSpirv": "MsdfTextGlowFragment.frag.spv",
+      "generatedProgramType": "MsdfTextGlowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackMsdfTextGlowVertexGlyphsElements",
+      "fragmentPacker": "PackMsdfTextGlowFragmentParameters",
+      "vertexEntryPoint": "msdf-text-glow",
+      "fragmentEntryPoint": "msdf-text-glow",
+      "layerSetIdentity": "text.msdf.glow"
     }
   ]
 }

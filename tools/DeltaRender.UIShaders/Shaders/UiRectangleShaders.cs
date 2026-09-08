@@ -212,6 +212,60 @@ public readonly struct OuterShadowRoundedRectangleVertexContext
 
 public readonly struct OuterShadowRoundedRectangleFragmentContext { }
 
+public readonly struct InsetShadowRoundedRectangleParameters
+{
+    public readonly float4 Rect;
+    public readonly float4 FillColor;
+    public readonly float4 CornerRadii;
+    public readonly float4 InsetShadowColor;
+    public readonly float2 InsetShadowOffset;
+    public readonly float InsetShadowWidth;
+    public readonly float InsetShadowBlurRadius;
+    public readonly float InsetShadowSpread;
+    public readonly float InsetShadowIntensity;
+
+    public InsetShadowRoundedRectangleParameters(
+        float4 rect,
+        float4 fillColor,
+        float4 cornerRadii,
+        UiEffectLayerParameters shadow)
+    {
+        Rect = rect;
+        FillColor = fillColor;
+        CornerRadii = cornerRadii;
+        InsetShadowColor = shadow.Color;
+        InsetShadowOffset = shadow.Offset;
+        InsetShadowWidth = shadow.Width;
+        InsetShadowBlurRadius = shadow.BlurRadius;
+        InsetShadowSpread = shadow.Spread;
+        InsetShadowIntensity = shadow.Intensity;
+    }
+}
+
+[Interstage]
+public struct InsetShadowRoundedRectanglePayload
+{
+    public Position Position;
+    public Uv0 Uv;
+    public SegmentRect Rect;
+    public VertexColor FillColor;
+    public CornerRadii CornerRadii;
+    public EffectInsetShadowColor InsetShadowColor;
+    public EffectInsetShadowGeometry InsetShadowGeometry;
+    public EffectInsetShadowFalloff InsetShadowFalloff;
+}
+
+public readonly struct InsetShadowRoundedRectangleVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<InsetShadowRoundedRectangleParameters> Instances;
+
+    [PushConstant]
+    public readonly UiFrameConstants Frame;
+}
+
+public readonly struct InsetShadowRoundedRectangleFragmentContext { }
+
 [Interstage]
 public struct CachedMaskRoundedRectanglePayload
 {
@@ -594,6 +648,58 @@ public static class UiRectangleShaders
             input.OuterShadowFalloff.Value.y);
         float4 fill = Premultiply(input.FillColor.Value, Coverage(distance));
         return ApplyOuterShadow(input.CornerRadii.Value, pixel, size, shadow, fill);
+    }
+
+    [VertexShader("rounded-inset-shadow")]
+    public static InsetShadowRoundedRectanglePayload InsetShadowRoundedRectangleVertex(
+        in InsetShadowRoundedRectangleVertexContext context,
+        in InsetShadowRoundedRectanglePayload input)
+    {
+        InsetShadowRoundedRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
+        float2 local = GetQuadLocal(ShaderBuiltins.VertexIndex);
+        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+
+        return new InsetShadowRoundedRectanglePayload
+        {
+            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Uv = new Uv0(local),
+            Rect = new SegmentRect(instance.Rect),
+            FillColor = new VertexColor(instance.FillColor),
+            CornerRadii = new CornerRadii(instance.CornerRadii),
+            InsetShadowColor = new EffectInsetShadowColor(instance.InsetShadowColor),
+            InsetShadowGeometry = new EffectInsetShadowGeometry(new float4(
+                instance.InsetShadowOffset,
+                instance.InsetShadowWidth,
+                instance.InsetShadowBlurRadius)),
+            InsetShadowFalloff = new EffectInsetShadowFalloff(new float2(
+                instance.InsetShadowSpread,
+                instance.InsetShadowIntensity))
+        };
+    }
+
+    [FragmentShader("rounded-inset-shadow")]
+    public static float4 InsetShadowRoundedRectangleFragment(
+        in InsetShadowRoundedRectangleFragmentContext context,
+        in InsetShadowRoundedRectanglePayload input)
+    {
+        float2 size = input.Rect.Value.zw;
+        float2 pixel = input.Uv.Value * size;
+        float distance = GetRoundedDistance(input.CornerRadii.Value, pixel, size);
+        UiEffectLayerParameters shadow = new(
+            input.InsetShadowColor.Value,
+            input.InsetShadowGeometry.Value.xy,
+            input.InsetShadowGeometry.Value.z,
+            input.InsetShadowGeometry.Value.w,
+            input.InsetShadowFalloff.Value.x,
+            input.InsetShadowFalloff.Value.y);
+        float4 fill = Premultiply(input.FillColor.Value, Coverage(distance));
+        return ApplyInsetShadow(
+            distance,
+            input.CornerRadii.Value,
+            pixel,
+            size,
+            shadow,
+            fill);
     }
 
     [VertexShader("cached-mask-rounded-rectangle")]

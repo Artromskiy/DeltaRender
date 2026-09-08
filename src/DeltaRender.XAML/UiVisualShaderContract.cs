@@ -15,6 +15,7 @@ internal enum UiRectangleShaderKind : byte
     Rounded,
     RoundedGlow,
     RoundedOuterShadow,
+    RoundedInsetShadow,
     AnalyticRounded,
     CachedMaskRounded,
 }
@@ -29,6 +30,8 @@ internal static class UiVisualShaderContract
     private static readonly ShaderAbi RoundedGlowFragmentAbi = RoundedGlowGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi RoundedOuterShadowVertexAbi = RoundedOuterShadowGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi RoundedOuterShadowFragmentAbi = RoundedOuterShadowGraphicsShaderProgram.FragmentAbi;
+    private static readonly ShaderAbi RoundedInsetShadowVertexAbi = RoundedInsetShadowGraphicsShaderProgram.VertexAbi;
+    private static readonly ShaderAbi RoundedInsetShadowFragmentAbi = RoundedInsetShadowGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi AnalyticVertexAbi = AnalyticRoundedRectangleGraphicsShaderProgram.VertexAbi;
     private static readonly ShaderAbi AnalyticFragmentAbi = AnalyticRoundedRectangleGraphicsShaderProgram.FragmentAbi;
     private static readonly ShaderAbi CachedMaskVertexAbi = CachedMaskRoundedRectangleGraphicsShaderProgram.VertexAbi;
@@ -44,6 +47,7 @@ internal static class UiVisualShaderContract
         size = Maths.Max(size, RoundedVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedGlowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, RoundedOuterShadowVertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, RoundedInsetShadowVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, AnalyticVertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, CachedMaskVertexAbi.PushConstants[0].Size);
         return checked((int)size);
@@ -86,7 +90,7 @@ internal static class UiVisualShaderContract
 
         ShaderAbi expectedVertex;
         ShaderAbi expectedFragment;
-        if (path is UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.GlowEffect or UiVisualShaderPath.OuterShadowEffect or UiVisualShaderPath.CachedMask)
+        if (path is UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.GlowEffect or UiVisualShaderPath.OuterShadowEffect or UiVisualShaderPath.InsetShadowEffect or UiVisualShaderPath.CachedMask)
         {
             if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
             {
@@ -111,6 +115,12 @@ internal static class UiVisualShaderContract
                 shaderKind = UiRectangleShaderKind.RoundedOuterShadow;
                 expectedVertex = RoundedOuterShadowVertexAbi;
                 expectedFragment = RoundedOuterShadowFragmentAbi;
+            }
+            else if (path == UiVisualShaderPath.InsetShadowEffect)
+            {
+                shaderKind = UiRectangleShaderKind.RoundedInsetShadow;
+                expectedVertex = RoundedInsetShadowVertexAbi;
+                expectedFragment = RoundedInsetShadowFragmentAbi;
             }
             else
             {
@@ -153,6 +163,7 @@ internal static class UiVisualShaderContract
                 UiRectangleShaderKind.Rounded => "rounded",
                 UiRectangleShaderKind.RoundedGlow => "rounded-glow",
                 UiRectangleShaderKind.RoundedOuterShadow => "rounded-outer-shadow",
+                UiRectangleShaderKind.RoundedInsetShadow => "rounded-inset-shadow",
                 UiRectangleShaderKind.AnalyticRounded => "analytic-rounded-effect",
                 UiRectangleShaderKind.CachedMaskRounded => "cached-mask-rounded",
                 _ => "unknown",
@@ -346,6 +357,18 @@ internal static class UiVisualShaderContract
                 destination);
         }
 
+        if (shaderKind == UiRectangleShaderKind.RoundedInsetShadow)
+        {
+            var shadow = effectResource.Parameters.InsetShadow;
+            return RoundedInsetShadowGraphicsShaderProgram.PackInsetShadowRoundedRectangleVertexInstancesElement(
+                new InsetShadowRoundedRectangleParameters(
+                    visual.Bounds,
+                    visual.Paint.FillColor,
+                    visual.Paint.CornerRadii,
+                    ToShaderEffectLayer(shadow, effectResource.Parameters.Units, dpiScale)),
+                destination);
+        }
+
         if (shaderKind != UiRectangleShaderKind.AnalyticRounded)
         {
             return PackInstance(shaderKind, in visual, destination);
@@ -453,6 +476,7 @@ internal static class UiVisualShaderContract
             UiRectangleShaderKind.Rounded => RoundedRectangleGraphicsShaderProgram.PackRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedGlow => RoundedGlowGraphicsShaderProgram.PackGlowRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedOuterShadow => RoundedOuterShadowGraphicsShaderProgram.PackOuterShadowRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedInsetShadow => RoundedInsetShadowGraphicsShaderProgram.PackInsetShadowRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.AnalyticRounded => AnalyticRoundedRectangleGraphicsShaderProgram.PackAnalyticRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.CachedMaskRounded => CachedMaskRoundedRectangleGraphicsShaderProgram.PackCachedMaskRoundedRectangleVertexFrame(in frame, destination),
             _ => throw new ArgumentOutOfRangeException(nameof(shaderKind), shaderKind, "Unknown UI rectangle shader kind."),

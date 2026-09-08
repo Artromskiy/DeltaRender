@@ -12,8 +12,8 @@ public sealed class UiShaderVariantProducerManifestTests
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     [Theory]
-    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 6)]
-    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 6)]
+    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 7)]
+    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 7)]
     public void ManifestMatchesBuiltProducer(string manifestRelativePath, string producerRelativePath, int expectedVariantCount)
     {
         var repositoryRoot = FindRepositoryRoot();

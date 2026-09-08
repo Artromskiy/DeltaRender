@@ -133,6 +133,15 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
+        if (variant.Path == UiVisualShaderPath.InsetShadowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != UiEffectCapabilities.InsetShadow))
+        {
+            throw new ArgumentException(
+                "The rounded inset-shadow UI artifact requires an Analytic effect set with InsetShadow only.",
+                nameof(effectResource));
+        }
+
         if (variant.Path == UiVisualShaderPath.CachedMask)
         {
             if (effectResource.Set.Quality != UiEffectQuality.CachedMask)
@@ -187,7 +196,7 @@ public sealed class UiDisplayListResourceRegistry
             }
 
             if (variant.Path == TextShaderPath.Glow &&
-                variant.Mode == GlyphImageMode.Sdf &&
+                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
                 effectResource.Set.Capabilities == UiEffectCapabilities.Glow)
             {
