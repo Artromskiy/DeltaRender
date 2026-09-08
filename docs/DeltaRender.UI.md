@@ -41,6 +41,17 @@ neutral `UiInputEvent` delivery. It does not expose Vulkan resources or create
 a second retained tree. The host package copies its generated shader assets to
 the consumer output through its transitive build integration.
 
+## Shader manifest ownership
+
+`tools/DeltaRender.UIShaders/UiShaderVariants.json` and
+`src/DeltaRender.Text/TextShaderVariants.json` are source-owned registrations
+for the UI and text provider projects. The build generates the C# program
+types and validated shader artifacts into `obj`/`bin`; those outputs are not a
+runtime registry. `DeltaShader` validates the manifests against the generated
+programs and artifacts during the build. Runtime code uses the generated
+program and `VertexAbi`/`FragmentAbi` accessors directly; it does not read JSON
+manifests, resolve source paths or probe compiler output.
+
 The command-line host accepts `--headless`, `--frames N`, `--xaml path`,
 `--width N`, `--height N`, `--dpi N`, `--watch`, `--profile`, `--readback path`
 and `--layout-json path`. The default headless target uses the configured
