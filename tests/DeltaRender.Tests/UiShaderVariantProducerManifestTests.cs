@@ -7,6 +7,8 @@ namespace Delta.Render.Tests;
 
 public sealed class UiShaderVariantProducerManifestTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     [Theory]
     [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders")]
     [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text")]
@@ -17,7 +19,7 @@ public sealed class UiShaderVariantProducerManifestTests
         var producerRoot = Path.Combine(repositoryRoot, producerRelativePath);
         var manifest = JsonSerializer.Deserialize<Manifest>(
             File.ReadAllText(manifestPath),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            JsonOptions);
 
         Assert.NotNull(manifest);
         Assert.Equal(1, manifest!.Schema);

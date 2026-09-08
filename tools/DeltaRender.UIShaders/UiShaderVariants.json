@@ -16,7 +16,55 @@
       "primitive": "Rounded",
       "material": "FlatColor",
       "textRepresentation": "None",
+      "effects": "None",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
       "effects": "Stroke",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "OuterShadow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "InsetShadow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Glow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke|OuterShadow",
+      "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke|Glow",
       "quality": "Analytic"
     },
     {
@@ -33,6 +81,46 @@
       "material": "FlatColor",
       "textRepresentation": "None",
       "effects": "OuterShadow",
+      "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "InsetShadow",
+      "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Glow",
+      "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke|OuterShadow",
+      "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke|Glow",
+      "quality": "CachedMask"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "Stroke|OuterShadow|Glow",
       "quality": "CachedMask"
     }
   ],
@@ -62,6 +150,25 @@
         "primitive": "Rounded",
         "material": "FlatColor",
         "textRepresentation": "None",
+        "effects": "None",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "RoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "RoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "RoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "rounded-rectangle",
+      "fragmentEntryPoint": "rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
         "effects": "Stroke",
         "quality": "Analytic"
       },
@@ -74,6 +181,101 @@
       "fragmentAbiAccessor": "FragmentAbi",
       "vertexEntryPoint": "rounded-rectangle",
       "fragmentEntryPoint": "rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "OuterShadow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/AnalyticRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "AnalyticRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "AnalyticRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "analytic-rounded-rectangle",
+      "fragmentEntryPoint": "analytic-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "InsetShadow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/AnalyticRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "AnalyticRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "AnalyticRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "analytic-rounded-rectangle",
+      "fragmentEntryPoint": "analytic-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/AnalyticRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "AnalyticRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "AnalyticRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "analytic-rounded-rectangle",
+      "fragmentEntryPoint": "analytic-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke|OuterShadow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/AnalyticRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "AnalyticRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "AnalyticRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "analytic-rounded-rectangle",
+      "fragmentEntryPoint": "analytic-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke|Glow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/AnalyticRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "AnalyticRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "AnalyticRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "analytic-rounded-rectangle",
+      "fragmentEntryPoint": "analytic-rounded-rectangle"
     },
     {
       "key": {
@@ -101,6 +303,101 @@
         "material": "FlatColor",
         "textRepresentation": "None",
         "effects": "OuterShadow",
+        "quality": "CachedMask"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/CachedMaskRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "CachedMaskRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "CachedMaskRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "cached-mask-rounded-rectangle",
+      "fragmentEntryPoint": "cached-mask-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "InsetShadow",
+        "quality": "CachedMask"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/CachedMaskRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "CachedMaskRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "CachedMaskRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "cached-mask-rounded-rectangle",
+      "fragmentEntryPoint": "cached-mask-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Glow",
+        "quality": "CachedMask"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/CachedMaskRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "CachedMaskRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "CachedMaskRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "cached-mask-rounded-rectangle",
+      "fragmentEntryPoint": "cached-mask-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke|OuterShadow",
+        "quality": "CachedMask"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/CachedMaskRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "CachedMaskRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "CachedMaskRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "cached-mask-rounded-rectangle",
+      "fragmentEntryPoint": "cached-mask-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke|Glow",
+        "quality": "CachedMask"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/CachedMaskRoundedRectangleGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "CachedMaskRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "CachedMaskRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexEntryPoint": "cached-mask-rounded-rectangle",
+      "fragmentEntryPoint": "cached-mask-rounded-rectangle"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "Stroke|OuterShadow|Glow",
         "quality": "CachedMask"
       },
       "producerSource": "Shaders/UiRectangleShaders.cs",
