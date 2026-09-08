@@ -26,6 +26,7 @@ internal static class TextShaderPacking
         var size = SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
         size = Math.Max(size, MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, SdfTextOutlineGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Math.Max(size, SdfTextGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Math.Max(size, SdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         return Math.Max(size, MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
     }
@@ -49,6 +50,8 @@ internal static class TextShaderPacking
         var pushConstantSize = FindPushConstantSize(program);
         var expectedPushConstantSize = path == TextShaderPath.Outline
             ? SdfTextOutlineGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.Glow
+            ? SdfTextGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
             : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
@@ -84,6 +87,8 @@ internal static class TextShaderPacking
         Span<byte> destination)
         => path == TextShaderPath.Outline
             ? SdfTextOutlineGraphicsShaderProgram.PackSdfTextOutlineVertexGlyphsElements(values, destination)
+            : path == TextShaderPath.Glow
+            ? SdfTextGlowGraphicsShaderProgram.PackSdfTextGlowVertexGlyphsElements(values, destination)
             : path == TextShaderPath.OutlineGlow
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOutlineGlowGraphicsShaderProgram.PackMsdfTextOutlineGlowVertexGlyphsElements(values, destination)
@@ -118,6 +123,20 @@ internal static class TextShaderPacking
                 DistanceRange = distanceRange,
             };
             return SdfTextOutlineGraphicsShaderProgram.PackSdfTextOutlineVertexParameters(in outlineParameters, destination);
+        }
+
+        if (path == TextShaderPath.Glow)
+        {
+            var glowParameters = new TextGlowParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                TextColor = new float4(1, 1, 1, 1),
+                DistanceRange = distanceRange,
+                GlowColor = new float4(effects.GlowColor.X, effects.GlowColor.Y, effects.GlowColor.Z, effects.GlowColor.W),
+                GlowRadius = effects.GlowRadius,
+                GlowIntensity = effects.GlowIntensity,
+            };
+            return SdfTextGlowGraphicsShaderProgram.PackSdfTextGlowVertexParameters(in glowParameters, destination);
         }
 
         if (path == TextShaderPath.OutlineGlow)

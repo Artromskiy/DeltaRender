@@ -42,6 +42,14 @@
       "textRepresentation": "None",
       "effects": "Glow",
       "quality": "Analytic"
+    },
+    {
+      "target": "Visual",
+      "primitive": "Rounded",
+      "material": "FlatColor",
+      "textRepresentation": "None",
+      "effects": "OuterShadow",
+      "quality": "Analytic"
     }
   ],
   "entries": [
@@ -61,6 +69,8 @@
       "generatedProgramType": "SolidRectangleGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackSolidRectangleVertexInstancesElements",
+      "fragmentPacker": "PackSolidRectangleVertexFrame",
       "vertexEntryPoint": "solid-rectangle",
       "fragmentEntryPoint": "solid-rectangle",
       "layerSetIdentity": "visual.solid"
@@ -81,6 +91,8 @@
       "generatedProgramType": "RoundedRectangleGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackRoundedRectangleVertexInstancesElements",
+      "fragmentPacker": "PackRoundedRectangleVertexFrame",
       "vertexEntryPoint": "rounded-rectangle",
       "fragmentEntryPoint": "rounded-rectangle",
       "layerSetIdentity": "visual.rounded.stroke"
@@ -101,6 +113,8 @@
       "generatedProgramType": "AnalyticRoundedRectangleGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackAnalyticRoundedRectangleVertexInstancesElements",
+      "fragmentPacker": "PackAnalyticRoundedRectangleVertexFrame",
       "vertexEntryPoint": "analytic-rounded-rectangle",
       "fragmentEntryPoint": "analytic-rounded-rectangle",
       "layerSetIdentity": "visual.rounded.stroke.outer-shadow.glow"
@@ -121,6 +135,8 @@
       "generatedProgramType": "CachedMaskRoundedRectangleGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackCachedMaskRoundedRectangleVertexInstancesElements",
+      "fragmentPacker": "PackCachedMaskRoundedRectangleVertexFrame",
       "vertexEntryPoint": "cached-mask-rounded-rectangle",
       "fragmentEntryPoint": "cached-mask-rounded-rectangle",
       "layerSetIdentity": "visual.rounded.outer-shadow.cached-mask"
@@ -141,9 +157,33 @@
       "generatedProgramType": "RoundedGlowGraphicsShaderProgram",
       "vertexAbiAccessor": "VertexAbi",
       "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackGlowRoundedRectangleVertexInstancesElements",
+      "fragmentPacker": "PackGlowRoundedRectangleVertexFrame",
       "vertexEntryPoint": "rounded-glow",
       "fragmentEntryPoint": "rounded-glow",
       "layerSetIdentity": "visual.rounded.glow"
+    },
+    {
+      "key": {
+        "target": "Visual",
+        "primitive": "Rounded",
+        "material": "FlatColor",
+        "textRepresentation": "None",
+        "effects": "OuterShadow",
+        "quality": "Analytic"
+      },
+      "producerSource": "Shaders/UiRectangleShaders.cs",
+      "generatedProgram": "obj/Release/net10.0/Generated/UiShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/RoundedOuterShadowGraphicsShaderProgram.g.cs",
+      "vertexSpirv": "OuterShadowRoundedRectangleVertex.vert.spv",
+      "fragmentSpirv": "OuterShadowRoundedRectangleFragment.frag.spv",
+      "generatedProgramType": "RoundedOuterShadowGraphicsShaderProgram",
+      "vertexAbiAccessor": "VertexAbi",
+      "fragmentAbiAccessor": "FragmentAbi",
+      "vertexPacker": "PackOuterShadowRoundedRectangleVertexInstancesElements",
+      "fragmentPacker": "PackOuterShadowRoundedRectangleVertexFrame",
+      "vertexEntryPoint": "rounded-outer-shadow",
+      "fragmentEntryPoint": "rounded-outer-shadow",
+      "layerSetIdentity": "visual.rounded.outer-shadow"
     }
   ]
 }

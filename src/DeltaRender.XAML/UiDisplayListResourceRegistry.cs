@@ -124,6 +124,15 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
+        if (variant.Path == UiVisualShaderPath.OuterShadowEffect &&
+            (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+             effectResource.Set.Capabilities != UiEffectCapabilities.OuterShadow))
+        {
+            throw new ArgumentException(
+                "The rounded outer-shadow UI artifact requires an Analytic effect set with OuterShadow only.",
+                nameof(effectResource));
+        }
+
         if (variant.Path == UiVisualShaderPath.CachedMask)
         {
             if (effectResource.Set.Quality != UiEffectQuality.CachedMask)
@@ -172,6 +181,15 @@ public sealed class UiDisplayListResourceRegistry
                 variant.Mode == GlyphImageMode.Sdf &&
                 effectResource.Set.Quality == UiEffectQuality.Analytic &&
                 effectResource.Set.Capabilities == UiEffectCapabilities.Outline)
+            {
+                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+                return;
+            }
+
+            if (variant.Path == TextShaderPath.Glow &&
+                variant.Mode == GlyphImageMode.Sdf &&
+                effectResource.Set.Quality == UiEffectQuality.Analytic &&
+                effectResource.Set.Capabilities == UiEffectCapabilities.Glow)
             {
                 _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
                 return;

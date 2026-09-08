@@ -9,6 +9,7 @@ public enum UiVisualShaderPath : byte
     Standard,
     AnalyticEffect,
     GlowEffect,
+    OuterShadowEffect,
     CachedMask,
 }
 
@@ -21,5 +22,5 @@ public readonly record struct UiVisualShaderVariant(
     /// <summary>Gets whether the descriptor names a supported generated UI payload.</summary>
     public bool IsValid => Program is not null &&
         Kind is (UiVisualKind.SolidRectangle or UiVisualKind.RoundedRectangle or UiVisualKind.Border) &&
-        Path is UiVisualShaderPath.Standard or UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.GlowEffect or UiVisualShaderPath.CachedMask;
+        Path is UiVisualShaderPath.Standard or UiVisualShaderPath.AnalyticEffect or UiVisualShaderPath.GlowEffect or UiVisualShaderPath.OuterShadowEffect or UiVisualShaderPath.CachedMask;
 }

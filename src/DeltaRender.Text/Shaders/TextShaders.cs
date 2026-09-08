@@ -42,6 +42,20 @@ public struct TextOutlineParameters
     }
 }
 
+public struct TextGlowParameters
+{
+    public float2 Resolution = default;
+    public float4 TextColor = default;
+    public float DistanceRange = default;
+    public float4 GlowColor = default;
+    public float GlowRadius = default;
+    public float GlowIntensity = default;
+
+    public TextGlowParameters()
+    {
+    }
+}
+
 public struct TextEffectParameters
 {
     public float2 Resolution = default;
@@ -114,6 +128,15 @@ public readonly struct TextOutlineVertexContext
     public readonly TextOutlineParameters Parameters;
 }
 
+public readonly struct TextGlowVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextGlowParameters Parameters;
+}
+
 public readonly struct SdfTextFragmentContext
 {
     [Layout(0, 3)]
@@ -130,6 +153,15 @@ public readonly struct SdfTextOutlineFragmentContext
 
     [PushConstant]
     public readonly TextOutlineParameters Parameters;
+}
+
+public readonly struct SdfTextGlowFragmentContext
+{
+    [Layout(0, 3)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextGlowParameters Parameters;
 }
 
 public readonly struct MsdfTextFragmentContext
@@ -330,6 +362,104 @@ public static class TextShaders
         var outlineContribution = maths.max(outerCoverage - fillCoverage, 0f);
         return context.Parameters.TextColor * input.GlyphColor.Value * fillCoverage +
             context.Parameters.OutlineColor * input.GlyphColor.Value * outlineContribution;
+    }
+
+    [VertexShader("sdf-text-glow")]
+    public static TextEffectVarying SdfTextGlowVertex(
+        in TextGlowVertexContext context,
+        in TextVarying input)
+    {
+        uint instanceIndex = ShaderBuiltins.InstanceIndex;
+        uint vertexIndex = ShaderBuiltins.VertexIndex;
+        var glyph = context.Glyphs[instanceIndex];
+        var min = glyph.PixelMin;
+        var max = glyph.PixelMax;
+        var uvMin = new float2(glyph.UvRect.x, glyph.UvRect.y);
+        var uvMax = new float2(glyph.UvRect.z, glyph.UvRect.w);
+        var pixelSize = new GlyphPixelSize(max - min);
+        var uvSize = new GlyphUvSize(uvMax - uvMin);
+
+        if (vertexIndex == 0u)
+        {
+            return new TextEffectVarying
+            {
+                Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = uvMin,
+                GlyphColor = glyph.Color,
+                PixelSize = pixelSize,
+                UvSize = uvSize
+            };
+        }
+        else if (vertexIndex == 1u)
+        {
+            return new TextEffectVarying
+            {
+                Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(uvMax.x, uvMin.y),
+                GlyphColor = glyph.Color,
+                PixelSize = pixelSize,
+                UvSize = uvSize
+            };
+        }
+        else if (vertexIndex == 2u)
+        {
+            return new TextEffectVarying
+            {
+                Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(uvMin.x, uvMax.y),
+                GlyphColor = glyph.Color,
+                PixelSize = pixelSize,
+                UvSize = uvSize
+            };
+        }
+        else if (vertexIndex == 3u)
+        {
+            return new TextEffectVarying
+            {
+                Position = new float4((min.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(uvMin.x, uvMax.y),
+                GlyphColor = glyph.Color,
+                PixelSize = pixelSize,
+                UvSize = uvSize
+            };
+        }
+        else if (vertexIndex == 4u)
+        {
+            return new TextEffectVarying
+            {
+                Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (min.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+                Uv = new float2(uvMax.x, uvMin.y),
+                GlyphColor = glyph.Color,
+                PixelSize = pixelSize,
+                UvSize = uvSize
+            };
+        }
+
+        return new TextEffectVarying
+        {
+            Position = new float4((max.x / context.Parameters.Resolution.x) * 2f - 1f, (max.y / context.Parameters.Resolution.y) * 2f - 1f, 0f, 1f),
+            Uv = uvMax,
+            GlyphColor = glyph.Color,
+            PixelSize = pixelSize,
+            UvSize = uvSize
+        };
+    }
+
+    [FragmentShader("sdf-text-glow")]
+    public static float4 SdfTextGlowFragment(
+        in SdfTextGlowFragmentContext context,
+        in TextEffectVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        var signedDistance = (texel.x - 0.5f) * context.Parameters.DistanceRange;
+        var edge = maths.max(intrinsics.fwidth(signedDistance) * 0.5f, 0.0001f);
+        var fillCoverage = maths.smoothstep(-edge, edge, signedDistance);
+        var glowRadius = maths.max(context.Parameters.GlowRadius, edge);
+        var glowEnvelope = maths.smoothstep(-glowRadius - edge, -edge, signedDistance);
+        var glowContribution = maths.max(glowEnvelope - fillCoverage, 0f) * maths.max(context.Parameters.GlowIntensity, 0f);
+        var glyphColor = input.GlyphColor.Value;
+        return context.Parameters.GlowColor * glyphColor * glowContribution +
+            context.Parameters.TextColor * glyphColor * fillCoverage;
     }
 
     [VertexShader("msdf-text")]

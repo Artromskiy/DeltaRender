@@ -12,8 +12,8 @@ public sealed class UiShaderVariantProducerManifestTests
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     [Theory]
-    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 5)]
-    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 5)]
+    [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 6)]
+    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 6)]
     public void ManifestMatchesBuiltProducer(string manifestRelativePath, string producerRelativePath, int expectedVariantCount)
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -94,6 +94,8 @@ public sealed class UiShaderVariantProducerManifestTests
             value.FragmentEntryPoint)
         {
             LayerSetIdentity = value.LayerSetIdentity,
+            VertexPacker = value.VertexPacker,
+            FragmentPacker = value.FragmentPacker,
         };
 
     private static T Parse<T>(string value) where T : struct, Enum
@@ -146,6 +148,8 @@ public sealed class UiShaderVariantProducerManifestTests
         public string FragmentAbiAccessor { get; set; } = string.Empty;
         public string VertexEntryPoint { get; set; } = string.Empty;
         public string FragmentEntryPoint { get; set; } = string.Empty;
+        public string VertexPacker { get; set; } = string.Empty;
+        public string FragmentPacker { get; set; } = string.Empty;
         public string LayerSetIdentity { get; set; } = string.Empty;
     }
 }
