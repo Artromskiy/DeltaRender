@@ -80,6 +80,24 @@ public readonly struct EffectOuterShadowFalloff
     public EffectOuterShadowFalloff(float2 value) => Value = value;
 }
 
+public readonly struct EffectInsetShadowColor
+{
+    public readonly float4 Value;
+    public EffectInsetShadowColor(float4 value) => Value = value;
+}
+
+public readonly struct EffectInsetShadowGeometry
+{
+    public readonly float4 Value;
+    public EffectInsetShadowGeometry(float4 value) => Value = value;
+}
+
+public readonly struct EffectInsetShadowFalloff
+{
+    public readonly float2 Value;
+    public EffectInsetShadowFalloff(float2 value) => Value = value;
+}
+
 public readonly struct EffectGlowColor
 {
     public readonly float4 Value;

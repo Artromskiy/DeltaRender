@@ -122,15 +122,18 @@ public readonly struct UiEffectParameters
 {
     public readonly UiEffectLayerParameters StrokeOrOutline;
     public readonly UiEffectLayerParameters OuterShadow;
+    public readonly UiEffectLayerParameters InsetShadow;
     public readonly UiEffectLayerParameters Glow;
 
     public UiEffectParameters(
         UiEffectLayerParameters strokeOrOutline,
         UiEffectLayerParameters outerShadow,
+        UiEffectLayerParameters insetShadow,
         UiEffectLayerParameters glow)
     {
         StrokeOrOutline = strokeOrOutline;
         OuterShadow = outerShadow;
+        InsetShadow = insetShadow;
         Glow = glow;
     }
 }
@@ -152,6 +155,12 @@ public readonly struct AnalyticRoundedRectangleParameters
     public readonly float OuterShadowBlurRadius;
     public readonly float OuterShadowSpread;
     public readonly float OuterShadowIntensity;
+    public readonly float4 InsetShadowColor;
+    public readonly float2 InsetShadowOffset;
+    public readonly float InsetShadowWidth;
+    public readonly float InsetShadowBlurRadius;
+    public readonly float InsetShadowSpread;
+    public readonly float InsetShadowIntensity;
     public readonly float4 GlowColor;
     public readonly float2 GlowOffset;
     public readonly float GlowWidth;
@@ -180,6 +189,12 @@ public readonly struct AnalyticRoundedRectangleParameters
         OuterShadowBlurRadius = effects.OuterShadow.BlurRadius;
         OuterShadowSpread = effects.OuterShadow.Spread;
         OuterShadowIntensity = effects.OuterShadow.Intensity;
+        InsetShadowColor = effects.InsetShadow.Color;
+        InsetShadowOffset = effects.InsetShadow.Offset;
+        InsetShadowWidth = effects.InsetShadow.Width;
+        InsetShadowBlurRadius = effects.InsetShadow.BlurRadius;
+        InsetShadowSpread = effects.InsetShadow.Spread;
+        InsetShadowIntensity = effects.InsetShadow.Intensity;
         GlowColor = effects.Glow.Color;
         GlowOffset = effects.Glow.Offset;
         GlowWidth = effects.Glow.Width;
@@ -203,6 +218,9 @@ public struct AnalyticRoundedRectanglePayload
     public EffectOuterShadowColor OuterShadowColor;
     public EffectOuterShadowGeometry OuterShadowGeometry;
     public EffectOuterShadowFalloff OuterShadowFalloff;
+    public EffectInsetShadowColor InsetShadowColor;
+    public EffectInsetShadowGeometry InsetShadowGeometry;
+    public EffectInsetShadowFalloff InsetShadowFalloff;
     public EffectGlowColor GlowColor;
     public EffectGlowGeometry GlowGeometry;
     public EffectGlowFalloff GlowFalloff;
@@ -398,6 +416,24 @@ public static class UiRectangleShaders
         return Over(Premultiply(shadow.Color, coverage * shadow.Intensity), destination);
     }
 
+    private static float4 ApplyInsetShadow(
+        float distance,
+        float4 cornerRadii,
+        float2 pixel,
+        float2 size,
+        UiEffectLayerParameters shadow,
+        float4 destination)
+    {
+        float shiftedDistance = GetRoundedDistance(cornerRadii, pixel - shadow.Offset, size);
+        float depth = max(-shiftedDistance - shadow.Spread, 0f);
+        float blur = max(shadow.BlurRadius, 0.0001f);
+        float coverage = Coverage(distance) * (1f - smoothstep(
+            shadow.Width,
+            shadow.Width + blur + fwidth(shiftedDistance),
+            depth));
+        return Over(Premultiply(shadow.Color, coverage * shadow.Intensity), destination);
+    }
+
     private static float4 ApplyGlow(
         float distance,
         UiEffectLayerParameters glow,
@@ -441,6 +477,14 @@ public static class UiRectangleShaders
             OuterShadowFalloff = new EffectOuterShadowFalloff(new float2(
                 instance.OuterShadowSpread,
                 instance.OuterShadowIntensity)),
+            InsetShadowColor = new EffectInsetShadowColor(instance.InsetShadowColor),
+            InsetShadowGeometry = new EffectInsetShadowGeometry(new float4(
+                instance.InsetShadowOffset,
+                instance.InsetShadowWidth,
+                instance.InsetShadowBlurRadius)),
+            InsetShadowFalloff = new EffectInsetShadowFalloff(new float2(
+                instance.InsetShadowSpread,
+                instance.InsetShadowIntensity)),
             GlowColor = new EffectGlowColor(instance.GlowColor),
             GlowGeometry = new EffectGlowGeometry(new float4(
                 instance.GlowOffset,
@@ -490,6 +534,20 @@ public static class UiRectangleShaders
             new float4(0f, 0f, 0f, 0f));
         color = ApplyGlow(distance, glow, color);
         color = Over(Premultiply(input.FillColor.Value, Coverage(distance)), color);
+        UiEffectLayerParameters insetShadow = new(
+            input.InsetShadowColor.Value,
+            input.InsetShadowGeometry.Value.xy,
+            input.InsetShadowGeometry.Value.z,
+            input.InsetShadowGeometry.Value.w,
+            input.InsetShadowFalloff.Value.x,
+            input.InsetShadowFalloff.Value.y);
+        color = ApplyInsetShadow(
+            distance,
+            input.CornerRadii.Value,
+            pixel,
+            size,
+            insetShadow,
+            color);
         return ApplyStroke(distance, stroke, color);
     }
 }

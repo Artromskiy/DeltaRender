@@ -130,17 +130,22 @@ effects without changing shaping, glyph metrics or atlas encoding:
 
 - `sdf-text-outline-glow` uses the existing SDF alpha channel;
 - `msdf-text-outline-glow` uses the existing MSDF median-of-RGB distance;
-- both variants expose `TextEffectParameters` as one shared 96-byte push
+- both variants expose `TextEffectParameters` as one shared 144-byte push
   constant root and retain the glyph storage buffer at set `0`, binding `0`;
 - `GlowColor`, `GlowRadius` and `GlowIntensity` use the same distance-field
   units as `DistanceRange` and `OutlineWidth`;
+- `OuterShadowColor`, `OuterShadowOffset`, `OuterShadowWidth`,
+  `OuterShadowBlurRadius`, `OuterShadowSpread` and `OuterShadowIntensity` are
+  packed in the same root; offset is converted to atlas UV using the generated
+  glyph pixel/UV-size interstage values;
+- fragment application order is outer shadow, glow, outline, then fill;
 - the generated program exposes the corresponding typed root packers and
   `VertexAbi`/`FragmentAbi`; consumers must use those generated members rather
   than recreate the layout.
 
-These are fixed producer artifacts, not runtime shader composition. Outer shadow,
-backdrop blur and a general ordered effect chain remain explicit follow-up work;
-backdrop blur is intentionally not part of the analytic text path.
+These are fixed producer artifacts, not runtime shader composition. A general
+ordered effect chain and cached-mask/backdrop-blur paths remain explicit
+follow-up work; backdrop blur is intentionally not part of the analytic path.
 
 ## Deliberate exclusions
 

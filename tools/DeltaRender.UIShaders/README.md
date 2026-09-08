@@ -13,3 +13,10 @@ Use the generated program/factory API for `ShaderArtifact`, `ShaderAbi`,
 `VertexAbi`/`FragmentAbi` and typed packers. Do not parse `.shader.json` or
 calculate ABI offsets in the renderer; those sidecars are inspection output.
 This source project is not the UI layout or renderer submission boundary.
+
+The analytic rounded-rectangle source also publishes `InsetShadow` in the
+typed `UiEffectParameters` payload. Its fragment order is outer shadow, glow,
+fill, inset shadow, then stroke; the generated instance packer remains the
+single ABI authority. Cached-mask and backdrop-blur effects are intentionally
+not represented by this analytic artifact because they require a separate
+texture/readback path.
