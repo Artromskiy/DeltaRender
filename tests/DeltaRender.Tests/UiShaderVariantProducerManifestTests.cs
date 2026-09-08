@@ -13,7 +13,7 @@ public sealed class UiShaderVariantProducerManifestTests
 
     [Theory]
     [InlineData("tools/DeltaRender.UIShaders/UiShaderVariants.json", "tools/DeltaRender.UIShaders", 14)]
-    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 12)]
+    [InlineData("src/DeltaRender.Text/TextShaderVariants.json", "src/DeltaRender.Text", 10)]
     public void ManifestMatchesBuiltProducer(string manifestRelativePath, string producerRelativePath, int expectedVariantCount)
     {
         var repositoryRoot = FindRepositoryRoot();

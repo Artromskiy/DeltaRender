@@ -142,23 +142,18 @@ public sealed class TextRenderFeatureTests
         Assert.Equal(300f, ReadFloat(secondCommands.LastPushConstants, 4));
     }
 
-    [Theory]
-    [InlineData(GlyphImageMode.Sdf)]
-    [InlineData(GlyphImageMode.Msdf)]
-    public void OuterShadowPromotesDistanceRangeAndExpandsGlyphQuad(GlyphImageMode mode)
+    [Fact]
+    public void OuterShadowOffsetUsesOrderedLayersWithoutPromotingDistanceRange()
     {
+        const GlyphImageMode mode = GlyphImageMode.Sdf;
         using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
             new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
             File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
             0));
         var shaped = textService.Shape(new TextShapeRequest("AB".AsMemory(), 32, new[] { font }));
-        var standardProgram = mode == GlyphImageMode.Sdf
-            ? SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv)
-            : MsdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
-        var shadowProgram = mode == GlyphImageMode.Sdf
-            ? SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv)
-            : MsdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var standardProgram = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var shadowProgram = SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
         using var session = new FakeSession();
         using var feature = new TextRenderFeature(
             session,
@@ -175,9 +170,9 @@ public sealed class TextRenderFeatureTests
             0,
             0,
             new Vector4(0, 0, 0, 0.5f),
-            new Vector2(0, 6),
+            new Vector2(0, 100),
             0,
-            3,
+            1.5f,
             0,
             1);
 
@@ -188,14 +183,22 @@ public sealed class TextRenderFeatureTests
             Vector4.One,
             new PixelRect(0, 0, 800, 500),
             mergeWithPrevious: true,
-            shaderVariant: new TextShaderVariant(shadowProgram, mode, TextShaderPath.OuterShadow),
-            effectValues: effects);
+            effectValues: effects,
+            shadowShaderVariant: new TextShaderVariant(shadowProgram, mode, TextShaderPath.OuterShadow));
         var graph = new RecordingGraphBuilder();
         feature.AddPasses(graph, 1);
-        var commands = graph.RecordRaster();
+        var layers = graph.RecordRasters();
         var upload = graph.RecordTransfer();
 
-        Assert.Equal(16f, ReadFloat(commands.LastPushConstants, 32));
+        Assert.Equal(2, layers.Length);
+        var shadowDistanceRangeOffset = checked((int)SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Layout.Members[1].Offset);
+        var baseDistanceRangeOffset = checked((int)SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Layout.Members[4].Offset);
+        Assert.Equal(4f, ReadFloat(layers[0].LastPushConstants, shadowDistanceRangeOffset));
+        Assert.Equal(4f, ReadFloat(layers[1].LastPushConstants, baseDistanceRangeOffset));
+        Assert.Single(layers[0].Draws);
+        Assert.Single(layers[1].Draws);
+        Assert.Equal(layers[0].Draws[0], layers[1].Draws[0]);
+        Assert.Equal(layers[0].TextureBindings, layers[1].TextureBindings);
         var bytes = upload.LastBufferUpload;
         Assert.Equal(96, bytes.Length);
         var run = shaped.Runs.Span[0];
@@ -207,25 +210,10 @@ public sealed class TextRenderFeatureTests
             mode,
             4f,
             null));
-        var expandedImage = textService.GenerateGlyphImage(new GlyphImageRequest(
-            run.Font,
-            glyph.GlyphId,
-            run.PixelsPerEm,
-            mode,
-            16f,
-            null));
-        Assert.Equal(100f + glyph.OffsetX + expandedImage.PlaneBounds.Left, ReadFloat(bytes, 0));
-        Assert.Equal(100f + glyph.OffsetY + expandedImage.PlaneBounds.Top, ReadFloat(bytes, 4));
-        Assert.Equal(100f + glyph.OffsetX + expandedImage.PlaneBounds.Right, ReadFloat(bytes, 8));
-        Assert.Equal(100f + glyph.OffsetY + expandedImage.PlaneBounds.Bottom, ReadFloat(bytes, 12));
-
-        const float defaultGuard = 5f;
-        const float expandedGuard = 17f;
-        Assert.Equal(defaultImage.PlaneBounds.Left + defaultGuard, expandedImage.PlaneBounds.Left + expandedGuard, 4);
-        Assert.Equal(defaultImage.PlaneBounds.Top + defaultGuard, expandedImage.PlaneBounds.Top + expandedGuard, 4);
-        Assert.Equal(defaultImage.PlaneBounds.Right - defaultGuard, expandedImage.PlaneBounds.Right - expandedGuard, 4);
-        Assert.Equal(defaultImage.PlaneBounds.Bottom - defaultGuard, expandedImage.PlaneBounds.Bottom - expandedGuard, 4);
-        Assert.True(expandedGuard >= effects.OuterShadowOffset.Y + effects.OuterShadowBlurRadius);
+        Assert.Equal(100f + glyph.OffsetX + defaultImage.PlaneBounds.Left, ReadFloat(bytes, 0));
+        Assert.Equal(100f + glyph.OffsetY + defaultImage.PlaneBounds.Top, ReadFloat(bytes, 4));
+        Assert.Equal(100f + glyph.OffsetX + defaultImage.PlaneBounds.Right, ReadFloat(bytes, 8));
+        Assert.Equal(100f + glyph.OffsetY + defaultImage.PlaneBounds.Bottom, ReadFloat(bytes, 12));
 
         var firstUvMaxX = ReadFloat(bytes, 24);
         var secondUvMinX = ReadFloat(bytes, 48 + 16);
@@ -233,7 +221,56 @@ public sealed class TextRenderFeatureTests
     }
 
     [Fact]
-    public void AnalyticTextEffectBeyondAutomaticRangeFailsDeterministically()
+    public void AdjacentShadowRunsRecordShadowThenBaseWithoutSharingInstances()
+    {
+        using var textService = new DeltaTextService();
+        var font = textService.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+        var shaped = textService.Shape(new TextShapeRequest("A".AsMemory(), 32, new[] { font }));
+        var standardProgram = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var shadowVariant = new TextShaderVariant(
+            SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            GlyphImageMode.Sdf,
+            TextShaderPath.OuterShadow);
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            standardProgram,
+            new PixelExtent(800, 500),
+            atlasWidth: 128,
+            atlasHeight: 128);
+        var effects = new TextEffectValues(
+            Vector4.Zero,
+            0,
+            Vector4.Zero,
+            0,
+            0,
+            Vector4.One,
+            new Vector2(0, 8),
+            0,
+            1,
+            0,
+            1);
+        var clip = new PixelRect(0, 0, 800, 500);
+
+        feature.QueueCompositeRun(shaped, 20, 20, Vector4.One, clip, true, effectValues: effects, shadowShaderVariant: shadowVariant);
+        feature.QueueCompositeRun(shaped, 80, 20, Vector4.One, clip, true, effectValues: effects, shadowShaderVariant: shadowVariant);
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var layers = graph.RecordRasters();
+
+        Assert.Equal(4, layers.Length);
+        Assert.Equal(0u, Assert.Single(layers[0].Draws).FirstInstance);
+        Assert.Equal(0u, Assert.Single(layers[1].Draws).FirstInstance);
+        Assert.Equal(1u, Assert.Single(layers[2].Draws).FirstInstance);
+        Assert.Equal(1u, Assert.Single(layers[3].Draws).FirstInstance);
+    }
+
+    [Fact]
+    public void AnalyticTextEffectWidthBeyondAutomaticRangeFailsDeterministically()
     {
         using var textService = new DeltaTextService();
         var font = textService.OpenFont(new FontOpenRequest(
@@ -243,8 +280,9 @@ public sealed class TextRenderFeatureTests
         var shaped = textService.Shape(new TextShapeRequest("A".AsMemory(), 32, new[] { font }));
         var standardProgram = SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
         var shadowProgram = SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var session = new FakeSession();
         using var feature = new TextRenderFeature(
-            new FakeSession(),
+            session,
             textService,
             standardProgram,
             new PixelExtent(800, 500));
@@ -255,8 +293,8 @@ public sealed class TextRenderFeatureTests
             0,
             0,
             Vector4.One,
-            new Vector2(0, 40),
-            0,
+            Vector2.Zero,
+            40,
             1,
             0,
             1);
@@ -267,8 +305,8 @@ public sealed class TextRenderFeatureTests
             Vector4.One,
             new PixelRect(0, 0, 800, 500),
             mergeWithPrevious: true,
-            shaderVariant: new TextShaderVariant(shadowProgram, GlyphImageMode.Sdf, TextShaderPath.OuterShadow),
-            effectValues: effects);
+            effectValues: effects,
+            shadowShaderVariant: new TextShaderVariant(shadowProgram, GlyphImageMode.Sdf, TextShaderPath.OuterShadow));
 
         var error = Assert.Throws<InvalidOperationException>(() => feature.AddPasses(new RecordingGraphBuilder(), 1));
         Assert.Contains("maximum automatic distance-field tier 32", error.Message, StringComparison.Ordinal);
@@ -878,6 +916,7 @@ public sealed class TextRenderFeatureTests
     {
         private uint _nextHandle = 1;
         private IRasterPass? _rasterPass;
+        private readonly List<IRasterPass> _rasterPasses = [];
         private ITransferPass? _transferPass;
 
         public int TransferPassCount { get; private set; }
@@ -895,6 +934,7 @@ public sealed class TextRenderFeatureTests
         public RenderGraphPassHandle AddRasterPass(in RasterPassDescription description, IRasterPass pass)
         {
             _rasterPass = pass;
+            _rasterPasses.Add(pass);
             return new RenderGraphPassHandle(_nextHandle++);
         }
 
@@ -939,6 +979,18 @@ public sealed class TextRenderFeatureTests
 
         public void RecordRaster(RecordingRasterCommands commands) => _rasterPass?.Record(commands);
 
+        public RecordingRasterCommands[] RecordRasters()
+        {
+            var commands = new RecordingRasterCommands[_rasterPasses.Count];
+            for (var index = 0; index < commands.Length; index++)
+            {
+                commands[index] = new RecordingRasterCommands();
+                _rasterPasses[index].Record(commands[index]);
+            }
+
+            return commands;
+        }
+
         public RecordingTransferCommands RecordTransfer()
         {
             var commands = new RecordingTransferCommands();
@@ -949,6 +1001,7 @@ public sealed class TextRenderFeatureTests
         public void Reset()
         {
             _rasterPass = null;
+            _rasterPasses.Clear();
             _transferPass = null;
             TransferPassCount = 0;
         }
@@ -995,7 +1048,7 @@ public sealed class TextRenderFeatureTests
 
         public int PushConstantCallCount { get; private set; }
 
-        private readonly byte[] _lastPushConstants = new byte[64];
+        private readonly byte[] _lastPushConstants = new byte[128];
 
         public byte[] LastPushConstants => _lastPushConstants;
 

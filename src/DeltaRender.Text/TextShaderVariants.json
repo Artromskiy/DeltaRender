@@ -320,50 +320,6 @@
       "vertexEntryPoint": "msdf-text-outer-shadow",
       "fragmentEntryPoint": "msdf-text-outer-shadow",
       "layerSetIdentity": "text.msdf.outer-shadow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Sdf",
-        "effects": "Stroke|OuterShadow|OuterGlow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/SdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "SdfTextStrokeOuterShadowOuterGlowVertex.vert.spv",
-      "fragmentSpirv": "SdfTextStrokeOuterShadowOuterGlowFragment.frag.spv",
-      "generatedProgramType": "SdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackSdfTextStrokeOuterShadowOuterGlowVertexGlyphsElements",
-      "fragmentPacker": "PackSdfTextStrokeOuterShadowOuterGlowFragmentParameters",
-      "vertexEntryPoint": "sdf-text-stroke-outer-shadow-outer-glow",
-      "fragmentEntryPoint": "sdf-text-stroke-outer-shadow-outer-glow",
-      "layerSetIdentity": "text.sdf.stroke.outer-shadow.outer-glow"
-    },
-    {
-      "key": {
-        "target": "Text",
-        "primitive": "Solid",
-        "material": "DistanceField",
-        "textRepresentation": "Msdf",
-        "effects": "Stroke|OuterShadow|OuterGlow",
-        "quality": "Analytic"
-      },
-      "producerSource": "Shaders/TextShaders.cs",
-      "generatedProgram": "obj/Release/net10.0/Generated/TextShaders/DeltaShader.Analyzers/Delta.Shader.Analyzers.DeltaGraphicsGenerator/MsdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram.g.cs",
-      "vertexSpirv": "MsdfTextStrokeOuterShadowOuterGlowVertex.vert.spv",
-      "fragmentSpirv": "MsdfTextStrokeOuterShadowOuterGlowFragment.frag.spv",
-      "generatedProgramType": "MsdfTextStrokeOuterShadowOuterGlowGraphicsShaderProgram",
-      "vertexAbiAccessor": "VertexAbi",
-      "fragmentAbiAccessor": "FragmentAbi",
-      "vertexPacker": "PackMsdfTextStrokeOuterShadowOuterGlowVertexGlyphsElements",
-      "fragmentPacker": "PackMsdfTextStrokeOuterShadowOuterGlowFragmentParameters",
-      "vertexEntryPoint": "msdf-text-stroke-outer-shadow-outer-glow",
-      "fragmentEntryPoint": "msdf-text-stroke-outer-shadow-outer-glow",
-      "layerSetIdentity": "text.msdf.stroke.outer-shadow.outer-glow"
     }
   ]
 }

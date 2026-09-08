@@ -29,5 +29,8 @@ public sealed class UiRenderHostTests
         Assert.Equal(GlyphImageMode.Sdf, variant.Mode);
         Assert.Equal(TextShaderPath.OuterShadow, variant.Path);
         Assert.Equal(effectSet, resource.Set);
+        Assert.True(registry.TryResolveTextEffectPlan(effectSet, out var baseVariant, out var shadowVariant, out _));
+        Assert.Null(baseVariant);
+        Assert.Equal(TextShaderPath.OuterShadow, shadowVariant?.Path);
     }
 }

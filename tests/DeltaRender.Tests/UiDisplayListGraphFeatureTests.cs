@@ -936,7 +936,8 @@ public sealed class UiDisplayListGraphFeatureTests
             UiEffectQuality.Analytic,
             default);
         var visualProgram = AnalyticRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
-        var textProgram = SdfTextStrokeOuterGlowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var textProgram = SdfTextStrokeGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var outerShadowProgram = SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
 
         var visualVariant = new UiVisualShaderVariant(visualProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.AnalyticEffect);
         var visualResource = new UiEffectResource(
@@ -974,7 +975,7 @@ public sealed class UiDisplayListGraphFeatureTests
                     RoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                     UiVisualKind.RoundedRectangle)));
         Assert.Contains("analytic effect UI artifact", standardError.Message, StringComparison.Ordinal);
-        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.StrokeOuterGlow);
+        var textVariant = new TextShaderVariant(textProgram, GlyphImageMode.Sdf, TextShaderPath.Stroke);
         var textResource = new UiEffectResource(
             textEffect,
             new XamlEffectParameters(
@@ -1018,9 +1019,10 @@ public sealed class UiDisplayListGraphFeatureTests
                 default,
                 default,
                 default));
-        registry.RegisterTextEffectResource(outerTextResource, textVariant);
+        var outerShadowVariant = new TextShaderVariant(outerShadowProgram, GlyphImageMode.Sdf, TextShaderPath.OuterShadow);
+        registry.RegisterTextEffectResource(outerTextResource, outerShadowVariant);
         Assert.True(registry.TryResolveTextEffectSet(outerTextSet, out var outerTextVariant, out var resolvedOuterTextResource));
-        Assert.Equal(textVariant, outerTextVariant);
+        Assert.Equal(outerShadowVariant, outerTextVariant);
         Assert.Equal(outerTextResource, resolvedOuterTextResource);
 
         Assert.True(registry.TryResolveVisualEffectSet(visualEffect, out var resolvedVisual, out var resolvedVisualResource));

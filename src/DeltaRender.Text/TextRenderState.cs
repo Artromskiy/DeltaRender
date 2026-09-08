@@ -4,6 +4,12 @@ using Delta.Text.Contract;
 
 namespace Delta.Render.Text;
 
+internal enum TextRenderLayer : byte
+{
+    Base,
+    Shadow,
+}
+
 internal readonly record struct PendingRun(
     ShapedText Text,
     float OriginX,
@@ -11,7 +17,8 @@ internal readonly record struct PendingRun(
     Vector4 Color,
     PixelRect Clip,
     bool MergeWithPrevious,
-    TextShaderVariant? ShaderVariant,
+    TextShaderVariant? BaseShaderVariant,
+    TextShaderVariant? ShadowShaderVariant,
     TextEffectValues EffectValues,
     TextRunCacheKey CacheKey,
     uint Version);
@@ -34,7 +41,8 @@ internal sealed class CachedRun
     internal Vector4 Color;
     internal PixelRect Clip;
     internal bool MergeWithPrevious;
-    internal TextShaderVariant? ShaderVariant;
+    internal TextShaderVariant? BaseShaderVariant;
+    internal TextShaderVariant? ShadowShaderVariant;
     internal TextEffectValues EffectValues;
     internal ulong AtlasEpoch;
 }

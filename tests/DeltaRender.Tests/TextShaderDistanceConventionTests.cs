@@ -12,23 +12,23 @@ public sealed class TextShaderDistanceConventionTests
         "SdfTextOuterGlowFragment.frag.glsl",
         "SdfTextOuterShadowFragment.frag.glsl",
         "SdfTextStrokeOuterGlowFragment.frag.glsl",
-        "SdfTextStrokeOuterShadowOuterGlowFragment.frag.glsl",
         "MsdfTextFragment.frag.glsl",
         "MsdfTextStrokeFragment.frag.glsl",
         "MsdfTextOuterGlowFragment.frag.glsl",
         "MsdfTextOuterShadowFragment.frag.glsl",
         "MsdfTextStrokeOuterGlowFragment.frag.glsl",
-        "MsdfTextStrokeOuterShadowOuterGlowFragment.frag.glsl",
     ];
 
     private static readonly string[] ShadowFragmentShaders =
     [
         "SdfTextOuterShadowFragment.frag.glsl",
-        "SdfTextStrokeOuterGlowFragment.frag.glsl",
-        "SdfTextStrokeOuterShadowOuterGlowFragment.frag.glsl",
         "MsdfTextOuterShadowFragment.frag.glsl",
-        "MsdfTextStrokeOuterGlowFragment.frag.glsl",
-        "MsdfTextStrokeOuterShadowOuterGlowFragment.frag.glsl",
+    ];
+
+    private static readonly string[] ShadowVertexShaders =
+    [
+        "SdfTextOuterShadowVertex.vert.glsl",
+        "MsdfTextOuterShadowVertex.vert.glsl",
     ];
 
     [Fact]
@@ -46,20 +46,29 @@ public sealed class TextShaderDistanceConventionTests
     }
 
     [Fact]
-    public void GeneratedTextShadowsSampleAgainstTheRequestedOffset()
+    public void GeneratedTextShadowsTranslateGeometryAndSampleOriginalUv()
     {
+        foreach (var fileName in ShadowVertexShaders)
+        {
+            var source = File.ReadAllText(ShaderPath(fileName));
+            Assert.Contains("member_PixelMin + arg_offset", source, StringComparison.Ordinal);
+            Assert.Contains("member_PixelMax + arg_offset", source, StringComparison.Ordinal);
+            Assert.Contains("member_UvRect.xy", source, StringComparison.Ordinal);
+            Assert.Contains("member_UvRect.zw", source, StringComparison.Ordinal);
+        }
+
         foreach (var fileName in ShadowFragmentShaders)
         {
             var source = File.ReadAllText(ShaderPath(fileName));
-            Assert.Contains(" - shadowUvOffset", source, StringComparison.Ordinal);
-            Assert.DoesNotContain(" + shadowUvOffset", source, StringComparison.Ordinal);
-            Assert.Contains("shadowUv = clamp(", source, StringComparison.Ordinal);
-            Assert.Contains("texture(Atlas, shadowUv)", source, StringComparison.Ordinal);
+            Assert.Contains("texture(Atlas, Uv)", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("shadowUvOffset", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("UvBounds", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("fillCoverage", source, StringComparison.Ordinal);
         }
     }
 
     [Fact]
-    public void OuterShadowUvBoundsDoNotChangeGlyphStoragePacking()
+    public void OuterShadowGeometryDoesNotChangeGlyphStoragePacking()
     {
         Assert.Equal(48u, SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.Resources[0].Layout.ArrayStride);
         Assert.Equal(48u, MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.Resources[0].Layout.ArrayStride);

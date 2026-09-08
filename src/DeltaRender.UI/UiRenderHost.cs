@@ -144,6 +144,13 @@ public static class UiRenderHost
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterShadow.Fragment());
 
+    private static GraphicsShaderProgram CreateTextStrokeOuterGlowProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextStrokeOuterGlow.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextStrokeOuterGlow.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextStrokeOuterGlow.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextStrokeOuterGlow.Fragment());
+
     internal static UiDisplayListResourceRegistry CreateResourceRegistry(IUiResourceResolver resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -177,6 +184,23 @@ public static class UiRenderHost
                         CreateTextOuterShadowProgram(),
                         GlyphImageMode.Sdf,
                         TextShaderPath.OuterShadow));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities ==
+                    (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow))
+            {
+                registry.RegisterTextEffectResourceLayers(
+                    effect,
+                    new TextShaderVariant(
+                        CreateTextOuterShadowProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.OuterShadow),
+                    new TextShaderVariant(
+                        CreateTextStrokeOuterGlowProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.StrokeOuterGlow));
             }
         }
 

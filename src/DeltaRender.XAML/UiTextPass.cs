@@ -10,27 +10,31 @@ internal sealed class UiTextPass(TextRenderFeature feature) : IRasterPass
     private IGraphicsShaderProgram _shaderProgram = feature.CompositePipeline.ShaderProgram;
     private int _firstRun;
     private int _runCount;
+    private TextRenderLayer _layer;
 
     internal RasterPassDescription Description => _description;
 
-    internal bool SetRange(int firstRun, int runCount)
+    internal bool SetRange(int firstRun, int runCount, TextRenderLayer layer)
     {
-        if (!feature.TryGetCompositePipeline(firstRun, runCount, out var pipeline))
+        if (!feature.TryGetCompositePipeline(firstRun, runCount, layer, out var pipeline))
         {
             return false;
         }
 
-        if (!ReferenceEquals(_shaderProgram, pipeline.ShaderProgram))
+        if (!ReferenceEquals(_shaderProgram, pipeline.ShaderProgram) || _layer != layer)
         {
             _shaderProgram = pipeline.ShaderProgram;
-            _description = new RasterPassDescription("DeltaRender.XAML.Text", pipeline);
+            _description = new RasterPassDescription(
+                layer == TextRenderLayer.Shadow ? "DeltaRender.XAML.Text.Shadow" : "DeltaRender.XAML.Text.Base",
+                pipeline);
         }
 
         _firstRun = firstRun;
         _runCount = runCount;
+        _layer = layer;
         return true;
     }
 
     public void Record(IRasterCommandContext commands)
-        => feature.RecordCompositeRuns(commands, _firstRun, _runCount);
+        => feature.RecordCompositeRuns(commands, _firstRun, _runCount, _layer);
 }

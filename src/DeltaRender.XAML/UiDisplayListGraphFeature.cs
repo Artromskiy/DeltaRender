@@ -416,30 +416,35 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             {
                 Array.Fill(_textRunIndices, -1, 0, _orderCount);
                 var textRunCount = 0;
-                var previousWasText = false;
+                var previousTextCanMerge = false;
                 for (var index = 0; index < _orderCount; index++)
                 {
                     var draw = _order.RefAt(index);
                     if (draw.Kind != UiDrawKind.Text || _commandClips.RefAt(index).IsEmpty)
                     {
-                        previousWasText = false;
+                        previousTextCanMerge = false;
                         continue;
                     }
 
                     var text = _texts.RefAt(draw.Index);
-                    TextShaderVariant? shaderVariant = null;
+                    TextShaderVariant? baseShaderVariant = null;
+                    TextShaderVariant? shadowShaderVariant = null;
                     var effectValues = TextEffectValues.Empty;
                     if (text.Paint.EffectSet.IsValid)
                     {
-                        if (!_registry.TryResolveTextEffectSet(text.Paint.EffectSet, out var registeredVariant, out var effectResource) ||
-                            !_textFeature.TryResolveTextVariant(registeredVariant, out _))
+                        if (!_registry.TryResolveTextEffectPlan(
+                                text.Paint.EffectSet,
+                                out baseShaderVariant,
+                                out shadowShaderVariant,
+                                out var effectResource) ||
+                            baseShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(baseShaderVariant.Value, out _) ||
+                            shadowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(shadowShaderVariant.Value, out _))
                         {
                             AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
-                            previousWasText = false;
+                            previousTextCanMerge = false;
                             continue;
                         }
 
-                        shaderVariant = registeredVariant;
                         effectValues = ToTextEffectValues(effectResource, _dpiScale);
                     }
 
@@ -452,15 +457,16 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         origin.y,
                         new Vector4(color.x, color.y, color.z, color.w),
                         _coordinates.ToPhysical(_commandClips.RefAt(index)),
-                        mergeWithPrevious: previousWasText,
-                        shaderVariant: shaderVariant,
+                        mergeWithPrevious: previousTextCanMerge && !shadowShaderVariant.HasValue,
+                        baseShaderVariant: baseShaderVariant,
                         effectValues: effectValues,
+                        shadowShaderVariant: shadowShaderVariant,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
                         producerRunVersion: identity.Version);
 
                     textRunCount++;
-                    previousWasText = true;
+                    previousTextCanMerge = !shadowShaderVariant.HasValue;
                 }
 
                 textPrepared = textRunCount != 0 && _textFeature.PrepareComposite(graph, registerUploadPass: false);
@@ -533,7 +539,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 var runCount = 1;
                 var end = index + 1;
                 var lastRun = firstRun;
-                while (end < _orderCount &&
+                var hasShadowLayer = _textFeature.HasShadowLayer(firstRun);
+                while (!hasShadowLayer && end < _orderCount &&
                        _order.RefAt(end).Kind == UiDrawKind.Text &&
                        !_commandClips.RefAt(end).IsEmpty &&
                        _textRunIndices.RefAt(end) == lastRun + 1 &&
@@ -544,20 +551,14 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     end++;
                 }
 
-                var textFeaturePass = GetTextPass(firstRun, runCount);
-                if (textFeaturePass is null)
+                if (hasShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Shadow) ||
+                    !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base))
                 {
                     AddDiagnostic($"Text at Order[{index}] has no compatible prepared shader variant.");
                     index = end - 1;
                     continue;
                 }
 
-                var textPass = graph.AddRasterPass(textFeaturePass.Description, textFeaturePass);
-                graph.UseColorAttachment(
-                    textPass,
-                    0,
-                    new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
-                _textFeature.ConfigureCompositePass(graph, textPass);
                 index = end - 1;
                 continue;
             }
@@ -635,7 +636,29 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         return pass;
     }
 
-    private UiTextPass? GetTextPass(int firstRun, int runCount)
+    private bool TryAddTextPass(
+        IRenderGraphBuilder graph,
+        RenderGraphTextureHandle target,
+        int firstRun,
+        int runCount,
+        TextRenderLayer layer)
+    {
+        var textFeaturePass = GetTextPass(firstRun, runCount, layer);
+        if (textFeaturePass is null)
+        {
+            return false;
+        }
+
+        var textPass = graph.AddRasterPass(textFeaturePass.Description, textFeaturePass);
+        graph.UseColorAttachment(
+            textPass,
+            0,
+            new ColorAttachmentDescription(target, AttachmentLoadOperation.Load, AttachmentStoreOperation.Store));
+        _textFeature!.ConfigureCompositePass(graph, textPass);
+        return true;
+    }
+
+    private UiTextPass? GetTextPass(int firstRun, int runCount, TextRenderLayer layer)
     {
         if (_textPassCount == _textPasses.Length)
         {
@@ -650,7 +673,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             _textPasses[_textPassCount] = pass;
         }
 
-        if (!pass.SetRange(firstRun, runCount))
+        if (!pass.SetRange(firstRun, runCount, layer))
         {
             return null;
         }

@@ -266,54 +266,64 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException("A text effect set requires a valid generated text shader variant.", nameof(variant));
         }
 
-        if (variant.Path != TextShaderPath.StrokeOuterGlow ||
-            effectResource.Set.Quality != UiEffectQuality.Analytic ||
-            effectResource.Set.Has(UiEffectCapabilities.InnerShadow) ||
-            effectResource.Set.Has(UiEffectCapabilities.InnerGlow) ||
-            effectResource.Set.Quality == UiEffectQuality.CachedMask)
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic)
         {
-            if (variant.Path == TextShaderPath.Stroke &&
-                variant.Mode == GlyphImageMode.Sdf &&
-                effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == UiEffectCapabilities.Stroke)
-            {
-                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
-                return;
-            }
-
-            if (variant.Path == TextShaderPath.OuterGlow &&
-                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
-                effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == UiEffectCapabilities.OuterGlow)
-            {
-                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
-                return;
-            }
-
-            if (variant.Path == TextShaderPath.OuterShadow &&
-                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
-                effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == UiEffectCapabilities.OuterShadow)
-            {
-                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
-                return;
-            }
-
-            if (variant.Path == TextShaderPath.StrokeOuterShadowOuterGlow &&
-                variant.Mode is GlyphImageMode.Sdf or GlyphImageMode.Msdf &&
-                effectResource.Set.Quality == UiEffectQuality.Analytic &&
-                effectResource.Set.Capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow))
-            {
-                _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
-                return;
-            }
-
             throw new ArgumentException(
-                "The text stroke/outer-glow artifact supports analytic Stroke, OuterShadow and OuterGlow layers only; InnerShadow, InnerGlow and CachedMask are unsupported.",
+                "Text shader variants require an Analytic effect set.",
                 nameof(effectResource));
         }
 
-        _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant);
+        var capabilities = effectResource.Set.Capabilities;
+        var isBaseVariant = variant.Path switch
+        {
+            TextShaderPath.Stroke => capabilities == UiEffectCapabilities.Stroke,
+            TextShaderPath.OuterGlow => capabilities == UiEffectCapabilities.OuterGlow,
+            TextShaderPath.StrokeOuterGlow =>
+                capabilities == (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterGlow),
+            _ => false,
+        };
+        if (isBaseVariant)
+        {
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant, null);
+            return;
+        }
+
+        if (variant.Path == TextShaderPath.OuterShadow &&
+            capabilities == UiEffectCapabilities.OuterShadow)
+        {
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, variant);
+            return;
+        }
+
+        throw new ArgumentException(
+            "Text effects require one generated base variant or an OuterShadow-only variant; combined shadow artifacts, InnerShadow, InnerGlow and CachedMask are unsupported.",
+            nameof(effectResource));
+    }
+
+    /// <summary>
+    /// Associates one immutable text effect resource with separate prepared
+    /// outer-shadow and base shader variants. Program ownership remains with
+    /// the caller.
+    /// </summary>
+    public void RegisterTextEffectResourceLayers(
+        UiEffectResource effectResource,
+        TextShaderVariant shadowVariant,
+        TextShaderVariant baseVariant)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            effectResource.Set.Capabilities !=
+                (UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow) ||
+            !shadowVariant.IsValid || shadowVariant.Path != TextShaderPath.OuterShadow ||
+            !baseVariant.IsValid || baseVariant.Path != TextShaderPath.StrokeOuterGlow ||
+            shadowVariant.Mode != baseVariant.Mode)
+        {
+            throw new ArgumentException(
+                "Combined text effects require matching generated OuterShadow and StrokeOuterGlow variants.",
+                nameof(effectResource));
+        }
+
+        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant);
     }
 
     /// <summary>Removes one semantic visual type without releasing its shader program.</summary>
@@ -387,12 +397,33 @@ public sealed class UiDisplayListResourceRegistry
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
             registration.EffectResource.Set == effectSet)
         {
-            variant = registration.Variant;
+            variant = registration.ShadowVariant ?? registration.BaseVariant ?? default;
             effectResource = registration.EffectResource;
             return true;
         }
 
         variant = default;
+        effectResource = default;
+        return false;
+    }
+
+    internal bool TryResolveTextEffectPlan(
+        UiEffectSet effectSet,
+        out TextShaderVariant? baseVariant,
+        out TextShaderVariant? shadowVariant,
+        out UiEffectResource effectResource)
+    {
+        if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
+            registration.EffectResource.Set == effectSet)
+        {
+            baseVariant = registration.BaseVariant;
+            shadowVariant = registration.ShadowVariant;
+            effectResource = registration.EffectResource;
+            return true;
+        }
+
+        baseVariant = null;
+        shadowVariant = null;
         effectResource = default;
         return false;
     }
@@ -477,7 +508,8 @@ public sealed class UiDisplayListResourceRegistry
 
     private readonly record struct TextEffectSetRegistration(
         UiEffectResource EffectResource,
-        TextShaderVariant Variant);
+        TextShaderVariant? BaseVariant,
+        TextShaderVariant? ShadowVariant);
 
     private static void ValidateEffectResource(UiEffectResource effectResource, UiEffectTarget expectedTarget)
     {
