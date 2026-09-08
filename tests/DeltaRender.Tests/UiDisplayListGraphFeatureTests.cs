@@ -432,7 +432,7 @@ public sealed class UiDisplayListGraphFeatureTests
         var effectSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
-            UiEffectCapabilities.Outline,
+            UiEffectCapabilities.Outline | UiEffectCapabilities.Glow,
             UiEffectQuality.Analytic,
             default);
         var effectResource = new UiEffectResource(
@@ -441,7 +441,7 @@ public sealed class UiDisplayListGraphFeatureTests
                 new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
                 default,
                 default,
-                default,
+                new UiEffectLayer(new float4(0.2f, 0.4f, 1, 1), default, 2, 3, 0, 0.8f),
                 default));
         var registry = new UiDisplayListResourceRegistry();
         registry.RegisterTextEffectResource(
@@ -510,6 +510,47 @@ public sealed class UiDisplayListGraphFeatureTests
             new[] { new UiDrawRef(UiDrawKind.Text, 0) })));
         Assert.Contains(
             "references an unregistered text effect-set resource.",
+            feature.Diagnostics.Single());
+    }
+
+    [Fact]
+    public void TextCachedMaskIsRejectedWithStableDiagnostic()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Rewards".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80));
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 20),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with
+            {
+                EffectSet = new UiEffectSet(
+                    new UiResourceId(Guid.NewGuid()),
+                    UiEffectTarget.Text,
+                    UiEffectCapabilities.Outline,
+                    UiEffectQuality.CachedMask,
+                    default)
+            },
+            UiClipId.None);
+
+        Assert.False(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })));
+        Assert.Equal(
+            "Text at Order[0] requests unsupported CachedMask text rendering; use the generated outline/glow text artifact.",
             feature.Diagnostics.Single());
     }
 
@@ -1042,6 +1083,68 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void AdjacentCachedMaskVisualsShareOnePassAndMaskBinding()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var maskResource = new UiResourceId(Guid.NewGuid());
+        var maskTexture = new RenderTextureHandle(20, 2);
+        var maskSampler = new RenderSamplerHandle(21, 2);
+        registry.RegisterMask(maskResource, maskTexture, maskSampler, new float4(0, 0, 1, 1));
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.Stroke,
+            UiEffectQuality.CachedMask,
+            default);
+        registry.RegisterVisualEffectResource(
+            new UiEffectResource(
+                effectSet,
+                new XamlEffectParameters(
+                    new UiEffectLayer(new float4(1, 1, 1, 1), default, 1, 0, 0, 1),
+                    default,
+                    default,
+                    default,
+                    maskResource)),
+            new UiVisualShaderVariant(
+                CachedMaskRoundedRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                UiVisualKind.RoundedRectangle,
+                UiVisualShaderPath.CachedMask));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(100, 80),
+            registry: registry);
+        var paint = UiVisualPaint.Solid(new float4(0.2f, 0.4f, 0.8f, 1)) with { EffectSet = effectSet };
+        var visuals = new[]
+        {
+            UiVisualDraw.WithPaint(UiVisualKind.RoundedRectangle, default, new float4(5, 5, 20, 20), paint, UiClipId.None, UiResourceId.Empty),
+            UiVisualDraw.WithPaint(UiVisualKind.RoundedRectangle, default, new float4(30, 5, 20, 20), paint, UiClipId.None, UiResourceId.Empty),
+        };
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            visuals,
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            new[]
+            {
+                new UiDrawRef(UiDrawKind.Visual, 0),
+                new UiDrawRef(UiDrawKind.Visual, 1),
+            })), string.Join(" | ", feature.Diagnostics));
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Single(graph.RasterPasses);
+        Assert.Single(commands.TextureBindings);
+        Assert.Equal(UiVisualShaderContract.CachedMaskTextureBinding, commands.TextureBindings[0].Binding);
+        Assert.True(commands.TextureBindings[0].Texture.IsValid);
+        Assert.Equal(maskSampler, commands.TextureBindings[0].Sampler);
+    }
+
+    [Fact]
     public void DpiScaleConvertsLogicalClipOnceAtRasterBoundary()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
@@ -1264,6 +1367,11 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public readonly record struct DrawCall(uint InstanceCount, uint FirstInstance);
 
+        public readonly record struct TextureBinding(
+            ShaderBinding Binding,
+            RenderGraphTextureHandle Texture,
+            RenderSamplerHandle Sampler);
+
         public List<PixelRect> Scissors { get; } = [];
 
         public List<byte[]> PushedConstants { get; } = [];
@@ -1276,6 +1384,8 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public List<DrawCall> Draws { get; } = [];
 
+        public List<TextureBinding> TextureBindings { get; } = [];
+
         public void BindBuffer(ShaderBinding binding, RenderGraphBufferHandle buffer, ulong offset = 0, ulong sizeInBytes = 0)
         {
             BufferBindings.Add(new BufferBinding(offset, sizeInBytes));
@@ -1283,6 +1393,7 @@ public sealed class UiDisplayListGraphFeatureTests
 
         public void BindTexture(ShaderBinding binding, RenderGraphTextureHandle texture, RenderSamplerHandle sampler)
         {
+            TextureBindings.Add(new TextureBinding(binding, texture, sampler));
         }
 
         public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0) => PushedConstants.Add(data.ToArray());

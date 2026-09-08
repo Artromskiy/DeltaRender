@@ -59,6 +59,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
     private RenderGraphTextureHandle?[] _visualMaskTextures = [];
+    private RenderTextureHandle[] _visualMaskResources = [];
     private RenderSamplerHandle[] _visualMaskSamplers = [];
     private float4[] _visualMaskUvRects = [];
     private int[] _visualSeenEpochs = [];
@@ -265,6 +266,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskTextures, displayList.Order.Length);
+        EnsureCapacity(ref _visualMaskResources, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskUvRects, displayList.Order.Length);
         EnsureCapacity(ref _visualPayloadDirtyByIndex, displayList.Visuals.Length);
@@ -727,6 +729,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualImageSamplers.RefAt(orderIndex) = default;
         _visualImageBindings.RefAt(orderIndex) = null;
         _visualMaskTextures.RefAt(orderIndex) = null;
+        _visualMaskResources.RefAt(orderIndex) = default;
         _visualMaskSamplers.RefAt(orderIndex) = default;
         _visualMaskUvRects.RefAt(orderIndex) = default;
         if (visual.Kind == UiVisualKind.Image)
@@ -757,6 +760,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
 
             _visualMaskTextures.RefAt(orderIndex) = graph.ImportTexture(maskTexture);
+            _visualMaskResources.RefAt(orderIndex) = maskTexture;
             _visualMaskSamplers.RefAt(orderIndex) = maskSampler;
             _visualMaskUvRects.RefAt(orderIndex) = maskUvRect;
         }
@@ -1078,7 +1082,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return true;
         }
 
-        return _visualMaskTextures.RefAt(firstOrderIndex) == _visualMaskTextures.RefAt(nextOrderIndex) &&
+        return _visualMaskResources.RefAt(firstOrderIndex) == _visualMaskResources.RefAt(nextOrderIndex) &&
                _visualMaskSamplers.RefAt(firstOrderIndex) == _visualMaskSamplers.RefAt(nextOrderIndex);
     }
 
@@ -1396,6 +1400,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             (!text.Paint.EffectSet.IsValid || text.Paint.EffectSet.Target != UiEffectTarget.Text))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid text effect set.");
+            return false;
+        }
+
+        if (text.Paint.EffectSet.Quality == UiEffectQuality.CachedMask)
+        {
+            AddDiagnostic($"Text at Order[{orderIndex}] requests unsupported CachedMask text rendering; use the generated outline/glow text artifact.");
             return false;
         }
 
