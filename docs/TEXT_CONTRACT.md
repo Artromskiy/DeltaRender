@@ -123,6 +123,25 @@ to a different shader or atlas format. The supplied shader manifest remains the
 authority for descriptor bindings; the feature does not know generated wrapper
 names or duplicate ShaderAbi declarations.
 
+## Analytic text effects
+
+The producer also publishes deterministic graphics variants for analytic text
+effects without changing shaping, glyph metrics or atlas encoding:
+
+- `sdf-text-outline-glow` uses the existing SDF alpha channel;
+- `msdf-text-outline-glow` uses the existing MSDF median-of-RGB distance;
+- both variants expose `TextEffectParameters` as one shared 96-byte push
+  constant root and retain the glyph storage buffer at set `0`, binding `0`;
+- `GlowColor`, `GlowRadius` and `GlowIntensity` use the same distance-field
+  units as `DistanceRange` and `OutlineWidth`;
+- the generated program exposes the corresponding typed root packers and
+  `VertexAbi`/`FragmentAbi`; consumers must use those generated members rather
+  than recreate the layout.
+
+These are fixed producer artifacts, not runtime shader composition. Outer shadow,
+backdrop blur and a general ordered effect chain remain explicit follow-up work;
+backdrop blur is intentionally not part of the analytic text path.
+
 ## Deliberate exclusions
 
 This project does not own:
