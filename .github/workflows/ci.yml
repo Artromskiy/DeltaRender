@@ -71,6 +71,11 @@ jobs:
         with:
           repository: Artromskiy/DeltaDiagnostics
           path: DeltaDiagnostics
+      - name: Checkout DeltaText sibling
+        uses: actions/checkout@v7
+        with:
+          repository: Artromskiy/DeltaText
+          path: DeltaText
       - name: Check package boundaries
         working-directory: DeltaRender
         run: ./eng/check-package-boundaries.sh
@@ -99,6 +104,10 @@ jobs:
         env:
           SIXLABORS_LICENSE: ${{ secrets.SIXLABORS_LICENSE }}
         run: |
+          if [ -z "$SIXLABORS_LICENSE" ]; then
+            echo "::error::Repository secret SIXLABORS_LICENSE is required for the build-time SixLabors.Fonts package."
+            exit 1
+          fi
           printf '%s' "$SIXLABORS_LICENSE" > "$RUNNER_TEMP/sixlabors.lic"
           echo "SixLaborsLicenseFile=$RUNNER_TEMP/sixlabors.lic" >> "$GITHUB_ENV"
       - name: Prepare current Render packages
