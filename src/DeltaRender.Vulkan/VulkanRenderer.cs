@@ -15,6 +15,7 @@ namespace Delta.Render.Vulkan;
 public sealed unsafe class VulkanRenderer : IAsyncDisposable
 {
     private static readonly string[] MoltenVkLibraryNames = ["libMoltenVK.dylib", "MoltenVK"];
+    private static readonly string[] VulkanLoaderLibraryNames = ["libvulkan.1.dylib", "libvulkan.dylib", "vulkan"];
     private readonly DefaultNativeContext? _nativeContext;
     private bool _initializedHeadless;
 
@@ -25,7 +26,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         if (OperatingSystem.IsMacOS())
         {
-            _nativeContext = new DefaultNativeContext(MoltenVkLibraryNames);
+            _nativeContext = new DefaultNativeContext(UsesSoftwareVulkan() ? VulkanLoaderLibraryNames : MoltenVkLibraryNames);
             Api = new Vk(_nativeContext);
         }
         else
@@ -71,6 +72,8 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     private uint[] _queueFamilies = [];
 
     public bool IsValidationEnabled { get; private set; }
+
+    private static bool UsesSoftwareVulkan() => string.Equals(Environment.GetEnvironmentVariable("DELTA_RENDER_VULKAN_DRIVER"), "swiftshader", StringComparison.OrdinalIgnoreCase);
 
     public ValueTask DisposeAsync() => DisposeResourcesAsync();
 

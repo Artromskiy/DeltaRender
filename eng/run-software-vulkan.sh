@@ -77,6 +77,15 @@ fi
 rm -rf "$output_dir"
 mkdir -p "$output_dir"
 export VK_DRIVER_FILES="$icd_path"
+export DELTA_RENDER_VULKAN_DRIVER=swiftshader
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    for loader_dir in /opt/homebrew/opt/vulkan-loader/lib /usr/local/opt/vulkan-loader/lib; do
+        if [[ -d "$loader_dir" ]]; then
+            export DYLD_LIBRARY_PATH="$loader_dir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+            break
+        fi
+    done
+fi
 
 vulkan_info="$output_dir/vulkaninfo.txt"
 if ! vulkaninfo --summary >"$vulkan_info" 2>&1; then
@@ -94,7 +103,10 @@ if ! dotnet test "$test_project" \
     fail "DeltaRender.Tests could not enumerate test cases"
 fi
 
-mapfile -t test_names < <(
+test_names=()
+while IFS= read -r test_name; do
+    test_names+=("$test_name")
+done < <(
     rg '^\s+Delta\.Render\.Tests\.' "$test_list_log" |
         sed -E 's/^[[:space:]]*//; s/\(.*$//' |
         sort -u

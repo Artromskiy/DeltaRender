@@ -89,7 +89,9 @@ internal static class Program
     {
         string[] producerDirectories =
         [
+            Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Release", "net10.0", "DeltaShader", "DeltaRender.SquareShaders"),
             Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Release", "net10.0", "DeltaShader"),
+            Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Debug", "net10.0", "DeltaShader", "DeltaRender.SquareShaders"),
             Path.Combine("tools", "DeltaRender.SquareShaders", "bin", "Debug", "net10.0", "DeltaShader")
         ];
         for (int index = 0; index < producerDirectories.Length; index++)
