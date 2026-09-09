@@ -32,8 +32,14 @@ pack_project "$maths_root/src/DeltaMaths/DeltaMaths.csproj" 0.0.10.9999
 dotnet restore "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostics.Contract.csproj" "${msbuild_args[@]}"
 pack_project "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostics.Contract.csproj" 0.0.3.9999
 
+sixlabors_fonts_source="${SIXLABORS_FONTS_SOURCE:-${NUGET_GITHUB_SOURCE:-$nuget_source}}"
+text_restore_sources="$sixlabors_fonts_source;$feed;$nuget_source"
+if [[ -n "${NUGET_GITHUB_SOURCE:-}" && "$NUGET_GITHUB_SOURCE" != "$sixlabors_fonts_source" ]]; then
+    text_restore_sources+=";$NUGET_GITHUB_SOURCE"
+fi
 dotnet restore "$text_root/src/DeltaText/DeltaText.csproj" \
-    -p:SixLaborsFontsPackageSource="${SIXLABORS_FONTS_SOURCE:-${NUGET_GITHUB_SOURCE:-$nuget_source}}" \
+    -p:SixLaborsFontsPackageSource="$sixlabors_fonts_source" \
+    -p:RestoreSources="$text_restore_sources" \
     "${msbuild_args[@]}"
 sixlabors_fonts_assembly="${SixLaborsFontsAssemblyPath:-${SIXLABORS_FONTS_ASSEMBLY_PATH:-}}"
 if [[ -z "$sixlabors_fonts_assembly" ]]; then
