@@ -41,6 +41,8 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  SIXLABORS_FONTS_COMMIT: c68b27d683c701ca254d5cfc6487c699954f19ff
+  SIXLABORS_FONTS_PACKAGE_VERSION: 3.1.0-source.c68b27d
 
 jobs:
   validate:
@@ -110,10 +112,29 @@ jobs:
           fi
           printf '%s' "$SIXLABORS_LICENSE" > "$RUNNER_TEMP/sixlabors.lic"
           echo "SixLaborsLicenseFile=$RUNNER_TEMP/sixlabors.lic" >> "$GITHUB_ENV"
+      - name: Checkout pinned SixLabors Fonts fork
+        uses: actions/checkout@v7
+        with:
+          repository: Artromskiy/Fonts
+          ref: ${{ env.SIXLABORS_FONTS_COMMIT }}
+          path: third_party/SixLabors.Fonts
+      - name: Restore SixLabors build infrastructure
+        run: git -C third_party/SixLabors.Fonts submodule update --init --recursive shared-infrastructure
+      - name: Pack pinned SixLabors Fonts fork
+        run: |
+          dotnet pack third_party/SixLabors.Fonts/src/SixLabors.Fonts/SixLabors.Fonts.csproj \
+            -c Release \
+            --output "$RUNNER_TEMP/sixlabors-feed" \
+            -p:PackageId=SixLabors.Fonts.Delta \
+            -p:PackageVersion="$SIXLABORS_FONTS_PACKAGE_VERSION" \
+            -p:MinVerVersionOverride="$SIXLABORS_FONTS_PACKAGE_VERSION" \
+            -p:RepositoryUrl=https://github.com/Artromskiy/Fonts \
+            --disable-build-servers -m:1 /p:UseSharedCompilation=false
       - name: Prepare current Render packages
         working-directory: DeltaRender
         env:
           NUGET_GITHUB_SOURCE: https://nuget.pkg.github.com/Artromskiy/index.json
+          SIXLABORS_FONTS_SOURCE: ${{ runner.temp }}/sixlabors-feed
         run: ./eng/prepare-ci-packages.sh "$RUNNER_TEMP/delta-render-packages"
       - name: Restore and build
         working-directory: DeltaRender

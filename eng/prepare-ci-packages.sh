@@ -33,7 +33,7 @@ dotnet restore "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostic
 pack_project "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostics.Contract.csproj" 0.0.3.9999
 
 dotnet restore "$text_root/src/DeltaText/DeltaText.csproj" \
-    -p:SixLaborsFontsPackageSource="${NUGET_GITHUB_SOURCE:-$nuget_source}" \
+    -p:SixLaborsFontsPackageSource="${SIXLABORS_FONTS_SOURCE:-${NUGET_GITHUB_SOURCE:-$nuget_source}}" \
     "${msbuild_args[@]}"
 sixlabors_fonts_assembly="${SixLaborsFontsAssemblyPath:-${SIXLABORS_FONTS_ASSEMBLY_PATH:-}}"
 if [[ -z "$sixlabors_fonts_assembly" ]]; then
