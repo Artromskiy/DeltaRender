@@ -52,12 +52,14 @@ jobs:
             10.x
       - name: Configure GitHub Packages
         working-directory: DeltaRender
+        env:
+          NUGET_GITHUB_TOKEN: ${{ secrets.NUGET_API_KEY || github.token }}
         run: |
           dotnet nuget add source \
             https://nuget.pkg.github.com/Artromskiy/index.json \
             --name github-artromskiy \
             --username "${{ github.repository_owner }}" \
-            --password "${{ github.token }}" \
+            --password "$NUGET_GITHUB_TOKEN" \
             --store-password-in-clear-text
       - name: Install shader and Vulkan tools
         run: sudo apt-get update && sudo apt-get install -y jq glslang-tools spirv-tools mesa-vulkan-drivers vulkan-tools
