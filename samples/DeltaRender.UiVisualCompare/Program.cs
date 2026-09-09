@@ -25,13 +25,9 @@ internal static class Program
                 args,
                 "--shader-root",
                 string.Empty));
-            string sliceRoot = Path.GetFullPath(GetOption(
-                args,
-                "--slice-root",
-                string.Empty));
-            if (string.IsNullOrWhiteSpace(shaderRoot) || string.IsNullOrWhiteSpace(sliceRoot))
+            if (string.IsNullOrWhiteSpace(shaderRoot))
             {
-                throw new ArgumentException("--shader-root and --slice-root must point to fresh producer output directories.");
+                throw new ArgumentException("--shader-root must point to fresh producer output directory.");
             }
             int frames = ParsePositiveInt(args, "--frames", DefaultFrames);
             var renderer = new VulkanRenderer(new VulkanRendererOptions());
@@ -45,12 +41,9 @@ internal static class Program
 
             var rounded = LoadRoundedProgram(shaderRoot);
             var solid = LoadSolidProgram(shaderRoot);
-            var slice = LoadSliceProgram(sliceRoot);
 
-            await RunVariantAsync("rounded", graph, session, rounded, null, null, RoundedVisual(), frames).ConfigureAwait(false);
-            await RunVariantAsync("solid", graph, session, rounded, solid, null, SolidVisual(), frames).ConfigureAwait(false);
-            await RunVariantAsync("slice-9", graph, session, rounded, null, slice, RoundedVisual(), frames).ConfigureAwait(false);
-            await RunVariantAsync("slice-7", graph, session, rounded, null, slice, SymmetricRoundedVisual(), frames).ConfigureAwait(false);
+            await RunVariantAsync("rounded", graph, session, rounded, null, RoundedVisual(), frames).ConfigureAwait(false);
+            await RunVariantAsync("solid", graph, session, rounded, solid, SolidVisual(), frames).ConfigureAwait(false);
             return 0;
         }
         catch (Exception exception)
@@ -66,7 +59,6 @@ internal static class Program
         IRenderFrameSession session,
         IGraphicsShaderProgram defaultProgram,
         IGraphicsShaderProgram? solidProgram,
-        IGraphicsShaderProgram? sliceProgram,
         UiVisualDraw visual,
         int frames)
     {
@@ -74,8 +66,7 @@ internal static class Program
             session,
             defaultProgram,
             new PixelExtent(Width, Height),
-            solidVisualProgram: solidProgram,
-            roundedSliceVisualProgram: sliceProgram);
+            solidVisualProgram: solidProgram);
         var displayList = new UiDisplayList(
             [visual],
             [],
@@ -162,22 +153,8 @@ internal static class Program
             new float4(100, 100, 600, 300),
             new UiVisualPaint(
                 new float4(0.2f, 0.5f, 0.9f, 1),
-                default,
-                0,
-                new float4(48, 20, 72, 12)),
-            UiClipId.None,
-            default);
-
-    private static UiVisualDraw SymmetricRoundedVisual()
-        => UiVisualDraw.WithPaint(
-            UiVisualKind.RoundedRectangle,
-            default,
-            new float4(100, 100, 600, 300),
-            new UiVisualPaint(
-                new float4(0.2f, 0.5f, 0.9f, 1),
-                default,
-                0,
-                new float4(48, 20, 20, 48)),
+                new float4(48, 20, 72, 12),
+                UiEffectSet.None),
             UiClipId.None,
             default);
 
@@ -190,11 +167,6 @@ internal static class Program
         => SolidRectangleGraphicsShaderProgram.CreateProgram(
             ReadShader(root, "SolidRectangleVertex.vert.spv"),
             ReadShader(root, "SolidRectangleFragment.frag.spv"));
-
-    private static IGraphicsShaderProgram LoadSliceProgram(string root)
-        => RoundedRectangleGraphicsShaderProgram.CreateProgram(
-            ReadShader(root, "RoundedRectangleVertex.vert.spv"),
-            ReadShader(root, "RoundedRectangleFragment.frag.spv"));
 
     private static byte[] ReadShader(string root, string name)
     {

@@ -1015,9 +1015,8 @@ contract was changed, and the sample wiring was restored after measurement.
 - upload: `2.016KB -> 3.792KB` (`+88.095%`); passes/resources/draws/binds
   stayed `15`/`4`/`445`/`11`
 
-The candidate was removed. The current Snake benchmark remains on the legacy
-rounded path; generated 9-slice optimization needs a workload/artifact
-mapping that actually reduces work rather than expanding every rounded visual.
+The candidate was removed. The current Snake benchmark remains on the rounded
+path; no alternate rounded decomposition is retained.
 
 ### Retained borrowed-payload copy elision: rejected
 
@@ -1116,35 +1115,6 @@ draws, `11` descriptor binds and `2.016KB` uploaded. Candidate reports:
 `/tmp/delta-snake-profile-10000-pipeline-factory-{1,2,3,4,5}.summary.json`.
 
 Decision: rejected; the original cache API and factory calls were restored.
-### Selective large rounded 9-slice routing: rejected
-
-The Render adapter was temporarily changed to select the generated
-`RoundedRectangleGraphicsShaderProgram` only for rounded visuals at least
-`256x256`; smaller tiles stayed on the existing rounded program and zero-radius
-visuals kept the solid route. The Snake harness temporarily supplied the
-generated solid and slice artifacts through the existing optional program
-arguments. Both source changes were restored after the A/B measurement.
-
-- legacy summaries: `/tmp/delta-snake-profile-10000-legacy-selective-slice-{1,2,3,4,5}.summary.json`
-- candidate summaries: `/tmp/delta-snake-profile-10000-optimized-selective-slice-{1,2,3,4,5}.summary.json`
-- both sides: `10,000` frames, measured `1,000..9,999`, `45,000` filtered
-  samples per side, GPU timestamps enabled, no device-loss or validation
-  diagnostics
-- build: `4.958us -> 6.375us` (`+28.580%`)
-- acquire: `1.916us -> 2.416us` (`+26.096%`)
-- record: `13.542us -> 17.792us` (`+31.384%`)
-- submit/present: `122.250us -> 160.917us` (`+31.629%`)
-- fence: `84ns -> 125ns` (`+48.810%`)
-- layout/shaping: `38.300us -> 45.200us` (`+18.016%`)
-- pass CPU: `13.124us -> 17.208us` (`+31.119%`)
-- pass GPU: `174.084us -> 248.458us` (`+42.723%`)
-- CPU composite: `194.090us -> 249.908us` (`+28.759%`)
-- CPU plus measured GPU: `368.174us -> 498.366us` (`+35.361%`)
-- counters changed from `15` to `17` passes and from `11` to `13` descriptor
-  binds; resources/draws/upload stayed `4`/`445`/`2.016KB`
-
-The candidate was removed. For this workload, introducing a second visual
-pipeline fragments the graph more than the large-rectangle fragment savings.
 ### Duplicate raster-segment validation removal: rejected (2026-09-01)
 
 The candidate removed the validation call immediately after dependency

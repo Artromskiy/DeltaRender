@@ -164,14 +164,18 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(variant));
         }
 
+        var previous = _visualEffectSets.TryGetValue(effectResource.Set.Resource, out var registration) &&
+                       registration.EffectResource.Set == effectResource.Set
+            ? registration
+            : default;
         _visualEffectSets[effectResource.Set.Resource] = new(
             effectResource,
-            variant.Kind == UiVisualKind.SolidRectangle ? variant : null,
-            variant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border ? variant : null,
-            null,
-            null,
-            null,
-            null,
+            variant.Kind == UiVisualKind.SolidRectangle ? variant : previous.SolidBaseVariant,
+            variant.Kind is UiVisualKind.RoundedRectangle or UiVisualKind.Border ? variant : previous.RoundedBaseVariant,
+            previous.SolidShadowVariant,
+            previous.RoundedShadowVariant,
+            previous.SolidGlowVariant,
+            previous.RoundedGlowVariant,
             NextVisualEffectRevision());
     }
 

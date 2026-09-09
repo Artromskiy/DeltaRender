@@ -19,16 +19,10 @@ public struct MeshPayload
 
 public readonly struct MeshVertexContext
 {
-    public MeshVertexContext()
-    {
-    }
 }
 
 public readonly struct MeshFragmentContext
 {
-    public MeshFragmentContext()
-    {
-    }
 }
 
 public static class MeshShaders

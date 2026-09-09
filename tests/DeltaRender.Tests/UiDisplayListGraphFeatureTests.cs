@@ -1558,6 +1558,12 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(2, graph.RasterDescriptions.Count);
         Assert.Contains(".Glow[0:1)", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
         Assert.Contains(".Base[0:1)", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.Additive),
+            graph.RasterDescriptions[0].Pipeline.BlendState);
+        Assert.Equal(
+            RenderBlendState.FromMode(RenderBlendMode.PremultipliedAlpha),
+            graph.RasterDescriptions[1].Pipeline.BlendState);
         Assert.Equal(2, commands.DrawCount);
         Assert.Equal(1u, commands.InstanceCounts[0]);
         Assert.Equal(1u, commands.InstanceCounts[1]);

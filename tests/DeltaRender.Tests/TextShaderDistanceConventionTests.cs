@@ -35,7 +35,8 @@ public sealed class TextShaderDistanceConventionTests
         foreach (var fileName in FragmentShaders)
         {
             var source = File.ReadAllText(ShaderPath(fileName));
-            Assert.Contains("2.0 * pushConstants.member_DistanceRange", source, StringComparison.Ordinal);
+            Assert.Contains("delta_helper_SignedDistance", source, StringComparison.Ordinal);
+            Assert.Contains("(arg_sample - 0.5) * (2.0 * arg_distanceRange)", source, StringComparison.Ordinal);
         }
 
         const float distanceRange = 4f;
@@ -50,9 +51,20 @@ public sealed class TextShaderDistanceConventionTests
         {
             var source = File.ReadAllText(ShaderPath(fileName));
             Assert.Contains("vec4 delta_helper_Premultiply(vec4 arg_color)", source, StringComparison.Ordinal);
-            Assert.Contains("arg_color.xyz * arg_color.w", source, StringComparison.Ordinal);
-            Assert.Contains("fragColor = delta_helper_Premultiply(", source, StringComparison.Ordinal);
+            Assert.Contains("arg_color.w * arg_color.xyz", source, StringComparison.Ordinal);
+            Assert.Contains("delta_helper_Premultiply(arg_", source, StringComparison.Ordinal);
             Assert.DoesNotContain(" * GlyphColor * ", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void GeneratedTextFragmentsHaveNoDynamicBranches()
+    {
+        foreach (var fileName in FragmentShaders)
+        {
+            var source = File.ReadAllText(ShaderPath(fileName));
+            Assert.DoesNotContain("if (", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("else", source, StringComparison.Ordinal);
         }
     }
 
@@ -63,7 +75,8 @@ public sealed class TextShaderDistanceConventionTests
         {
             var source = File.ReadAllText(ShaderPath(fileName));
             Assert.Contains("member_PixelMin + arg_offset", source, StringComparison.Ordinal);
-            Assert.Contains("member_PixelMax + arg_offset", source, StringComparison.Ordinal);
+            Assert.Contains("arg_glyph.member_PixelMax - arg_glyph.member_PixelMin", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("member_PixelMax + arg_offset", source, StringComparison.Ordinal);
             Assert.Contains("member_UvRect.xy", source, StringComparison.Ordinal);
             Assert.Contains("member_UvRect.zw", source, StringComparison.Ordinal);
         }

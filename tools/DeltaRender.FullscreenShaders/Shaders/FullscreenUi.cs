@@ -9,12 +9,8 @@ public static class FullscreenUi
 {
     public struct UiPushConstants
     {
-        public float2 Resolution = default;
-        public float Time = default;
-
-        public UiPushConstants()
-        {
-        }
+        public float2 Resolution;
+        public float Time;
     }
 
     [Interstage]
@@ -22,10 +18,6 @@ public static class FullscreenUi
     {
         public Position Position;
         public Uv0 Uv;
-
-        public UiVarying()
-        {
-        }
     }
 
     public readonly struct VertexContext
@@ -43,27 +35,22 @@ public static class FullscreenUi
     [VertexShader("fullscreen-ui")]
     public static UiVarying Vertex(in VertexContext context, in UiVarying input)
     {
-        var vertexIndex = ShaderBuiltins.VertexIndex;
-        if (vertexIndex == 0u)
+        var local = FullscreenTriangleGeometry.GetLocal(ShaderBuiltins.VertexIndex);
+        return new UiVarying
         {
-            return new UiVarying { Position = new Position(new float4(-1f, -1f, 0f, 1f)), Uv = new float2(0f, 0f) };
-        }
-        if (vertexIndex == 1u)
-        {
-            return new UiVarying { Position = new Position(new float4(3f, -1f, 0f, 1f)), Uv = new float2(2f, 0f) };
-        }
-
-        return new UiVarying { Position = new Position(new float4(-1f, 3f, 0f, 1f)), Uv = new float2(0f, 2f) };
+            Position = new Position(FullscreenTriangleGeometry.GetPosition(local)),
+            Uv = FullscreenTriangleGeometry.GetUv(local)
+        };
     }
 
     [FragmentShader("fullscreen-ui")]
     public static float4 Fragment(in FragmentContext context, in UiVarying input)
     {
         var fragmentCoord = new float2(ShaderBuiltins.FragmentCoord.X, ShaderBuiltins.FragmentCoord.Y);
-        var p = (fragmentCoord / context.Constants.Resolution) * 2f - new float2(1f, 1f);
+        var p = 2f * fragmentCoord / context.Constants.Resolution - new float2(1f);
         var halfSize = new float2(0.55f, 0.32f);
         var q = maths.abs(p) - halfSize + 0.12f;
-        var distance = maths.length(maths.max(q, new float2(0f, 0f))) + maths.min(maths.max(q.x, q.y), 0f) - 0.12f;
+        var distance = maths.length(maths.max(q, new float2(0f))) + maths.min(maths.max(q.x, q.y), 0f) - 0.12f;
         var edge = intrinsics.fwidth(distance);
         var mask = 1f - maths.smoothstep(-edge, edge, distance);
         var tint = 0.5f + 0.5f * maths.sin(context.Constants.Time);

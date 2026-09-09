@@ -94,21 +94,15 @@ public readonly struct SolidImageRectangleFragmentContext
 
 public static class UiResourceShaders
 {
-    private static float2 ToClipPosition(float4 rect, float2 local, float2 resolution)
-    {
-        float2 pixel = rect.xy + local * rect.zw;
-        return (pixel / resolution) * 2f - 1f;
-    }
-
     [VertexShader("solid-linear-gradient")]
     public static SolidLinearGradientPayload SolidLinearGradientVertex(in SolidLinearGradientVertexContext context, in SolidLinearGradientPayload input)
     {
         SolidLinearGradientParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
         float2 local = QuadGeometry.GetLocal(ShaderBuiltins.VertexIndex);
-        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        float4 position = QuadGeometry.ToClipPosition(instance.Rect, local, context.Frame.Resolution);
         return new SolidLinearGradientPayload
         {
-            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Position = new Position(position),
             Uv = new Uv0(local),
             Rect = new SegmentRect(instance.Rect),
             GradientLine = new SegmentRect(instance.GradientLine),
@@ -127,28 +121,31 @@ public static class UiResourceShaders
         float2 pixel = input.Rect.Value.xy + input.Uv.Value * input.Rect.Value.zw;
         float2 delta = input.GradientLine.Value.zw - input.GradientLine.Value.xy;
         float t = clamp(dot(pixel - input.GradientLine.Value.xy, delta) / max(dot(delta, delta), 0.0001f), 0f, 1f);
-        float4 color = input.Stop3Color.Value;
-        if (input.StopCount.Value <= 1f || t <= input.StopPositions.Value.x)
-        {
-            color = input.Stop0Color.Value;
-        }
-        else if (t <= input.StopPositions.Value.y)
-        {
-            float amount = (t - input.StopPositions.Value.x) / max(input.StopPositions.Value.y - input.StopPositions.Value.x, 0.0001f);
-            color = input.Stop0Color.Value + (input.Stop1Color.Value - input.Stop0Color.Value) * amount;
-        }
-        else if (input.StopCount.Value <= 2f || t <= input.StopPositions.Value.z)
-        {
-            float amount = (t - input.StopPositions.Value.y) / max(input.StopPositions.Value.z - input.StopPositions.Value.y, 0.0001f);
-            color = input.Stop1Color.Value + (input.Stop2Color.Value - input.Stop1Color.Value) * amount;
-        }
-        else if (input.StopCount.Value <= 3f || t <= input.StopPositions.Value.w)
-        {
-            float amount = (t - input.StopPositions.Value.z) / max(input.StopPositions.Value.w - input.StopPositions.Value.z, 0.0001f);
-            color = input.Stop2Color.Value + (input.Stop3Color.Value - input.Stop2Color.Value) * amount;
-        }
+        float4 positions = input.StopPositions.Value;
+        float3 availableStops = step(
+            new float3(2f, 3f, 4f),
+            new float3(input.StopCount.Value));
+        float4 after = step(positions, new float4(t));
+        float4 color0 = input.Stop0Color.Value;
+        float4 color1 = input.Stop1Color.Value;
+        float4 color2 = input.Stop2Color.Value;
+        float4 color3 = input.Stop3Color.Value;
+        float3 stopDelta = max(positions.yzw - positions.xyz, new float3(0.0001f));
+        float3 stopAmount = clamp(
+            (new float3(t) - positions.xyz) / stopDelta,
+            new float3(0f),
+            new float3(1f));
+        float4 color01 = color0 + (color1 - color0) * stopAmount.x;
+        float4 color12 = color1 + (color2 - color1) * stopAmount.y;
+        float4 color23 = color2 + (color3 - color2) * stopAmount.z;
+        float use01 = availableStops.x * after.x * (1f - after.y);
+        float use12 = availableStops.x * after.y * (1f - availableStops.y * after.z);
+        float use23 = availableStops.y * after.z * (1f - availableStops.z * after.w);
+        float use3 = availableStops.z * after.w;
+        float4 color = color0 + use01 * (color01 - color0) + use12 * (color12 - color0) +
+            use23 * (color23 - color0) + use3 * (color3 - color0);
 
-        return new float4(color.xyz * color.w, color.w);
+        return UiColorMath.Premultiply(color);
     }
 
     [VertexShader("solid-image")]
@@ -156,10 +153,10 @@ public static class UiResourceShaders
     {
         SolidImageRectangleParameters instance = context.Instances[ShaderBuiltins.InstanceIndex];
         float2 local = QuadGeometry.GetLocal(ShaderBuiltins.VertexIndex);
-        float2 clip = ToClipPosition(instance.Rect, local, context.Frame.Resolution);
+        float4 position = QuadGeometry.ToClipPosition(instance.Rect, local, context.Frame.Resolution);
         return new SolidImageRectanglePayload
         {
-            Position = new float4(clip.x, clip.y, 0f, 1f),
+            Position = new Position(position),
             Uv = new Uv0(instance.UvRect.xy + local * instance.UvRect.zw),
             TintColor = new VertexColor(instance.TintColor),
         };
@@ -170,6 +167,7 @@ public static class UiResourceShaders
     {
         float4 image = context.Image.Sample<float2, float4>(input.Uv.Value);
         float4 tint = input.TintColor.Value;
-        return new float4(image.xyz * tint.xyz * image.w * tint.w, image.w * tint.w);
+        float alpha = image.w * tint.w;
+        return new float4(alpha * image.xyz * tint.xyz, alpha);
     }
 }

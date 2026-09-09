@@ -44,4 +44,11 @@
     </ItemGroup>
     <Copy SourceFiles="@(_DeltaRenderTextShaderArtifact)" DestinationFolder="$(TargetDir)DeltaShader/DeltaRender.Text" SkipUnchangedFiles="true" />
   </Target>
+
+  <Target Name="CopyDeltaRenderUiShaderArtifacts" AfterTargets="Build">
+    <ItemGroup>
+      <_DeltaRenderUiShaderArtifact Include="../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.spv;../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.glsl;../../tools/DeltaRender.UIShaders/$(OutputPath)DeltaShader/DeltaRender.UIShaders/**/*.shader.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DeltaRenderUiShaderArtifact)" DestinationFolder="$(TargetDir)DeltaShader/DeltaRender.UIShaders" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

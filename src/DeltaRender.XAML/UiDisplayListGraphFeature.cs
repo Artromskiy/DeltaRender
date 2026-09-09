@@ -22,7 +22,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly IRenderFrameSession? _session;
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
     private readonly IGraphicsShaderProgram? _solidVisualProgram;
-    private readonly IGraphicsShaderProgram? _roundedSliceVisualProgram;
     private readonly IGraphicsShaderProgram? _linearGradientVisualProgram;
     private readonly IGraphicsShaderProgram? _imageVisualProgram;
     private readonly UiDisplayListResourceRegistry _registry;
@@ -130,7 +129,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     /// <summary>Creates a headless planning adapter without a graph submission owner.</summary>
     public UiDisplayListGraphFeature(PixelExtent viewport)
-        : this(null, null, viewport, null, null, null, null, null, null, false)
+        : this(null, null, viewport, null, null, null, null, null, false)
     {
     }
 
@@ -145,10 +144,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         UiDisplayListResourceRegistry? registry = null,
         TextRenderFeature? textFeature = null,
         IGraphicsShaderProgram? solidVisualProgram = null,
-        IGraphicsShaderProgram? roundedSliceVisualProgram = null,
         IGraphicsShaderProgram? linearGradientVisualProgram = null,
         IGraphicsShaderProgram? imageVisualProgram = null)
-        : this(session, visualProgram, viewport, registry, textFeature, solidVisualProgram, roundedSliceVisualProgram, linearGradientVisualProgram, imageVisualProgram, true)
+        : this(session, visualProgram, viewport, registry, textFeature, solidVisualProgram, linearGradientVisualProgram, imageVisualProgram, true)
     {
     }
 
@@ -159,7 +157,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         UiDisplayListResourceRegistry? registry,
         TextRenderFeature? textFeature,
         IGraphicsShaderProgram? solidVisualProgram,
-        IGraphicsShaderProgram? roundedSliceVisualProgram,
         IGraphicsShaderProgram? linearGradientVisualProgram,
         IGraphicsShaderProgram? imageVisualProgram,
         bool validate)
@@ -178,7 +175,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _session = session;
         _defaultVisualProgram = visualProgram;
         _solidVisualProgram = solidVisualProgram;
-        _roundedSliceVisualProgram = roundedSliceVisualProgram;
         _linearGradientVisualProgram = linearGradientVisualProgram;
         _imageVisualProgram = imageVisualProgram;
         _viewport = viewport;
@@ -702,7 +698,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             instanceCount,
             program,
             layer,
-            _visualBlendStates.RefAt(firstOrderIndex));
+            layer == UiVisualRenderLayer.Glow
+                ? RenderBlendState.FromMode(RenderBlendMode.Additive)
+                : _visualBlendStates.RefAt(firstOrderIndex));
         var pass = graph.AddRasterPass(visualPass.Description, visualPass);
         graph.UseColorAttachment(
             pass,
@@ -1720,13 +1718,6 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         {
             shaderVisualKind = UiVisualKind.SolidRectangle;
             return _solidVisualProgram;
-        }
-
-        if ((visual.Kind == UiVisualKind.RoundedRectangle || visual.Kind == UiVisualKind.Border) &&
-            !UiDisplayListGeometry.IsZero(visual.Paint.CornerRadii) &&
-            _roundedSliceVisualProgram is not null)
-        {
-            return _roundedSliceVisualProgram;
         }
 
         return _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");

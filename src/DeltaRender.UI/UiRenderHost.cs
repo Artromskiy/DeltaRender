@@ -84,7 +84,6 @@ public static class UiRenderHost
             registry: registry,
             textFeature: textFeature,
             solidVisualProgram: CreateSolidRectangleProgram(),
-            roundedSliceVisualProgram: rounded,
             linearGradientVisualProgram: CreateLinearGradientProgram(),
             imageVisualProgram: CreateImageProgram());
     }
