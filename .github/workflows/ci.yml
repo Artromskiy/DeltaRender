@@ -91,8 +91,24 @@ jobs:
           path: ${{ env.NUGET_PACKAGES }}
           key: delta-render-nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
           restore-keys: delta-render-nuget-${{ runner.os }}-
-      - name: Install software Vulkan
-        run: sudo apt-get update && sudo apt-get install -y jq glslang-tools spirv-tools mesa-vulkan-drivers vulkan-tools
+      - name: Install software Vulkan build dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq cmake ninja-build glslang-tools spirv-tools vulkan-tools
+      - name: Checkout SwiftShader
+        uses: actions/checkout@v7
+        with:
+          repository: google/swiftshader
+          path: third_party/SwiftShader
+      - name: Build SwiftShader
+        run: |
+          cmake -S third_party/SwiftShader -B third_party/SwiftShader/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build third_party/SwiftShader/build --target vk_swiftshader --parallel 2
+          swiftshader_library="$(find third_party/SwiftShader/build -type f -name 'libvk_swiftshader.so' -print -quit)"
+          test -n "$swiftshader_library"
+          swiftshader_manifest="$(find third_party/SwiftShader -type f -name 'vk_swiftshader_icd.json' -print -quit)"
+          test -n "$swiftshader_manifest"
+          swiftshader_library="$(realpath "$swiftshader_library")"
+          jq --arg library "$swiftshader_library" '.ICD.library_path = $library' "$swiftshader_manifest" > "$RUNNER_TEMP/vk_swiftshader_icd.json"
+          echo "SWIFTSHADER_ICD=$RUNNER_TEMP/vk_swiftshader_icd.json" >> "$GITHUB_ENV"
       - name: Materialize Six Labors license
         env:
           SIXLABORS_LICENSE: ${{ secrets.SIXLABORS_LICENSE }}
@@ -137,9 +153,17 @@ jobs:
             --force-evaluate \
             --ignore-failed-sources
           dotnet build DeltaRender.slnx -c Release --no-restore
-      - name: Run tests
+      - name: Run tests on SwiftShader
         working-directory: DeltaRender
-        run: dotnet test tests/DeltaRender.Tests/DeltaRender.Tests.csproj -c Release --no-build --no-restore
+        run: ./eng/run-software-vulkan.sh --driver swiftshader
+      - name: Upload software Vulkan artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: delta-render-software-vulkan-${{ github.run_number }}
+          path: DeltaRender/artifacts/software-vulkan
+          if-no-files-found: warn
+          retention-days: 14
       - name: Benchmark discovery smoke
         shell: bash
         working-directory: DeltaRender

@@ -85,6 +85,32 @@ dotnet run --project samples/DeltaRender.Smoke/DeltaRender.Smoke.csproj \
 On macOS, restore/build/run the same explicit RID so `libMoltenVK.dylib` is
 copied beside the executable. Treat skipped GPU tests separately from external
 SPIR-V validation. Do not run benchmark measurements during ordinary review.
+
+### Software Vulkan check
+
+GitHub Actions builds the official SwiftShader software Vulkan implementation,
+stages its ICD manifest and runs the test project and headless graphics
+playground with SwiftShader selected explicitly through `VK_DRIVER_FILES`. The
+check verifies the ICD manifest, its native library and the reported SwiftShader
+device before running the RenderGraph path. It never falls back to MoltenVK or
+a physical GPU. The Vulkan summary, test log and headless PPM are uploaded as
+CI artifacts. Test cases are enumerated and run in isolated test-host
+processes; this preserves every assertion while preventing a native
+font/Vulkan teardown failure in one host from aborting unrelated cases.
+
+After a Release build, run the same check locally with an installed SwiftShader
+ICD:
+
+```bash
+SWIFTSHADER_ICD=/absolute/path/vk_swiftshader_icd.json \
+  ./eng/run-software-vulkan.sh --driver swiftshader
+```
+
+Add `--conformance` to either command to run the existing Maths compute
+RenderGraph runner against the checked-out DeltaMaths bundle and DeltaShader
+artifact catalog. Missing software ICDs are reported as errors; the command
+does not silently use MoltenVK.
+
 DeltaShader is the sole shader source and compilation owner. Render projects
 consume the generated program/factory API, final `ShaderArtifact`/`ShaderAbi`
 and typed packers from the producer's private `DeltaShader.Tool` NuGet
