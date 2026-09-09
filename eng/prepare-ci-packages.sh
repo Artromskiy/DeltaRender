@@ -53,12 +53,12 @@ fi
 pack_project "$text_root/src/DeltaText/DeltaText.csproj" 0.0.8.9999 \
     -p:SixLaborsFontsAssemblyPath="$sixlabors_fonts_assembly"
 
-dotnet restore "$shader_root/DeltaShader.slnx" "${msbuild_args[@]}"
 for project in \
     "$shader_root/src/DeltaShader.Contract/DeltaShader.Contract.csproj" \
     "$shader_root/src/DeltaShader.Compiler/DeltaShader.Compiler.csproj" \
     "$shader_root/src/DeltaShader.Analyzers/DeltaShader.Analyzers.csproj" \
     "$shader_root/src/DeltaShader.Tool/DeltaShader.Tool.csproj"; do
+    dotnet restore "$project" "${restore_args[@]}"
     pack_project "$project" 0.0.25
 done
 
