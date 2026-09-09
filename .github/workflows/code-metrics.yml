@@ -26,15 +26,47 @@ jobs:
         with:
           repository: Artromskiy/DeltaMaths
           path: DeltaMaths
+      - name: Checkout DeltaXAML sibling
+        uses: actions/checkout@v5
+        with:
+          repository: Artromskiy/DeltaXAML
+          path: DeltaXAML
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.x
             10.x
+      - name: Configure GitHub Packages
+        working-directory: DeltaRender
+        run: |
+          dotnet nuget add source \
+            https://nuget.pkg.github.com/Artromskiy/index.json \
+            --name github-artromskiy \
+            --username "${{ github.repository_owner }}" \
+            --password "${{ github.token }}" \
+            --store-password-in-clear-text
+      - name: Install shader and Vulkan tools
+        run: sudo apt-get update && sudo apt-get install -y jq glslang-tools spirv-tools mesa-vulkan-drivers vulkan-tools
+      - name: Materialize Six Labors license
+        env:
+          SIXLABORS_LICENSE: ${{ secrets.SIXLABORS_LICENSE }}
+        run: |
+          printf '%s' "$SIXLABORS_LICENSE" > "$RUNNER_TEMP/sixlabors.lic"
+          echo "SixLaborsLicenseFile=$RUNNER_TEMP/sixlabors.lic" >> "$GITHUB_ENV"
+      - name: Prepare current Render packages
+        working-directory: DeltaRender
+        env:
+          NUGET_GITHUB_SOURCE: https://nuget.pkg.github.com/Artromskiy/index.json
+        run: ./eng/prepare-ci-packages.sh "$RUNNER_TEMP/delta-render-packages"
       - name: Restore
         working-directory: DeltaRender
-        run: dotnet restore DeltaRender.slnx
+        run: |
+          dotnet restore DeltaRender.slnx \
+            --source "$RUNNER_TEMP/delta-render-packages" \
+            --source https://api.nuget.org/v3/index.json \
+            --source https://nuget.pkg.github.com/Artromskiy/index.json \
+            --ignore-failed-sources
       - name: Verify formatting
         continue-on-error: true
         working-directory: DeltaRender

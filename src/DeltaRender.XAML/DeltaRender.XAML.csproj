@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="DeltaRender" />
-    <ProjectReference Include="DeltaRender.Text\DeltaRender.Text.csproj" />
+    <ProjectReference Include="..\DeltaRender.Text\DeltaRender.Text.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>

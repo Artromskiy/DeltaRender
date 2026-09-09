@@ -18,6 +18,7 @@ legacy_aliases="$(rg -n \
   --glob '!**/generated/**' \
   --glob '!tools/DeltaRender.FullscreenShaders/Shaders/**' \
   --glob '!tools/DeltaRender.SquareShaders/Shaders/**' \
+  --glob '!src/DeltaRender.Text/Shaders/**' \
   'using Delta\.Maths;|using Maths[[:space:]]*=[[:space:]]*Delta\.Maths\.maths|global::Delta\.Maths\.Maths|\bDeltaMaths\.|\bmaths\.' \
   "$repo_root/src" "$repo_root/tools" "$repo_root/samples" \
   "$repo_root/tests" "$repo_root/benchmarks" 2>/dev/null || true)"

@@ -14,5 +14,6 @@
     <PackageReference Include="DeltaRender.Vulkan" />
     <PackageReference Include="DeltaShader.Contract" />
     <ProjectReference Include="../../src/DeltaRender.Mesh/DeltaRender.Mesh.csproj" />
+    <ProjectReference Include="../../../DeltaShader/src/DeltaShader/DeltaShader.csproj" />
   </ItemGroup>
 </Project>

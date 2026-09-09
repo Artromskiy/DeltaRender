@@ -96,7 +96,7 @@ require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
     '<PackageReference Include="DeltaRender" />' \
     'DeltaRender.XAML must consume the base package'
 require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
-    'DeltaRender.Text\DeltaRender.Text.csproj' \
+    '..\DeltaRender.Text\DeltaRender.Text.csproj' \
     'DeltaRender.XAML must retain its internal text adapter edge'
 require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \
     'DeltaRender.UIShaders/DeltaRender.UIShaders.csproj' \

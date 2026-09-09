@@ -50,9 +50,10 @@ public sealed class TextShaderDistanceConventionTests
         foreach (var fileName in FragmentShaders)
         {
             var source = File.ReadAllText(ShaderPath(fileName));
-            Assert.Contains("vec4 delta_helper_Premultiply(vec4 arg_color)", source, StringComparison.Ordinal);
-            Assert.Contains("arg_color.w * arg_color.xyz", source, StringComparison.Ordinal);
-            Assert.Contains("delta_helper_Premultiply(arg_", source, StringComparison.Ordinal);
+            Assert.Contains("vec4 delta_helper_PremultiplyProduct(vec4 arg_color, vec4 arg_glyphColor)", source, StringComparison.Ordinal);
+            Assert.Contains("float alpha = arg_color.w * arg_glyphColor.w", source, StringComparison.Ordinal);
+            Assert.Contains("alpha * arg_color.xyz * arg_glyphColor.xyz", source, StringComparison.Ordinal);
+            Assert.Contains("delta_helper_PremultiplyProduct(arg_", source, StringComparison.Ordinal);
             Assert.DoesNotContain(" * GlyphColor * ", source, StringComparison.Ordinal);
         }
     }
@@ -110,7 +111,7 @@ public sealed class TextShaderDistanceConventionTests
         const float blurRadius = 2f;
         const float edge = 0.25f;
         var outsideDistance = Decode(Encode(-distanceRange, distanceRange), distanceRange);
-        var shadowOutside = MathF.Max(-outsideDistance, 0f);
+        var shadowOutside = Maths.Max(-outsideDistance, 0f);
         var coverage = 1f - SmoothStep(0f, blurRadius + edge, shadowOutside);
 
         Assert.Equal(0f, coverage);
@@ -127,7 +128,7 @@ public sealed class TextShaderDistanceConventionTests
 
     private static float SmoothStep(float minimum, float maximum, float value)
     {
-        var t = Math.Clamp((value - minimum) / (maximum - minimum), 0f, 1f);
+        var t = Maths.Clamp((value - minimum) / (maximum - minimum), 0f, 1f);
         return t * t * (3f - 2f * t);
     }
 }

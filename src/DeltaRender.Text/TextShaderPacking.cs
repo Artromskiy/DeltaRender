@@ -24,13 +24,13 @@ internal static class TextShaderPacking
     private static uint GetMaxPushConstantSize()
     {
         var size = SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
-        size = Math.Max(size, MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, SdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, SdfTextOuterGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, MsdfTextOuterGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, MsdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
-        size = Math.Max(size, MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextOuterGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextOuterGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         return size;
     }
 

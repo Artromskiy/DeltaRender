@@ -667,8 +667,8 @@ public sealed class TextRenderFeatureTests
         var second = atlas.GetOrCreateGlyph(run, run.Glyphs.Span[1], 1);
 
         Assert.Equal(first.PageIndex, second.PageIndex);
-        var firstRight = (int)MathF.Round(first.UvRect.Z * atlas.Width);
-        var secondLeft = (int)MathF.Round(second.UvRect.X * atlas.Width);
+        var firstRight = (int)Maths.Round(first.UvRect.Z * atlas.Width);
+        var secondLeft = (int)Maths.Round(second.UvRect.X * atlas.Width);
         Assert.Equal(1, secondLeft - firstRight);
     }
 

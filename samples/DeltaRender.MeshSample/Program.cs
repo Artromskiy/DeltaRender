@@ -34,7 +34,7 @@ internal static class Program
         {
             var vertexSpirv = await File.ReadAllBytesAsync(vertexPath).ConfigureAwait(false);
             var fragmentSpirv = await File.ReadAllBytesAsync(fragmentPath).ConfigureAwait(false);
-            var program = MeshShadersGraphicsShaderProgram.CreateProgram(vertexSpirv, fragmentSpirv);
+            var program = MeshGraphicsShaderProgram.CreateProgram(vertexSpirv, fragmentSpirv);
 
             var renderer = new VulkanRenderer(new VulkanRendererOptions());
             await using var rendererScope = renderer.ConfigureAwait(false);
@@ -136,7 +136,7 @@ internal static class Program
             new() { Position = new float4(0.65f, 0.55f, 0f, 1f), Normal = new float3(0f, 0f, 1f), Uv = new float2(1f, 1f) },
         ];
 
-        private static readonly byte[] VertexData = MeshShadersGraphicsShaderProgram.PackMeshVertexElements(Vertices);
+        private static readonly byte[] VertexData = MeshGraphicsShaderProgram.PackMeshVertexElements(Vertices);
 
         private static readonly byte[] IndexData = [0, 0, 1, 0, 2, 0, 2, 0, 1, 0, 3, 0];
 

@@ -50,7 +50,7 @@ internal static class ValueComparer
         for (var lane = 0; lane < expected.Words.Length; lane++)
         {
             if (isFloat && (isHalf
-                    ? AcceptHalf(expected.Words[lane], actual[lane], absoluteTolerance, relativeTolerance, Math.Max(maxUlps, 1), out absolute, out relative, out ulp)
+                    ? AcceptHalf(expected.Words[lane], actual[lane], absoluteTolerance, relativeTolerance, maxUlps > 1 ? maxUlps : 1, out absolute, out relative, out ulp)
                     : AcceptFloat(expected.Words[lane], actual[lane], absoluteTolerance, relativeTolerance, maxUlps, out absolute, out relative, out ulp)))
             {
                 continue;
