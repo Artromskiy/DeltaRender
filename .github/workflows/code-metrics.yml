@@ -50,17 +50,6 @@ jobs:
           dotnet-version: |
             8.x
             10.x
-      - name: Configure GitHub Packages
-        working-directory: DeltaRender
-        env:
-          NUGET_GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
-        run: |
-          dotnet nuget add source \
-            https://nuget.pkg.github.com/Artromskiy/index.json \
-            --name github-artromskiy \
-            --username "${{ github.repository_owner }}" \
-            --password "$NUGET_GITHUB_TOKEN" \
-            --store-password-in-clear-text
       - name: Install shader and Vulkan tools
         run: sudo apt-get update && sudo apt-get install -y jq glslang-tools spirv-tools mesa-vulkan-drivers vulkan-tools
       - name: Materialize Six Labors license
