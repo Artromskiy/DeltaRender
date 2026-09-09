@@ -35,7 +35,7 @@
 
   <ItemGroup>
     <None Include="fixtures\delta-text-atlas\**\*" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../../DeltaText/tests/DeltaText.Tests/Fixtures/NotoSans-Regular.ttf" Link="fixtures/NotoSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../DeltaText/tests/DeltaText.Tests/Fixtures/NotoSans-Regular.ttf" Link="Fixtures/NotoSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="CopyDeltaRenderTextShaderArtifacts" AfterTargets="Build">
