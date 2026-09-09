@@ -66,6 +66,11 @@ jobs:
         with:
           repository: Artromskiy/DeltaXAML
           path: DeltaXAML
+      - name: Checkout DeltaDiagnostics sibling
+        uses: actions/checkout@v7
+        with:
+          repository: Artromskiy/DeltaDiagnostics
+          path: DeltaDiagnostics
       - name: Check package boundaries
         working-directory: DeltaRender
         run: ./eng/check-package-boundaries.sh
@@ -108,6 +113,7 @@ jobs:
             --source "$RUNNER_TEMP/delta-render-packages" \
             --source https://api.nuget.org/v3/index.json \
             --source https://nuget.pkg.github.com/Artromskiy/index.json \
+            --force-evaluate \
             --ignore-failed-sources
           dotnet build DeltaRender.slnx -c Release --no-restore
       - name: Run tests

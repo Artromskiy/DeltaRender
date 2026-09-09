@@ -8,6 +8,7 @@ shader_root="$(cd "$repo_root/../DeltaShader" && pwd)"
 maths_root="$(cd "$repo_root/../DeltaMaths" && pwd)"
 xaml_root="$(cd "$repo_root/../DeltaXAML" && pwd)"
 text_root="$(cd "$repo_root/../DeltaText" && pwd)"
+diagnostics_root="$(cd "$repo_root/../DeltaDiagnostics" && pwd)"
 mkdir -p "$feed"
 
 msbuild_args=(--disable-build-servers -m:1 /p:UseSharedCompilation=false -v:minimal)
@@ -28,7 +29,12 @@ pack_project() {
 dotnet restore "$maths_root/src/DeltaMaths/DeltaMaths.csproj" "${msbuild_args[@]}"
 pack_project "$maths_root/src/DeltaMaths/DeltaMaths.csproj" 0.0.10.9999
 
-dotnet restore "$text_root/src/DeltaText/DeltaText.csproj" "${msbuild_args[@]}"
+dotnet restore "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostics.Contract.csproj" "${msbuild_args[@]}"
+pack_project "$diagnostics_root/src/DeltaDiagnostics.Contract/Delta.Diagnostics.Contract.csproj" 0.0.3.9999
+
+dotnet restore "$text_root/src/DeltaText/DeltaText.csproj" \
+    -p:SixLaborsFontsPackageSource="${NUGET_GITHUB_SOURCE:-$nuget_source}" \
+    "${msbuild_args[@]}"
 sixlabors_fonts_assembly="${SixLaborsFontsAssemblyPath:-${SIXLABORS_FONTS_ASSEMBLY_PATH:-}}"
 if [[ -z "$sixlabors_fonts_assembly" ]]; then
     sixlabors_fonts_assembly="$(find "${NUGET_PACKAGES:-$HOME/.nuget/packages}/sixlabors.fonts.delta" \

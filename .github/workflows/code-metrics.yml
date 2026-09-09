@@ -31,6 +31,11 @@ jobs:
         with:
           repository: Artromskiy/DeltaXAML
           path: DeltaXAML
+      - name: Checkout DeltaDiagnostics sibling
+        uses: actions/checkout@v5
+        with:
+          repository: Artromskiy/DeltaDiagnostics
+          path: DeltaDiagnostics
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
@@ -66,6 +71,7 @@ jobs:
             --source "$RUNNER_TEMP/delta-render-packages" \
             --source https://api.nuget.org/v3/index.json \
             --source https://nuget.pkg.github.com/Artromskiy/index.json \
+            --force-evaluate \
             --ignore-failed-sources
       - name: Verify formatting
         continue-on-error: true
