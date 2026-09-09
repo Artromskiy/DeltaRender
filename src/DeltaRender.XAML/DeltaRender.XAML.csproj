@@ -7,12 +7,12 @@
     <AssemblyName>DeltaRender.XAML</AssemblyName>
     <PackageId>DeltaRender.XAML</PackageId>
     <Version>0.0.1</Version>
-    <IsPackable>true</IsPackable>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DeltaRender" />
-    <ProjectReference Include="..\DeltaRender.Text\DeltaRender.Text.csproj" />
+    <ProjectReference Include="DeltaRender.Text\DeltaRender.Text.csproj" />
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" />
     <PackageReference Include="DeltaXAML.Contract" />
   </ItemGroup>

@@ -86,7 +86,7 @@ require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
     '<PackageReference Include="DeltaRender" />' \
     'DeltaRender.Text must consume the base package'
 require_literal src/DeltaRender.Text/DeltaRender.Text.csproj \
-    'DeltaRender.Text/DeltaRender.Text.csproj' \
+    '<DeltaShaderSource Include="Shaders/**/*.cs" />' \
     'DeltaRender.Text must retain its source-only shader producer edge'
 
 require_literal src/DeltaRender.XAML/DeltaRender.XAML.csproj \

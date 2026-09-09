@@ -5,6 +5,7 @@ namespace Delta.Render.Platform.SDL3;
 public sealed class Sdl3Window : IRenderWindow
 {
     private readonly ulong _handle;
+    private WindowMetrics _metrics;
     private bool _closed;
 
     public Sdl3Window(ulong handle, WindowConfiguration configuration)
@@ -21,7 +22,7 @@ public sealed class Sdl3Window : IRenderWindow
         Handle = new RenderWindowHandle(handle);
         _handle = handle;
         Title = configuration.Title;
-        Metrics = metrics;
+        _metrics = metrics;
         VulkanSurfaceSource = new Sdl3VulkanSurfaceSource(handle);
     }
 
@@ -31,7 +32,18 @@ public sealed class Sdl3Window : IRenderWindow
 
     public string Title { get; }
 
-    public WindowMetrics Metrics { get; private set; }
+    public WindowMetrics Metrics
+    {
+        get
+        {
+            if (Sdl3Runtime.TryGetWindowMetrics(_handle, out var metrics, out _))
+            {
+                _metrics = metrics;
+            }
+
+            return _metrics;
+        }
+    }
 
     public bool IsClosed => _closed;
 
