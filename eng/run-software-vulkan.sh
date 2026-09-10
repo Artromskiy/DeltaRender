@@ -136,6 +136,10 @@ if ! dotnet run --project "$repo_root/samples/DeltaRender.HeadlessShaderPlaygrou
 fi
 [[ -s "$image_path" ]] || fail "headless graphics playground produced an empty image"
 
+if ! "$script_dir/run-render-golden.sh" 2>&1 | tee "$output_dir/render-golden.log"; then
+    fail "low-resolution render golden check failed"
+fi
+
 if ((run_conformance)); then
     conformance_dir="$output_dir/math-conformance"
     mkdir -p "$conformance_dir"

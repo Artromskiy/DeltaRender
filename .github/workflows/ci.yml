@@ -97,6 +97,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: google/swiftshader
+          ref: 694585a05946e1ed49b6bd577ca6537cbb57f025
           path: third_party/SwiftShader
       - name: Build SwiftShader
         run: |
