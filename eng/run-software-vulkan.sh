@@ -79,12 +79,16 @@ mkdir -p "$output_dir"
 export VK_DRIVER_FILES="$icd_path"
 export DELTA_RENDER_VULKAN_DRIVER="$driver"
 if [[ "$(uname -s)" == "Darwin" ]]; then
+    loader_found=0
     for loader_dir in /opt/homebrew/opt/vulkan-loader/lib /usr/local/opt/vulkan-loader/lib; do
-        if [[ -d "$loader_dir" ]]; then
+        if [[ -f "$loader_dir/libvulkan.1.dylib" ]]; then
             export DYLD_LIBRARY_PATH="$loader_dir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+            export DELTA_RENDER_VULKAN_LOADER="$loader_dir/libvulkan.1.dylib"
+            loader_found=1
             break
         fi
     done
+    ((loader_found)) || fail "Vulkan loader libvulkan.1.dylib was not found for software driver"
 fi
 
 vulkan_info="$output_dir/vulkaninfo.txt"

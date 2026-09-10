@@ -26,7 +26,10 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
         if (OperatingSystem.IsMacOS())
         {
-            _nativeContext = new DefaultNativeContext(UsesSoftwareVulkan() ? VulkanLoaderLibraryNames : MoltenVkLibraryNames);
+            var software = UsesSoftwareVulkan();
+            var loaderPath = software ? Environment.GetEnvironmentVariable("DELTA_RENDER_VULKAN_LOADER") : null;
+            _nativeContext = new DefaultNativeContext(
+                loaderPath is { Length: > 0 } ? [loaderPath] : software ? VulkanLoaderLibraryNames : MoltenVkLibraryNames);
             Api = new Vk(_nativeContext);
         }
         else
