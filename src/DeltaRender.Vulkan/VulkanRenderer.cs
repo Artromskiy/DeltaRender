@@ -73,7 +73,12 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
 
     public bool IsValidationEnabled { get; private set; }
 
-    private static bool UsesSoftwareVulkan() => string.Equals(Environment.GetEnvironmentVariable("DELTA_RENDER_VULKAN_DRIVER"), "swiftshader", StringComparison.OrdinalIgnoreCase);
+    private static bool UsesSoftwareVulkan()
+    {
+        var driver = Environment.GetEnvironmentVariable("DELTA_RENDER_VULKAN_DRIVER");
+        return string.Equals(driver, "swiftshader", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(driver, "lavapipe", StringComparison.OrdinalIgnoreCase);
+    }
 
     public ValueTask DisposeAsync() => DisposeResourcesAsync();
 
