@@ -106,6 +106,12 @@ SWIFTSHADER_ICD=/absolute/path/vk_swiftshader_icd.json \
   ./eng/run-software-vulkan.sh --driver swiftshader
 ```
 
+For macOS CPU Vulkan coverage, use an explicit lavapipe manifest and loader
+library; set `LAVAPIPE_ICD=/absolute/path/lvp_icd.json` and run
+`./eng/run-software-vulkan.sh --driver lavapipe`. The script verifies the
+selected device through `vulkaninfo` and reports `shaderFloat64`; Maths double
+conformance requires that feature to be exposed by the installed lavapipe.
+
 Add `--conformance` to either command to run the existing Maths compute
 RenderGraph runner against the checked-out DeltaMaths bundle and DeltaShader
 artifact catalog. Missing software ICDs are reported as errors; the command

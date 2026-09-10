@@ -10,9 +10,9 @@ run_conformance=0
 
 usage() {
     cat <<'EOF'
-Usage: ./eng/run-software-vulkan.sh --driver swiftshader [--icd /absolute/path/vk_swiftshader_icd.json] [--conformance]
+Usage: ./eng/run-software-vulkan.sh --driver {swiftshader|lavapipe} [--icd /absolute/path/icd.json] [--conformance]
 
-The command requires a Release build. It selects the SwiftShader software Vulkan ICD,
+The command requires a Release build. It selects the requested software Vulkan ICD,
 runs the DeltaRender tests and the headless graphics playground, and writes
 diagnostics under artifacts/software-vulkan.
 EOF
@@ -26,7 +26,7 @@ fail() {
 while (($# > 0)); do
     case "$1" in
         --driver)
-            (($# >= 2)) || fail "--driver requires swiftshader"
+            (($# >= 2)) || fail "--driver requires swiftshader or lavapipe"
             driver="$2"
             shift 2
             ;;
@@ -50,13 +50,13 @@ while (($# > 0)); do
     esac
 done
 
-[[ "$driver" == "swiftshader" ]] || {
+[[ "$driver" == "swiftshader" || "$driver" == "lavapipe" ]] || {
     usage >&2
-    fail "--driver is required"
+    fail "--driver must be swiftshader or lavapipe"
 }
 
 if [[ -z "$icd_path" ]]; then
-    icd_path="${SWIFTSHADER_ICD:-}"
+    if [[ "$driver" == "swiftshader" ]]; then icd_path="${SWIFTSHADER_ICD:-}"; else icd_path="${LAVAPIPE_ICD:-}"; fi
 fi
 
 [[ -n "$icd_path" ]] || fail "software Vulkan ICD manifest was not found"
@@ -77,7 +77,7 @@ fi
 rm -rf "$output_dir"
 mkdir -p "$output_dir"
 export VK_DRIVER_FILES="$icd_path"
-export DELTA_RENDER_VULKAN_DRIVER=swiftshader
+export DELTA_RENDER_VULKAN_DRIVER="$driver"
 if [[ "$(uname -s)" == "Darwin" ]]; then
     for loader_dir in /opt/homebrew/opt/vulkan-loader/lib /usr/local/opt/vulkan-loader/lib; do
         if [[ -d "$loader_dir" ]]; then
@@ -92,7 +92,13 @@ if ! vulkaninfo --summary >"$vulkan_info" 2>&1; then
     tail -n 40 "$vulkan_info" >&2 || true
     fail "vulkaninfo could not initialize the selected ICD"
 fi
-rg -qi 'swiftshader' "$vulkan_info" || fail "vulkaninfo did not report SwiftShader"
+if [[ "$driver" == "swiftshader" ]]; then
+    rg -qi 'swiftshader' "$vulkan_info" || fail "vulkaninfo did not report SwiftShader"
+else
+    rg -qi 'lavapipe|llvmpipe' "$vulkan_info" || fail "vulkaninfo did not report lavapipe"
+    printf 'lavapipe shaderFloat64 support (reported by Vulkan): '
+    rg -i 'shaderFloat64' "$vulkan_info" | head -n 1 || printf 'not reported (double conformance may be unavailable)\n'
+fi
 
 test_project="$repo_root/tests/DeltaRender.Tests/DeltaRender.Tests.csproj"
 test_list_log="$output_dir/test-list.log"
