@@ -92,24 +92,23 @@ jobs:
           key: delta-render-nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
           restore-keys: delta-render-nuget-${{ runner.os }}-
       - name: Install software Vulkan build dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq cmake ninja-build glslang-tools spirv-tools vulkan-tools ripgrep
-      - name: Checkout SwiftShader
-        uses: actions/checkout@v7
-        with:
-          repository: google/swiftshader
-          ref: 694585a05946e1ed49b6bd577ca6537cbb57f025
-          path: third_party/SwiftShader
-      - name: Build SwiftShader
+        run: sudo apt-get update && sudo apt-get install -y jq glslang-tools mesa-vulkan-drivers ripgrep spirv-tools vulkan-tools
+      - name: Select lavapipe Vulkan backend
         run: |
-          cmake -S third_party/SwiftShader -B third_party/SwiftShader/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/SwiftShader/build --target vk_swiftshader --parallel 2
-          swiftshader_library="$(find third_party/SwiftShader/build -type f -name 'libvk_swiftshader.so' -print -quit)"
-          test -n "$swiftshader_library"
-          swiftshader_manifest="$(find third_party/SwiftShader -type f -name 'vk_swiftshader_icd.json' -print -quit)"
-          test -n "$swiftshader_manifest"
-          swiftshader_library="$(realpath "$swiftshader_library")"
-          jq --arg library "$swiftshader_library" '.ICD.library_path = $library' "$swiftshader_manifest" > "$RUNNER_TEMP/vk_swiftshader_icd.json"
-          echo "SWIFTSHADER_ICD=$RUNNER_TEMP/vk_swiftshader_icd.json" >> "$GITHUB_ENV"
+          set -euo pipefail
+          lavapipe_icd="$(find /usr/share/vulkan/icd.d -type f -name 'lvp_icd.*.json' -print -quit)"
+          if [[ -z "$lavapipe_icd" ]]; then
+            echo "::error::The mesa-vulkan-drivers package did not provide an lvp ICD manifest."
+            exit 1
+          fi
+          echo "LAVAPIPE_ICD=$lavapipe_icd" >> "$GITHUB_ENV"
+          export VK_DRIVER_FILES="$lavapipe_icd"
+          vulkaninfo --summary > "$RUNNER_TEMP/lavapipe-vulkaninfo-summary.txt"
+          if ! rg -qi 'lavapipe|llvmpipe' "$RUNNER_TEMP/lavapipe-vulkaninfo-summary.txt"; then
+            echo "::error::Vulkan did not report the selected lavapipe device; refusing an implicit driver fallback."
+            cat "$RUNNER_TEMP/lavapipe-vulkaninfo-summary.txt"
+            exit 1
+          fi
       - name: Materialize Six Labors license
         env:
           SIXLABORS_LICENSE: ${{ secrets.SIXLABORS_LICENSE }}
@@ -154,9 +153,9 @@ jobs:
             --force-evaluate \
             --ignore-failed-sources
           dotnet build DeltaRender.slnx -c Release --no-restore
-      - name: Run tests on SwiftShader
+      - name: Run tests on lavapipe
         working-directory: DeltaRender
-        run: ./eng/run-software-vulkan.sh --driver swiftshader
+        run: ./eng/run-software-vulkan.sh --driver lavapipe --icd "$LAVAPIPE_ICD"
       - name: Upload software Vulkan artifacts
         if: always()
         uses: actions/upload-artifact@v7

@@ -88,29 +88,28 @@ SPIR-V validation. Do not run benchmark measurements during ordinary review.
 
 ### Software Vulkan check
 
-GitHub Actions builds the official SwiftShader software Vulkan implementation,
-stages its ICD manifest and runs the test project and headless graphics
-playground with SwiftShader selected explicitly through `VK_DRIVER_FILES`. The
-check verifies the ICD manifest, its native library and the reported SwiftShader
-device before running the RenderGraph path. It never falls back to MoltenVK or
-a physical GPU. The Vulkan summary, test log and headless PPM are uploaded as
-CI artifacts. Test cases are enumerated and run in isolated test-host
-processes; this preserves every assertion while preventing a native
-font/Vulkan teardown failure in one host from aborting unrelated cases.
+GitHub Actions installs the Mesa Vulkan drivers, selects the lavapipe ICD
+manifest explicitly through `VK_DRIVER_FILES` and runs the test project and
+headless graphics playground with lavapipe. The check verifies the ICD
+manifest, its native library and the reported llvmpipe device before running
+the RenderGraph path. It never falls back to MoltenVK or a physical GPU. The
+Vulkan summary, test log and headless PPM are uploaded as CI artifacts. Test
+cases are enumerated and run in isolated test-host processes; this preserves
+every assertion while preventing a native font/Vulkan teardown failure in one
+host from aborting unrelated cases.
 
-After a Release build, run the same check locally with an installed SwiftShader
+After a Release build, run the same check locally with an installed lavapipe
 ICD:
 
 ```bash
-SWIFTSHADER_ICD=/absolute/path/vk_swiftshader_icd.json \
-  ./eng/run-software-vulkan.sh --driver swiftshader
+LAVAPIPE_ICD=/absolute/path/lvp_icd.json \
+  ./eng/run-software-vulkan.sh --driver lavapipe
 ```
 
-For macOS CPU Vulkan coverage, use an explicit lavapipe manifest and loader
-library; set `LAVAPIPE_ICD=/absolute/path/lvp_icd.json` and run
-`./eng/run-software-vulkan.sh --driver lavapipe`. The script verifies the
-selected device through `vulkaninfo` and reports `shaderFloat64`; Maths double
-conformance requires that feature to be exposed by the installed lavapipe.
+The script verifies the selected device through `vulkaninfo` and reports
+`shaderFloat64`; Maths double conformance requires that feature to be exposed
+by the installed lavapipe. On macOS, also provide the Vulkan loader directory
+as described by the script's explicit loader check.
 
 Add `--conformance` to either command to run the existing Maths compute
 RenderGraph runner against the checked-out DeltaMaths bundle and DeltaShader
