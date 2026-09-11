@@ -10,7 +10,7 @@ run_conformance=0
 
 usage() {
     cat <<'EOF'
-Usage: ./eng/run-software-vulkan.sh --driver {swiftshader|lavapipe} [--icd /absolute/path/icd.json] [--conformance]
+Usage: ./eng/run-software-vulkan.sh --driver lavapipe [--icd /absolute/path/icd.json] [--conformance]
 
 The command requires a Release build. It selects the requested software Vulkan ICD,
 runs the DeltaRender tests and the headless graphics playground, and writes
@@ -26,7 +26,7 @@ fail() {
 while (($# > 0)); do
     case "$1" in
         --driver)
-            (($# >= 2)) || fail "--driver requires swiftshader or lavapipe"
+            (($# >= 2)) || fail "--driver requires lavapipe"
             driver="$2"
             shift 2
             ;;
@@ -50,13 +50,13 @@ while (($# > 0)); do
     esac
 done
 
-[[ "$driver" == "swiftshader" || "$driver" == "lavapipe" ]] || {
+[[ "$driver" == "lavapipe" ]] || {
     usage >&2
-    fail "--driver must be swiftshader or lavapipe"
+    fail "--driver must be lavapipe"
 }
 
 if [[ -z "$icd_path" ]]; then
-    if [[ "$driver" == "swiftshader" ]]; then icd_path="${SWIFTSHADER_ICD:-}"; else icd_path="${LAVAPIPE_ICD:-}"; fi
+    icd_path="${LAVAPIPE_ICD:-}"
 fi
 
 [[ -n "$icd_path" ]] || fail "software Vulkan ICD manifest was not found"
@@ -96,13 +96,9 @@ if ! vulkaninfo --summary >"$vulkan_info" 2>&1; then
     tail -n 40 "$vulkan_info" >&2 || true
     fail "vulkaninfo could not initialize the selected ICD"
 fi
-if [[ "$driver" == "swiftshader" ]]; then
-    rg -qi 'swiftshader' "$vulkan_info" || fail "vulkaninfo did not report SwiftShader"
-else
-    rg -qi 'lavapipe|llvmpipe' "$vulkan_info" || fail "vulkaninfo did not report lavapipe"
-    printf 'lavapipe shaderFloat64 support (reported by Vulkan): '
-    rg -i 'shaderFloat64' "$vulkan_info" | head -n 1 || printf 'not reported (double conformance may be unavailable)\n'
-fi
+rg -qi 'lavapipe|llvmpipe' "$vulkan_info" || fail "vulkaninfo did not report lavapipe"
+printf 'lavapipe shaderFloat64 support (reported by Vulkan): '
+rg -i 'shaderFloat64' "$vulkan_info" | head -n 1 || printf 'not reported (double conformance may be unavailable)\n'
 
 test_project="$repo_root/tests/DeltaRender.Tests/DeltaRender.Tests.csproj"
 test_list_log="$output_dir/test-list.log"

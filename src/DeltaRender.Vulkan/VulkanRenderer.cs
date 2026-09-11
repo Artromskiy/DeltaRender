@@ -79,8 +79,7 @@ public sealed unsafe class VulkanRenderer : IAsyncDisposable
     private static bool UsesSoftwareVulkan()
     {
         var driver = Environment.GetEnvironmentVariable("DELTA_RENDER_VULKAN_DRIVER");
-        return string.Equals(driver, "swiftshader", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(driver, "lavapipe", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(driver, "lavapipe", StringComparison.OrdinalIgnoreCase);
     }
 
     public ValueTask DisposeAsync() => DisposeResourcesAsync();
