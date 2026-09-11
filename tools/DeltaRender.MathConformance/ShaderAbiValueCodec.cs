@@ -136,7 +136,9 @@ internal static class ShaderAbiValueCodec
         }
 
         var componentCount = remaining / columnCount;
-        if ((ulong)componentCount * (uint)scalarByteWidth > layout.MatrixStride)
+        // CaseValue stores every scalar as 32-bit words, including two words for
+        // a double. Convert the word count back to bytes before checking stride.
+        if ((ulong)componentCount * sizeof(uint) > layout.MatrixStride)
         {
             throw new InvalidDataException("Matrix components exceed the ShaderAbi column stride.");
         }
@@ -171,7 +173,7 @@ internal static class ShaderAbiValueCodec
         }
 
         var componentCount = remaining / columnCount;
-        if ((ulong)componentCount * (uint)scalarByteWidth > layout.MatrixStride)
+        if ((ulong)componentCount * sizeof(uint) > layout.MatrixStride)
         {
             throw new InvalidDataException("Matrix components exceed the ShaderAbi column stride.");
         }
