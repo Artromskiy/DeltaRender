@@ -72,6 +72,10 @@ if [[ "$library_path" = /* ]]; then
 else
     library_file="$(cd -- "$(dirname -- "$icd_path")" && cd -- "$(dirname -- "$library_path")" && pwd)/$(basename -- "$library_path")"
 fi
+if [[ ! -f "$library_file" && "$library_path" != /* ]]; then
+    library_name="$(basename -- "$library_path")"
+    library_file="$(find /usr/lib /lib -type f -name "$library_name" -print -quit 2>/dev/null || true)"
+fi
 [[ -f "$library_file" ]] || fail "ICD native library does not exist: $library_file"
 
 rm -rf "$output_dir"
