@@ -702,13 +702,10 @@ internal static class UiVisualShaderContract
             PaintUnits.Device => 1f,
             _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
         };
-        var width = layer.SideWidths == default
-            ? layer.Width
-            : Maths.Max(layer.SideWidths.x, Maths.Max(layer.SideWidths.y, Maths.Max(layer.SideWidths.z, layer.SideWidths.w)));
         return new(
             layer.Color,
             layer.Offset * scale,
-            width * scale,
+            layer.Width * scale,
             layer.BlurRadius * scale,
             layer.Spread * scale,
             layer.Intensity);
