@@ -17,6 +17,7 @@ public readonly struct SolidLinearGradientParameters
     public readonly float4 Stop3Color;
     public readonly float4 StopPositions;
     public readonly float StopCount;
+    public readonly float Radial;
     public readonly float4 OutlineColor;
     public readonly float OutlineWidth;
 
@@ -30,6 +31,7 @@ public readonly struct SolidLinearGradientParameters
         float4 stop3Color,
         float4 stopPositions,
         float stopCount,
+        float radial,
         float4 outlineColor,
         float outlineWidth)
     {
@@ -42,6 +44,7 @@ public readonly struct SolidLinearGradientParameters
         Stop3Color = stop3Color;
         StopPositions = stopPositions;
         StopCount = stopCount;
+        Radial = radial;
         OutlineColor = outlineColor;
         OutlineWidth = outlineWidth;
     }
@@ -61,6 +64,7 @@ public struct SolidLinearGradientPayload
     public VertexColor Stop3Color;
     public VertexColor StopPositions;
     public BorderWidth StopCount;
+    public BorderWidth Radial;
     public FragmentColor OutlineColor;
     public BorderWidth OutlineWidth;
 }
@@ -157,6 +161,7 @@ public static class UiResourceShaders
             Stop3Color = new VertexColor(instance.Stop3Color),
             StopPositions = new VertexColor(instance.StopPositions),
             StopCount = new BorderWidth(instance.StopCount),
+            Radial = new BorderWidth(instance.Radial),
             OutlineColor = new FragmentColor(instance.OutlineColor),
             OutlineWidth = new BorderWidth(instance.OutlineWidth),
         };
@@ -166,8 +171,16 @@ public static class UiResourceShaders
     public static float4 SolidLinearGradientFragment(in SolidLinearGradientFragmentContext context, in SolidLinearGradientPayload input)
     {
         float2 pixel = input.Rect.Value.xy + input.Uv.Value * input.Rect.Value.zw;
-        float2 delta = input.GradientLine.Value.zw - input.GradientLine.Value.xy;
-        float t = clamp(dot(pixel - input.GradientLine.Value.xy, delta) / max(dot(delta, delta), 0.0001f), 0f, 1f);
+        float t;
+        if (input.Radial.Value > 0.5f)
+        {
+            t = clamp(length(pixel - input.GradientLine.Value.xy) / max(input.GradientLine.Value.z, 0.0001f), 0f, 1f);
+        }
+        else
+        {
+            float2 delta = input.GradientLine.Value.zw - input.GradientLine.Value.xy;
+            t = clamp(dot(pixel - input.GradientLine.Value.xy, delta) / max(dot(delta, delta), 0.0001f), 0f, 1f);
+        }
         float4 positions = input.StopPositions.Value;
         float3 availableStops = step(
             new float3(2f, 3f, 4f),

@@ -19,6 +19,7 @@ namespace Delta.Render.XAML;
 public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 {
     private static readonly UiVisualTypeId CanonicalLinearGradientVisual = new(new Guid("3419D85F-C401-4DD8-86DD-D2A68359D301"));
+    private static readonly UiVisualTypeId CanonicalRadialGradientVisual = new(new Guid("3419D85F-C401-4DD8-86DD-D2A68359D302"));
     private const int VisualUploadMergeGapBytes = 64;
     private readonly IRenderFrameSession? _session;
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
@@ -1690,7 +1691,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (visual.Kind == UiVisualKind.Custom &&
-            visual.VisualType == CanonicalLinearGradientVisual)
+            visual.VisualType is { } visualType &&
+            (visualType == CanonicalLinearGradientVisual || visualType == CanonicalRadialGradientVisual))
         {
             shaderVisualKind = UiVisualKind.SolidRectangle;
             shaderPath = UiVisualShaderPath.SolidLinearGradient;
@@ -1840,7 +1842,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                 return true;
             case UiVisualKind.Custom:
-                if (visual.VisualType == CanonicalLinearGradientVisual)
+                if (visual.VisualType is { } visualType &&
+                    (visualType == CanonicalLinearGradientVisual || visualType == CanonicalRadialGradientVisual))
                 {
                     if (!visual.Resource.IsValid || !_registry.TryResolveLinearGradient(visual.Resource, out _))
                     {

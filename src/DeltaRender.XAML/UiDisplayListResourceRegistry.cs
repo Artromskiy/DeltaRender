@@ -71,6 +71,7 @@ public sealed class UiDisplayListResourceRegistry
             resource.Units,
             resource.IsRelativeToBounds,
             resource.AngleDegrees,
+            resource.IsRadial,
             resource.OutlineColor,
             resource.OutlineWidth,
             stops);
@@ -662,6 +663,7 @@ public sealed class UiDisplayListResourceRegistry
             {
                 IsRelativeToBounds = registration.IsRelativeToBounds,
                 AngleDegrees = registration.AngleDegrees,
+                IsRadial = registration.IsRadial,
                 OutlineColor = registration.OutlineColor,
                 OutlineWidth = registration.OutlineWidth,
             };
@@ -703,6 +705,7 @@ public sealed class UiDisplayListResourceRegistry
         PaintUnits Units,
         bool IsRelativeToBounds,
         float AngleDegrees,
+        bool IsRadial,
         float4 OutlineColor,
         float OutlineWidth,
         UiLinearGradientStop[] Stops);
@@ -828,6 +831,9 @@ public readonly record struct UiLinearGradientResource(
 {
     /// <summary>Gets whether the gradient line is resolved against each visual's arranged bounds.</summary>
     public bool IsRelativeToBounds { get; init; }
+
+    /// <summary>Gets whether the gradient uses radial distance from <see cref="Start"/>.</summary>
+    public bool IsRadial { get; init; }
 
     /// <summary>Gets the CSS-compatible clockwise angle used for relative gradients.</summary>
     public float AngleDegrees { get; init; }

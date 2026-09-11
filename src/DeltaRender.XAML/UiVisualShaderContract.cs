@@ -542,10 +542,18 @@ internal static class UiVisualShaderContract
             var stop1 = gradient.Stops[1];
             var stop2 = gradient.Stops.Count > 2 ? gradient.Stops[2] : stop1;
             var stop3 = gradient.Stops.Count > 3 ? gradient.Stops[3] : stop2;
-            var start = gradient.IsRelativeToBounds
+            var start = gradient.IsRadial
+                ? new float2(
+                    visual.Bounds.x + gradient.Start.x * visual.Bounds.z,
+                    visual.Bounds.y + gradient.Start.y * visual.Bounds.w)
+                : gradient.IsRelativeToBounds
                 ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: false)
                 : ToPhysical(gradient.Start, gradient.Units, dpiScale);
-            var end = gradient.IsRelativeToBounds
+            var end = gradient.IsRadial
+                ? new float2(
+                    gradient.End.x * MathF.Min(visual.Bounds.z, visual.Bounds.w),
+                    0f)
+                : gradient.IsRelativeToBounds
                 ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: true)
                 : ToPhysical(gradient.End, gradient.Units, dpiScale);
             return SolidLinearGradientGraphicsShaderProgram.PackSolidLinearGradientVertexInstancesElement(
@@ -559,6 +567,7 @@ internal static class UiVisualShaderContract
                     stop3.Color,
                     new float4(stop0.Position, stop1.Position, stop2.Position, stop3.Position),
                     gradient.Stops.Count,
+                    gradient.IsRadial ? 1f : 0f,
                     gradient.OutlineColor,
                     gradient.OutlineWidth * (gradient.Units == PaintUnits.Logical ? dpiScale : 1f)),
                 destination);
