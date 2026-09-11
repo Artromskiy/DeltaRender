@@ -15,11 +15,11 @@ public sealed class UiVisualShaderContractTests
     public void GeneratedLinearGradientArtifactAcceptsAndPacksCopiedStops()
     {
         var program = SolidLinearGradientGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
-        var visual = new UiVisualDraw(
+        var visual = UiVisualDraw.WithPaint(
             UiVisualKind.SolidRectangle,
             default,
             new float4(10, 20, 30, 40),
-            new float4(1, 1, 1, 1),
+            UiVisualPaint.Solid(new float4(1, 1, 1, 1)) with { CornerRadii = new float4(2, 3, 4, 5) },
             UiClipId.None,
             new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000011")));
         var stops = new[]
@@ -33,9 +33,20 @@ public sealed class UiVisualShaderContractTests
             new float2(0, 0),
             new float2(40, 0),
             PaintUnits.Device,
-            stops);
+            stops)
+        {
+            IsRelativeToBounds = true,
+            AngleDegrees = 110f,
+            OutlineColor = new float4(1, 0.54f, 0, 1),
+            OutlineWidth = 1f,
+        };
         var registry = new UiDisplayListResourceRegistry();
         registry.RegisterLinearGradient(resource);
+        Assert.True(registry.TryResolveLinearGradient(resource.Resource, out var registered));
+        Assert.True(registered.IsRelativeToBounds);
+        Assert.Equal(110f, registered.AngleDegrees);
+        Assert.Equal(resource.OutlineColor, registered.OutlineColor);
+        Assert.Equal(resource.OutlineWidth, registered.OutlineWidth);
 
         Assert.True(UiVisualShaderContract.TryDescribe(
             program,
@@ -48,10 +59,10 @@ public sealed class UiVisualShaderContractTests
         Assert.Equal(8u, pushConstantSize);
 
         stops[0] = new UiLinearGradientStop(0f, new float4(0, 0, 0, 1));
-        Span<byte> packed = stackalloc byte[128];
+        Span<byte> packed = stackalloc byte[176];
         var effect = default(UiEffectResource);
         var mask = default(float4);
-        Assert.Equal(128, UiVisualShaderContract.PackInstance(
+        Assert.Equal(176, UiVisualShaderContract.PackInstance(
             shaderKind,
             in visual,
             in effect,
@@ -67,9 +78,30 @@ public sealed class UiVisualShaderContractTests
                     new UiLinearGradientStop(0f, new float4(1, 0, 0, 1)),
                     new UiLinearGradientStop(0.5f, new float4(0, 1, 0, 1)),
                     new UiLinearGradientStop(1f, new float4(0, 0, 1, 1)),
-                }),
+                })
+            {
+                IsRelativeToBounds = resource.IsRelativeToBounds,
+                AngleDegrees = resource.AngleDegrees,
+                OutlineColor = resource.OutlineColor,
+                OutlineWidth = resource.OutlineWidth,
+            },
             packed));
-        Assert.Equal(1f, ReadFloat(packed, 32));
+        Assert.Equal(2f, ReadFloat(packed, 32));
+        Assert.Equal(1f, ReadFloat(packed, 48));
+        Assert.Equal(1f, ReadFloat(packed, 144));
+        Assert.Equal(1f, ReadFloat(packed, 160));
+
+        var resizedVisual = visual with { Bounds = new float4(10, 20, 60, 40) };
+        Span<byte> resizedPacked = stackalloc byte[176];
+        Assert.Equal(176, UiVisualShaderContract.PackInstance(
+            shaderKind,
+            in resizedVisual,
+            in effect,
+            in mask,
+            1f,
+            resource,
+            resizedPacked));
+        Assert.NotEqual(ReadFloat(packed, 16), ReadFloat(resizedPacked, 16));
     }
 
     [Fact]

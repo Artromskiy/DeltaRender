@@ -65,7 +65,15 @@ public sealed class UiDisplayListResourceRegistry
             stops[index] = resource.Stops[index];
         }
 
-        _linearGradients[resource.Resource] = new(resource.Start, resource.End, resource.Units, stops);
+        _linearGradients[resource.Resource] = new(
+            resource.Start,
+            resource.End,
+            resource.Units,
+            resource.IsRelativeToBounds,
+            resource.AngleDegrees,
+            resource.OutlineColor,
+            resource.OutlineWidth,
+            stops);
     }
 
     /// <summary>Associates a cached-mask identity with session-owned texture resources and its normalized UV rectangle.</summary>
@@ -650,7 +658,13 @@ public sealed class UiDisplayListResourceRegistry
                 registration.Start,
                 registration.End,
                 registration.Units,
-                registration.Stops);
+                registration.Stops)
+            {
+                IsRelativeToBounds = registration.IsRelativeToBounds,
+                AngleDegrees = registration.AngleDegrees,
+                OutlineColor = registration.OutlineColor,
+                OutlineWidth = registration.OutlineWidth,
+            };
             return true;
         }
 
@@ -687,6 +701,10 @@ public sealed class UiDisplayListResourceRegistry
         float2 Start,
         float2 End,
         PaintUnits Units,
+        bool IsRelativeToBounds,
+        float AngleDegrees,
+        float4 OutlineColor,
+        float OutlineWidth,
         UiLinearGradientStop[] Stops);
 
     private readonly record struct MaskRegistration(
@@ -774,6 +792,8 @@ public sealed class UiDisplayListResourceRegistry
         if (resource.Stops is null || resource.Units is not (PaintUnits.Logical or PaintUnits.Device) ||
             !float.IsFinite(resource.Start.x) || !float.IsFinite(resource.Start.y) ||
             !float.IsFinite(resource.End.x) || !float.IsFinite(resource.End.y) ||
+            resource.IsRelativeToBounds && !float.IsFinite(resource.AngleDegrees) ||
+            !IsFinite(resource.OutlineColor) || !float.IsFinite(resource.OutlineWidth) || resource.OutlineWidth < 0 ||
             resource.Stops.Count is < 2 or > 4)
         {
             throw new ArgumentException("A linear gradient requires finite coordinates, valid units, and two to four stops.", nameof(resource));
@@ -792,6 +812,9 @@ public sealed class UiDisplayListResourceRegistry
             previousPosition = stop.Position;
         }
     }
+
+    private static bool IsFinite(float4 value) =>
+        float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z) && float.IsFinite(value.w);
 }
 
 public readonly record struct UiLinearGradientStop(float Position, float4 Color);
@@ -801,4 +824,17 @@ public readonly record struct UiLinearGradientResource(
     float2 Start,
     float2 End,
     PaintUnits Units,
-    IReadOnlyList<UiLinearGradientStop> Stops);
+    IReadOnlyList<UiLinearGradientStop> Stops)
+{
+    /// <summary>Gets whether the gradient line is resolved against each visual's arranged bounds.</summary>
+    public bool IsRelativeToBounds { get; init; }
+
+    /// <summary>Gets the CSS-compatible clockwise angle used for relative gradients.</summary>
+    public float AngleDegrees { get; init; }
+
+    /// <summary>Gets the optional solid outline color drawn around the gradient bounds.</summary>
+    public float4 OutlineColor { get; init; }
+
+    /// <summary>Gets the optional solid outline width in the gradient's units.</summary>
+    public float OutlineWidth { get; init; }
+}

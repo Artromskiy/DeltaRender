@@ -542,22 +542,43 @@ internal static class UiVisualShaderContract
             var stop1 = gradient.Stops[1];
             var stop2 = gradient.Stops.Count > 2 ? gradient.Stops[2] : stop1;
             var stop3 = gradient.Stops.Count > 3 ? gradient.Stops[3] : stop2;
-            var start = ToPhysical(gradient.Start, gradient.Units, dpiScale);
-            var end = ToPhysical(gradient.End, gradient.Units, dpiScale);
+            var start = gradient.IsRelativeToBounds
+                ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: false)
+                : ToPhysical(gradient.Start, gradient.Units, dpiScale);
+            var end = gradient.IsRelativeToBounds
+                ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: true)
+                : ToPhysical(gradient.End, gradient.Units, dpiScale);
             return SolidLinearGradientGraphicsShaderProgram.PackSolidLinearGradientVertexInstancesElement(
                 new SolidLinearGradientParameters(
                     visual.Bounds,
                     new float4(start.x, start.y, end.x, end.y),
+                    visual.Paint.CornerRadii,
                     stop0.Color,
                     stop1.Color,
                     stop2.Color,
                     stop3.Color,
                     new float4(stop0.Position, stop1.Position, stop2.Position, stop3.Position),
-                    gradient.Stops.Count),
+                    gradient.Stops.Count,
+                    gradient.OutlineColor,
+                    gradient.OutlineWidth * (gradient.Units == PaintUnits.Logical ? dpiScale : 1f)),
                 destination);
         }
 
         return PackInstance(shaderKind, in visual, in effectResource, in maskUvRect, dpiScale, destination);
+    }
+
+    private static float2 RelativeGradientEndpoint(float4 bounds, float angleDegrees, bool end)
+    {
+        var angle = angleDegrees * (MathF.PI / 180f);
+        var directionX = MathF.Sin(angle);
+        var directionY = -MathF.Cos(angle);
+        var halfLength = 0.5f * (MathF.Abs(bounds.z * directionX) + MathF.Abs(bounds.w * directionY));
+        var centerX = bounds.x + bounds.z * 0.5f;
+        var centerY = bounds.y + bounds.w * 0.5f;
+        var sign = end ? 1f : -1f;
+        return new float2(
+            centerX + sign * directionX * halfLength,
+            centerY + sign * directionY * halfLength);
     }
 
     internal static int PackInstance(
