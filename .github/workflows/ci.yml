@@ -154,6 +154,19 @@ jobs:
       - name: Run tests on lavapipe
         working-directory: DeltaRender
         run: ./eng/run-software-vulkan.sh --driver lavapipe --icd "$LAVAPIPE_ICD"
+      - name: Run Maths conformance on lavapipe
+        working-directory: DeltaRender
+        env:
+          VK_DRIVER_FILES: ${{ env.LAVAPIPE_ICD }}
+          DELTA_RENDER_VULKAN_DRIVER: lavapipe
+        run: |
+          mkdir -p artifacts/software-vulkan/math-conformance
+          dotnet run --project tools/DeltaRender.MathConformance/DeltaRender.MathConformance.csproj \
+            -c Release --no-build --no-restore -- \
+            --cases ../DeltaMaths/Tests/DeltaMaths.Conformance/shader-conformance.json \
+            --artifacts ../DeltaShader/artifacts/maths-conformance \
+            --report artifacts/software-vulkan/math-conformance/render-report.json \
+            --text-report artifacts/software-vulkan/math-conformance/render-report.txt
       - name: Upload software Vulkan artifacts
         if: always()
         uses: actions/upload-artifact@v7
