@@ -138,7 +138,7 @@ internal sealed record RunnerOptions(
     public static RunnerOptions Parse(string[] args)
     {
         return new RunnerOptions(
-            Get(args, "--cases") ?? Path.Combine("..", "DeltaMaths", "Tests", "Maths.Conformance", "shader-conformance.json"),
+            Get(args, "--cases") ?? Path.Combine("..", "DeltaMaths", "tests", "DeltaMaths.Conformance", "shader-conformance.json"),
             Get(args, "--artifacts") ?? Path.Combine("..", "DeltaShader", "artifacts", "maths-conformance"),
             Get(args, "--report") ?? Path.Combine("artifacts", "math-conformance", "render-report.json"),
             Get(args, "--text-report") ?? Path.Combine("artifacts", "math-conformance", "render-report.txt"));

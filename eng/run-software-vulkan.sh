@@ -155,7 +155,7 @@ if ((run_conformance)); then
     mkdir -p "$conformance_dir"
     if ! dotnet run --project "$repo_root/tools/DeltaRender.MathConformance/DeltaRender.MathConformance.csproj" \
         -c Release --no-build --no-restore -- \
-        --cases "$repo_root/../DeltaMaths/Tests/DeltaMaths.Conformance/shader-conformance.json" \
+        --cases "$repo_root/../DeltaMaths/tests/DeltaMaths.Conformance/shader-conformance.json" \
         --artifacts "$repo_root/../DeltaShader/artifacts/maths-conformance" \
         --report "$conformance_dir/render-report.json" \
         --text-report "$conformance_dir/render-report.txt" 2>&1 | tee "$conformance_dir/runner.log"; then

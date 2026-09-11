@@ -163,7 +163,7 @@ jobs:
           mkdir -p artifacts/software-vulkan/math-conformance
           dotnet run --project tools/DeltaRender.MathConformance/DeltaRender.MathConformance.csproj \
             -c Release --no-build --no-restore -- \
-            --cases ../DeltaMaths/Tests/DeltaMaths.Conformance/shader-conformance.json \
+            --cases ../DeltaMaths/tests/DeltaMaths.Conformance/shader-conformance.json \
             --artifacts ../DeltaShader/artifacts/maths-conformance \
             --report artifacts/software-vulkan/math-conformance/render-report.json \
             --text-report artifacts/software-vulkan/math-conformance/render-report.txt
