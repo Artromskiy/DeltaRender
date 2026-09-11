@@ -83,7 +83,6 @@ jobs:
       - name: Prepare current Render packages
         working-directory: DeltaRender
         env:
-          NUGET_GITHUB_SOURCE: https://nuget.pkg.github.com/Artromskiy/index.json
           SIXLABORS_FONTS_SOURCE: ${{ runner.temp }}/sixlabors-feed
         run: ./eng/prepare-ci-packages.sh "$RUNNER_TEMP/delta-render-packages"
       - name: Restore
@@ -92,7 +91,6 @@ jobs:
           dotnet restore DeltaRender.slnx \
             --source "$RUNNER_TEMP/delta-render-packages" \
             --source https://api.nuget.org/v3/index.json \
-            --source https://nuget.pkg.github.com/Artromskiy/index.json \
             --force-evaluate \
             --ignore-failed-sources
       - name: Verify formatting
