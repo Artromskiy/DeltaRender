@@ -27,6 +27,26 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void ConsumeResolvesCanonicalLinearGradientCustomVisual()
+    {
+        var program = SolidLinearGradientGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        var registry = new UiDisplayListResourceRegistry();
+        using var feature = new UiDisplayListGraphFeature(
+            new RecordingSession(), program, new PixelExtent(100, 80), registry,
+            linearGradientVisualProgram: program);
+        var resourceId = new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000021"));
+        registry.RegisterLinearGradient(new UiLinearGradientResource(
+            resourceId, new float2(0, 0), new float2(100, 0), PaintUnits.Device,
+            [new UiLinearGradientStop(0, new float4(1, 0, 0, 1)), new UiLinearGradientStop(1, new float4(0, 0, 1, 1))]));
+        var visual = new UiVisualDraw(UiVisualKind.Custom, new UiVisualTypeId(new Guid("3419D85F-C401-4DD8-86DD-D2A68359D301")),
+            new float4(0, 0, 100, 80), new float4(1, 1, 1, 1), UiClipId.None, resourceId);
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            [visual], Array.Empty<UiClipRegion>(), Array.Empty<UiTextDraw>(),
+            [new UiDrawRef(UiDrawKind.Visual, 0)])), string.Join(" | ", feature.Diagnostics));
+    }
+
+    [Fact]
     public void ConsumePreservesCanonicalDrawOrder()
     {
         var visuals = new[]

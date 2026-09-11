@@ -18,6 +18,7 @@ namespace Delta.Render.XAML;
 /// </summary>
 public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 {
+    private static readonly UiVisualTypeId CanonicalLinearGradientVisual = new(new Guid("3419D85F-C401-4DD8-86DD-D2A68359D301"));
     private const int VisualUploadMergeGapBytes = 64;
     private readonly IRenderFrameSession? _session;
     private readonly IGraphicsShaderProgram? _defaultVisualProgram;
@@ -1688,6 +1689,14 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             return _imageVisualProgram ?? _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");
         }
 
+        if (visual.Kind == UiVisualKind.Custom &&
+            visual.VisualType == CanonicalLinearGradientVisual)
+        {
+            shaderVisualKind = UiVisualKind.SolidRectangle;
+            shaderPath = UiVisualShaderPath.SolidLinearGradient;
+            return _linearGradientVisualProgram ?? _defaultVisualProgram ?? throw new InvalidOperationException("The visual shader program is not configured.");
+        }
+
         if (visual.Kind == UiVisualKind.SolidRectangle && visual.Resource.IsValid &&
             _registry.TryResolveLinearGradient(visual.Resource, out _))
         {
@@ -1831,6 +1840,17 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                 return true;
             case UiVisualKind.Custom:
+                if (visual.VisualType == CanonicalLinearGradientVisual)
+                {
+                    if (!visual.Resource.IsValid || !_registry.TryResolveLinearGradient(visual.Resource, out _))
+                    {
+                        AddDiagnostic($"Linear-gradient resource at Order[{orderIndex}] is not registered.");
+                        return false;
+                    }
+
+                    return true;
+                }
+
                 if (!visual.VisualType.IsValid || !_registry.TryResolveVisualType(visual.VisualType, out _))
                 {
                     AddDiagnostic($"Custom visual at Order[{orderIndex}] has an unknown visual type identity.");
