@@ -195,11 +195,6 @@ public static class UiResourceShaders
         float2 localPixel = input.Uv.Value * input.Rect.Value.zw;
         float distance = GetRoundedDistance(input.CornerRadii.Value, localPixel, input.Rect.Value.zw * 0.5f);
         float outerCoverage = Coverage(distance);
-        if (input.OutlineWidth.Value <= 0f || input.OutlineColor.Value.w <= 0f)
-        {
-            return UiColorMath.Premultiply(color, outerCoverage);
-        }
-
         float innerCoverage = min(Coverage(distance + input.OutlineWidth.Value), outerCoverage);
         float4 fill = UiColorMath.Premultiply(color);
         float4 outlinedFill = Over(UiColorMath.Premultiply(input.OutlineColor.Value), fill);
