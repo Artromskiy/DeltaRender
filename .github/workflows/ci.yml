@@ -142,6 +142,9 @@ jobs:
         env:
           SIXLABORS_FONTS_SOURCE: ${{ runner.temp }}/sixlabors-feed
         run: ./eng/prepare-ci-packages.sh "$RUNNER_TEMP/delta-render-packages"
+      - name: Prepare Maths conformance artifacts
+        working-directory: DeltaShader
+        run: ./eng/prepare-maths-conformance-artifacts.sh artifacts/maths-conformance ../DeltaMaths
       - name: Restore and build
         working-directory: DeltaRender
         run: |
