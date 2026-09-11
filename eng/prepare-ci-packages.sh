@@ -68,14 +68,7 @@ for project in \
     "$xaml_root/src/DeltaXAML.Compiler/DeltaXAML.Compiler.csproj" \
     "$xaml_root/src/DeltaXAML.Generator/DeltaXAML.Generator.csproj"; do
     dotnet restore "$project" "${msbuild_args[@]}"
-    case "$project" in
-        */DeltaXAML.Compiler/DeltaXAML.Compiler.csproj|*/DeltaXAML.Generator/DeltaXAML.Generator.csproj)
-            pack_project "$project" 0.0.15.9999
-            ;;
-        *)
-            pack_project "$project" 0.0.16.9999
-            ;;
-    esac
+    pack_project "$project" 0.0.17.9999
 done
 
 dotnet restore "$repo_root/src/DeltaRender/DeltaRender.csproj" "${restore_args[@]}"

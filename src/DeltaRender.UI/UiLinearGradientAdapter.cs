@@ -40,4 +40,38 @@ public static class UiLinearGradientAdapter
             OutlineWidth = gradient.OutlineWidth,
         });
     }
+
+    public static void RegisterRadialGradient(
+        UiDisplayListResourceRegistry registry,
+        UiResourceId resourceId,
+        UiRadialGradient gradient)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        var sourceStops = gradient.Stops.Span;
+        var stops = new UiLinearGradientStop[sourceStops.Length];
+        for (var index = 0; index < stops.Length; index++)
+        {
+            var stop = sourceStops[index];
+            stops[index] = new(stop.Offset, new float4(
+                stop.Color.R / 255f, stop.Color.G / 255f,
+                stop.Color.B / 255f, stop.Color.A / 255f));
+        }
+
+        registry.RegisterLinearGradient(new UiLinearGradientResource(
+            resourceId,
+            new float2(gradient.CenterX, gradient.CenterY),
+            new float2(gradient.Radius, 0f),
+            PaintUnits.Logical,
+            stops)
+        {
+            IsRelativeToBounds = true,
+            IsRadial = true,
+            OutlineColor = new float4(
+                gradient.OutlineColor.R / 255f,
+                gradient.OutlineColor.G / 255f,
+                gradient.OutlineColor.B / 255f,
+                gradient.OutlineColor.A / 255f),
+            OutlineWidth = gradient.OutlineWidth,
+        });
+    }
 }
