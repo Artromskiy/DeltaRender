@@ -543,16 +543,12 @@ internal static class UiVisualShaderContract
             var stop2 = gradient.Stops.Count > 2 ? gradient.Stops[2] : stop1;
             var stop3 = gradient.Stops.Count > 3 ? gradient.Stops[3] : stop2;
             var start = gradient.IsRadial
-                ? new float2(
-                    visual.Bounds.x + gradient.Start.x * visual.Bounds.z,
-                    visual.Bounds.y + gradient.Start.y * visual.Bounds.w)
+                ? ResolveRadialCenter(visual.Bounds, gradient.Start, gradient.Units, dpiScale)
                 : gradient.IsRelativeToBounds
                 ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: false)
                 : ToPhysical(gradient.Start, gradient.Units, dpiScale);
             var end = gradient.IsRadial
-                ? new float2(
-                    gradient.End.x * MathF.Min(visual.Bounds.z, visual.Bounds.w),
-                    0f)
+                ? ResolveRadialRadii(visual.Bounds, gradient.End, gradient.Units, dpiScale)
                 : gradient.IsRelativeToBounds
                 ? RelativeGradientEndpoint(visual.Bounds, gradient.AngleDegrees, end: true)
                 : ToPhysical(gradient.End, gradient.Units, dpiScale);
@@ -569,7 +565,7 @@ internal static class UiVisualShaderContract
                     gradient.Stops.Count,
                     gradient.IsRadial ? 1f : 0f,
                     gradient.OutlineColor,
-                    gradient.OutlineWidth * (gradient.Units == PaintUnits.Logical ? dpiScale : 1f)),
+                    gradient.OutlineWidth * (gradient.IsRadial || gradient.Units == PaintUnits.Logical ? dpiScale : 1f)),
                 destination);
         }
 
@@ -722,6 +718,32 @@ internal static class UiVisualShaderContract
 
     private static float2 ToPhysical(float2 value, PaintUnits units, float dpiScale)
         => units == PaintUnits.Logical ? value * dpiScale : value;
+
+    private static float2 ResolveRadialCenter(float4 bounds, float2 center, PaintUnits units, float dpiScale)
+        => units switch
+        {
+            PaintUnits.Percent => new float2(
+                bounds.x + center.x * bounds.z,
+                bounds.y + center.y * bounds.w),
+            PaintUnits.Logical => new float2(
+                bounds.x + center.x * dpiScale,
+                bounds.y + center.y * dpiScale),
+            PaintUnits.Device => new float2(
+                bounds.x + center.x,
+                bounds.y + center.y),
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown radial gradient unit system."),
+        };
+
+    private static float2 ResolveRadialRadii(float4 bounds, float2 radii, PaintUnits units, float dpiScale)
+        => units switch
+        {
+            PaintUnits.Percent => new float2(
+                radii.x * bounds.z,
+                radii.y * bounds.w),
+            PaintUnits.Logical => radii * dpiScale,
+            PaintUnits.Device => radii,
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown radial gradient unit system."),
+        };
 
 
 

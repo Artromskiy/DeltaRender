@@ -138,18 +138,6 @@ lifetime and diagnostics without loading Vulkan. Vulkan tests then cover the
 same graph executor in compute-only, offscreen and windowed modes. A skipped
 native test is not a successful GPU path.
 
-### Known macOS test-host limitation
-
-On macOS ARM64 with the current .NET 10 test host, the complete
-`TextRenderFeatureTests` class can terminate the host during the multi-page
-atlas test after preceding text tests, while each test and bounded subsets pass
-individually. The observed crash is a host-level SIGSEGV with no Vulkan or SDL
-frames; it is not evidence of a DeltaRender production defect. Do not disable,
-suppress or mark the test passed. Until the runtime/test-host issue is
-resolved, CI must retain the test and record the interrupted class run as an
-environmental failure, while individual test cases remain runnable for
-diagnostics.
-
 ## Code metrics
 
 ### DeltaMaths usage gate

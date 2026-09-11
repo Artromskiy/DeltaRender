@@ -60,11 +60,11 @@ public static class UiLinearGradientAdapter
         registry.RegisterLinearGradient(new UiLinearGradientResource(
             resourceId,
             new float2(gradient.CenterX, gradient.CenterY),
-            new float2(gradient.Radius, 0f),
-            PaintUnits.Logical,
+            new float2(gradient.RadiusX, gradient.RadiusY),
+            gradient.Units,
             stops)
         {
-            IsRelativeToBounds = true,
+            IsRelativeToBounds = gradient.Units == PaintUnits.Percent,
             IsRadial = true,
             OutlineColor = new float4(
                 gradient.OutlineColor.R / 255f,

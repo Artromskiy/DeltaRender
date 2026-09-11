@@ -105,6 +105,105 @@ public sealed class UiVisualShaderContractTests
     }
 
     [Fact]
+    public void RadialPercentRadiusScalesEachAxisIndependently()
+    {
+        var program = SolidLinearGradientGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 20, 100, 50),
+            UiVisualPaint.Solid(new float4(1, 1, 1, 1)),
+            UiClipId.None,
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000013")));
+        var resource = new UiLinearGradientResource(
+            visual.Resource,
+            new float2(0.5f, 0.5f),
+            new float2(0.5f, 0.5f),
+            PaintUnits.Percent,
+            new[]
+            {
+                new UiLinearGradientStop(0f, new float4(1, 0, 0, 1)),
+                new UiLinearGradientStop(1f, new float4(0, 0, 1, 1)),
+            })
+        {
+            IsRadial = true,
+            OutlineWidth = 1f,
+        };
+
+        Assert.True(UiVisualShaderContract.TryDescribe(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.SolidLinearGradient,
+            out var shaderKind,
+            out _,
+            out var diagnostic), diagnostic);
+        Span<byte> packed = stackalloc byte[176];
+        var effect = default(UiEffectResource);
+        var mask = default(float4);
+        Assert.Equal(176, UiVisualShaderContract.PackInstance(
+            shaderKind,
+            in visual,
+            in effect,
+            in mask,
+            2f,
+            resource,
+            packed));
+        Assert.Equal(60f, ReadFloat(packed, 16));
+        Assert.Equal(45f, ReadFloat(packed, 20));
+        Assert.Equal(50f, ReadFloat(packed, 24));
+        Assert.Equal(25f, ReadFloat(packed, 28));
+        Assert.Equal(2f, ReadFloat(packed, 160));
+    }
+
+    [Fact]
+    public void RadialAbsoluteUnitsResolveCenterAndRadiiWithDpi()
+    {
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 20, 100, 50),
+            UiVisualPaint.Solid(new float4(1, 1, 1, 1)),
+            UiClipId.None,
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000014")));
+        var stops = new[]
+        {
+            new UiLinearGradientStop(0f, new float4(1, 0, 0, 1)),
+            new UiLinearGradientStop(1f, new float4(0, 0, 1, 1)),
+        };
+        var logical = new UiLinearGradientResource(
+            visual.Resource,
+            new float2(5f, 4f),
+            new float2(8f, 6f),
+            PaintUnits.Logical,
+            stops)
+        {
+            IsRadial = true,
+        };
+        var device = logical with { Units = PaintUnits.Device };
+        var program = SolidLinearGradientGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        Assert.True(UiVisualShaderContract.TryDescribe(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.SolidLinearGradient,
+            out var shaderKind,
+            out _,
+            out var diagnostic), diagnostic);
+        var effect = default(UiEffectResource);
+        var mask = default(float4);
+        Span<byte> packed = stackalloc byte[176];
+        UiVisualShaderContract.PackInstance(shaderKind, in visual, in effect, in mask, 2f, logical, packed);
+        Assert.Equal(20f, ReadFloat(packed, 16));
+        Assert.Equal(28f, ReadFloat(packed, 20));
+        Assert.Equal(16f, ReadFloat(packed, 24));
+        Assert.Equal(12f, ReadFloat(packed, 28));
+        UiVisualShaderContract.PackInstance(shaderKind, in visual, in effect, in mask, 2f, device, packed);
+        Assert.Equal(15f, ReadFloat(packed, 16));
+        Assert.Equal(24f, ReadFloat(packed, 20));
+        Assert.Equal(8f, ReadFloat(packed, 24));
+        Assert.Equal(6f, ReadFloat(packed, 28));
+    }
+
+    [Fact]
     public void GeneratedImageArtifactAcceptsAndPacksFullUvRect()
     {
         var program = SolidImageGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);

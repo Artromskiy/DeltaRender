@@ -174,7 +174,8 @@ public static class UiResourceShaders
         float t;
         if (input.Radial.Value > 0.5f)
         {
-            t = clamp(length(pixel - input.GradientLine.Value.xy) / max(input.GradientLine.Value.z, 0.0001f), 0f, 1f);
+            float2 radii = max(abs(input.GradientLine.Value.zw), new float2(0.0001f));
+            t = clamp(length((pixel - input.GradientLine.Value.xy) / radii), 0f, 1f);
         }
         else
         {

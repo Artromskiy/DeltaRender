@@ -743,7 +743,7 @@ public sealed class TextRenderFeatureTests
         var transfer = graph.RecordTransfer();
         var raster = graph.RecordRaster();
 
-        Assert.True(session.TextureFormats.Count > 1);
+        Assert.True(session.TextureFormats.Count > 4);
         Assert.Equal(session.TextureFormats.Count, transfer.UploadTextureCount);
         Assert.Equal(transfer.UploadTextureCount, transfer.TextureUploads.Count);
         Assert.True(raster.TextureBindings.Count > 1);

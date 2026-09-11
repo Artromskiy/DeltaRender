@@ -484,6 +484,7 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
         var instances = graph.ImportBuffer(_instanceBuffer);
         _instanceGraphHandle = instances;
+        EnsureArrayCapacity(ref _pageGraphHandles, _atlas.PageCount);
         EnsureArrayCapacity(ref _uploadPageIndices, _atlas.PageCount);
         _uploadPageCount = 0;
         for (var pageIndex = 0; pageIndex < _atlas.PageCount; pageIndex++)

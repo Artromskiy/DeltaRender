@@ -792,14 +792,17 @@ public sealed class UiDisplayListResourceRegistry
             throw new ArgumentException("A linear-gradient resource must have a non-empty identity.", nameof(resource));
         }
 
-        if (resource.Stops is null || resource.Units is not (PaintUnits.Logical or PaintUnits.Device) ||
+        if (resource.Stops is null ||
+            (resource.Units is not (PaintUnits.Logical or PaintUnits.Device) &&
+             !(resource.IsRadial && resource.Units == PaintUnits.Percent)) ||
             !float.IsFinite(resource.Start.x) || !float.IsFinite(resource.Start.y) ||
             !float.IsFinite(resource.End.x) || !float.IsFinite(resource.End.y) ||
             resource.IsRelativeToBounds && !float.IsFinite(resource.AngleDegrees) ||
             !IsFinite(resource.OutlineColor) || !float.IsFinite(resource.OutlineWidth) || resource.OutlineWidth < 0 ||
+            resource.IsRadial && (resource.End.x <= 0f || resource.End.y <= 0f) ||
             resource.Stops.Count is < 2 or > 4)
         {
-            throw new ArgumentException("A linear gradient requires finite coordinates, valid units, and two to four stops.", nameof(resource));
+            throw new ArgumentException("A gradient requires finite coordinates, valid units, positive radial radii, and two to four stops.", nameof(resource));
         }
 
         var previousPosition = -1f;

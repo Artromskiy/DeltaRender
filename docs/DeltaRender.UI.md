@@ -40,10 +40,13 @@ return await UiRenderHost.RunAsync(
 Visual resources are registered by the renderer owner. `RegisterImage` stores
 opaque session-owned texture/sampler handles without taking ownership. A
 `UiLinearGradientResource` copies two to four validated stops at registration;
-its identity is the `UiVisualDraw.Resource` value. The prepared image and
-linear-gradient programs consume only generated ABI packers. Unregistering or
-clearing a registration does not release session resources; the session owns
-their lifetime.
+its identity is the `UiVisualDraw.Resource` value. The same resource shape
+represents radial gradients with `IsRadial`, normalized centers/radii for
+`Percent`, or logical/device geometry. Percent radii are resolved independently
+against visual width and height before the generated gradient shader runs. The
+prepared image and linear/radial-gradient programs consume only generated ABI
+packers. Unregistering or clearing a registration does not release session
+resources; the session owns their lifetime.
 
 `IUiRenderHostContent` exposes only one `UiDocument`, `AdvanceFrame()` and
 neutral `UiInputEvent` delivery. It does not expose Vulkan resources or create
