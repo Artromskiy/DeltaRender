@@ -6,6 +6,7 @@ public sealed class UiRectangleShaderOptimizationTests
 {
     private static readonly string[] FragmentShaders =
     [
+        // The gradient artifact intentionally branches for optional resource outlines.
         "CachedMaskRoundedRectangleFragment.frag.glsl",
         "InnerShadowRoundedRectangleFragment.frag.glsl",
         "RoundedOuterGlowOnlyRectangleFragment.frag.glsl",
@@ -13,7 +14,6 @@ public sealed class UiRectangleShaderOptimizationTests
         "RoundedRectangleFragment.frag.glsl",
         "RoundedStrokeRectangleFragment.frag.glsl",
         "SolidImageRectangleFragment.frag.glsl",
-        "SolidLinearGradientFragment.frag.glsl",
         "SolidOuterGlowOnlyRectangleFragment.frag.glsl",
         "SolidOuterShadowOnlyRectangleFragment.frag.glsl",
         "SolidRectangleFragment.frag.glsl",
