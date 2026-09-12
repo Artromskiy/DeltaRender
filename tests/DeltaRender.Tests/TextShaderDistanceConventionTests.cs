@@ -85,7 +85,7 @@ public sealed class TextShaderDistanceConventionTests
         foreach (var fileName in ShadowFragmentShaders)
         {
             var source = File.ReadAllText(ShaderPath(fileName));
-            Assert.Contains("texture(Atlas, Uv)", source, StringComparison.Ordinal);
+            Assert.Matches(@"texture\(Atlas,\s+interstage_slot_0\.xy\)", source);
             Assert.DoesNotContain("shadowUvOffset", source, StringComparison.Ordinal);
             Assert.DoesNotContain("UvBounds", source, StringComparison.Ordinal);
             Assert.DoesNotContain("fillCoverage", source, StringComparison.Ordinal);
