@@ -321,6 +321,111 @@ public sealed class UiVisualShaderContractTests
     }
 
     [Fact]
+    public void RoundedStrokeArtifactPacksIndependentSideWidths()
+    {
+        var program = RoundedStrokeGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.RoundedRectangle,
+            default,
+            new float4(10, 20, 80, 50),
+            new UiVisualPaint(
+                new float4(0.1f, 0.2f, 0.3f, 1f),
+                new float4(12f),
+                UiEffectSet.None),
+            UiClipId.None,
+            UiResourceId.Empty);
+        var effect = UiEffectResource.CreateVisualStroke(
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000021")),
+            new float4(1f, 0.5f, 0f, 1f),
+            1f,
+            PaintUnits.Logical);
+        effect = effect with
+        {
+            Parameters = effect.Parameters with
+            {
+                Stroke = effect.Parameters.Stroke with { SideWidths = new float4(1f, 2f, 3f, 4f) },
+            },
+        };
+
+        Assert.True(UiVisualShaderContract.TryDescribeInstance(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.RoundedStrokeEffect,
+            out var shaderKind,
+            out _,
+            out var instanceStride,
+            out _,
+            out _,
+            out var diagnostic), diagnostic);
+        Assert.Equal(UiRectangleShaderKind.RoundedStroke, shaderKind);
+        Assert.Equal(112u, instanceStride);
+
+        Span<byte> packed = stackalloc byte[112];
+        Assert.Equal(112, UiVisualShaderContract.PackInstance(
+            shaderKind,
+            in visual,
+            in effect,
+            default,
+            2f,
+            packed));
+        Assert.Equal(2f, ReadFloat(packed, 80));
+        Assert.Equal(4f, ReadFloat(packed, 84));
+        Assert.Equal(6f, ReadFloat(packed, 88));
+        Assert.Equal(8f, ReadFloat(packed, 92));
+    }
+
+    [Fact]
+    public void SolidStrokeArtifactPacksIndependentSideWidths()
+    {
+        var program = SolidStrokeGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        var visual = UiVisualDraw.WithPaint(
+            UiVisualKind.SolidRectangle,
+            default,
+            new float4(10, 20, 80, 50),
+            UiVisualPaint.Solid(new float4(0.1f, 0.2f, 0.3f, 1f)),
+            UiClipId.None,
+            UiResourceId.Empty);
+        var effect = UiEffectResource.CreateVisualStroke(
+            new UiResourceId(Guid.Parse("00000000-0000-0000-0000-000000000022")),
+            new float4(1f, 0.5f, 0f, 1f),
+            1f,
+            PaintUnits.Logical);
+        effect = effect with
+        {
+            Parameters = effect.Parameters with
+            {
+                Stroke = effect.Parameters.Stroke with { SideWidths = new float4(1f, 2f, 3f, 4f) },
+            },
+        };
+
+        Assert.True(UiVisualShaderContract.TryDescribeInstance(
+            program,
+            visual.Kind,
+            UiVisualShaderPath.SolidStrokeEffect,
+            out var shaderKind,
+            out _,
+            out var instanceStride,
+            out _,
+            out _,
+            out var diagnostic), diagnostic);
+        Assert.Equal(UiRectangleShaderKind.SolidStroke, shaderKind);
+        Assert.Equal(80u, instanceStride);
+
+        Span<byte> packed = stackalloc byte[80];
+        Assert.Equal(80, UiVisualShaderContract.PackInstance(
+            shaderKind,
+            in visual,
+            in effect,
+            default,
+            2f,
+            packed));
+        Assert.Equal(2f, ReadFloat(packed, 64));
+        Assert.Equal(4f, ReadFloat(packed, 68));
+        Assert.Equal(6f, ReadFloat(packed, 72));
+        Assert.Equal(8f, ReadFloat(packed, 76));
+    }
+
+    [Fact]
     public void SolidArtifactUsesScissorClipBoundary()
     {
         var program = SolidRectangleGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);

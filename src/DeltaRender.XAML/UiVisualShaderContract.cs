@@ -508,8 +508,7 @@ internal static class UiVisualShaderContract
                 new SolidStrokeRectangleParameters(
                     visual.Bounds,
                     visual.Paint.FillColor,
-                    stroke.Color,
-                    stroke.Width * (effectResource.Parameters.Units == PaintUnits.Logical ? dpiScale : 1f)),
+                    ToShaderEffectLayer(stroke, effectResource.Parameters.Units, dpiScale)),
                 destination);
         }
 
@@ -715,13 +714,19 @@ internal static class UiVisualShaderContract
             PaintUnits.Device => 1f,
             _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown paint unit system."),
         };
+        var sideWidths = layer.SideWidths * scale;
+        if (sideWidths == default)
+        {
+            sideWidths = new float4(layer.Width * scale);
+        }
         return new(
             layer.Color,
             layer.Offset * scale,
             layer.Width * scale,
             layer.BlurRadius * scale,
             layer.Spread * scale,
-            layer.Intensity);
+            layer.Intensity,
+            sideWidths);
     }
 
     private static float2 ToPhysical(float2 value, PaintUnits units, float dpiScale)

@@ -52,13 +52,15 @@ public readonly struct SolidStrokeRectangleParameters
     public readonly float4 FillColor;
     public readonly float4 StrokeColor;
     public readonly float StrokeWidth;
+    public readonly float4 StrokeWidths;
 
-    public SolidStrokeRectangleParameters(float4 rect, float4 fillColor, float4 strokeColor, float strokeWidth)
+    public SolidStrokeRectangleParameters(float4 rect, float4 fillColor, UiEffectLayerParameters stroke)
     {
         Rect = rect;
         FillColor = fillColor;
-        StrokeColor = strokeColor;
-        StrokeWidth = strokeWidth;
+        StrokeColor = stroke.Color;
+        StrokeWidth = stroke.Width;
+        StrokeWidths = stroke.SideWidths;
     }
 }
 
@@ -71,6 +73,7 @@ public struct SolidStrokeRectanglePayload
     public VertexColor FillColor;
     public FragmentColor StrokeColor;
     public BorderWidth StrokeWidth;
+    public BorderWidths StrokeWidths;
 }
 
 public readonly struct SolidStrokeRectangleVertexContext
@@ -144,6 +147,7 @@ public readonly struct RoundedStrokeRectangleParameters
     public readonly float4 StrokeColor;
     public readonly float2 StrokeOffset;
     public readonly float StrokeWidth;
+    public readonly float4 StrokeWidths;
     public readonly float StrokeBlurRadius;
     public readonly float StrokeSpread;
     public readonly float StrokeIntensity;
@@ -160,6 +164,7 @@ public readonly struct RoundedStrokeRectangleParameters
         StrokeColor = stroke.Color;
         StrokeOffset = stroke.Offset;
         StrokeWidth = stroke.Width;
+        StrokeWidths = stroke.SideWidths;
         StrokeBlurRadius = stroke.BlurRadius;
         StrokeSpread = stroke.Spread;
         StrokeIntensity = stroke.Intensity;
@@ -177,6 +182,7 @@ public struct RoundedStrokeRectanglePayload
     public EffectStrokeColor StrokeColor;
     public EffectStrokeGeometry StrokeGeometry;
     public EffectStrokeFalloff StrokeFalloff;
+    public BorderWidths StrokeWidths;
 }
 
 public readonly struct RoundedStrokeRectangleVertexContext
@@ -459,6 +465,7 @@ public readonly struct UiEffectLayerParameters
     public readonly float BlurRadius;
     public readonly float Spread;
     public readonly float Intensity;
+    public readonly float4 SideWidths;
 
     public UiEffectLayerParameters(
         float4 color,
@@ -466,7 +473,8 @@ public readonly struct UiEffectLayerParameters
         float width,
         float blurRadius,
         float spread,
-        float intensity)
+        float intensity,
+        float4 sideWidths)
     {
         Color = color;
         Offset = offset;
@@ -474,6 +482,7 @@ public readonly struct UiEffectLayerParameters
         BlurRadius = blurRadius;
         Spread = spread;
         Intensity = intensity;
+        SideWidths = sideWidths;
     }
 }
 
@@ -500,6 +509,20 @@ public static class UiRectangleShaders
         float2 rightBottom = step(halfSize, pixel);
         float2 topBottom = cornerRadii.xw + rightBottom.x * (cornerRadii.yz - cornerRadii.xw);
         return topBottom.x + rightBottom.y * (topBottom.y - topBottom.x);
+    }
+
+    private static float2 GetCornerRadiusPair(
+        float4 cornerRadiiX,
+        float4 cornerRadiiY,
+        float2 pixel,
+        float2 center)
+    {
+        float2 rightBottom = step(center, pixel);
+        float2 topBottomX = cornerRadiiX.xw + rightBottom.x * (cornerRadiiX.yz - cornerRadiiX.xw);
+        float2 topBottomY = cornerRadiiY.xw + rightBottom.x * (cornerRadiiY.yz - cornerRadiiY.xw);
+        return new float2(
+            topBottomX.x + rightBottom.y * (topBottomX.y - topBottomX.x),
+            topBottomY.x + rightBottom.y * (topBottomY.y - topBottomY.x));
     }
 
     private static float Edge(float distance) => max(fwidth(distance) * 0.5f, 0.0001f);
@@ -539,7 +562,8 @@ public static class UiRectangleShaders
             Rect = new SegmentRect(instance.Rect),
             FillColor = new VertexColor(instance.FillColor),
             StrokeColor = new FragmentColor(instance.StrokeColor),
-            StrokeWidth = new BorderWidth(instance.StrokeWidth)
+            StrokeWidth = new BorderWidth(instance.StrokeWidth),
+            StrokeWidths = new BorderWidths(instance.StrokeWidths),
         };
     }
 
@@ -554,7 +578,9 @@ public static class UiRectangleShaders
         float distance = GetBoxDistance(pixel, halfSize);
         float edge = Edge(distance);
         float outerCoverage = Coverage(distance, edge);
-        float innerCoverage = Coverage(distance + input.StrokeWidth.Value, edge);
+        float4 strokeWidths = ResolveStrokeWidths(input.StrokeWidth.Value, input.StrokeWidths.Value);
+        float innerDistance = GetInsetBoxDistance(pixel, halfSize, strokeWidths);
+        float innerCoverage = min(Coverage(innerDistance, Edge(innerDistance)), outerCoverage);
         float4 fill = UiColorMath.Premultiply(input.FillColor.Value, innerCoverage);
         float4 stroke = UiColorMath.Premultiply(input.StrokeColor.Value, max(outerCoverage - innerCoverage, 0f));
         return Over(fill, stroke);
@@ -705,7 +731,8 @@ public static class UiRectangleShaders
                 instance.StrokeBlurRadius)),
             StrokeFalloff = new EffectStrokeFalloff(new float2(
                 instance.StrokeSpread,
-                instance.StrokeIntensity))
+                instance.StrokeIntensity)),
+            StrokeWidths = new BorderWidths(instance.StrokeWidths),
         };
     }
 
@@ -724,7 +751,9 @@ public static class UiRectangleShaders
             input.StrokeFalloff.Value);
         float edge = Edge(distance);
         float outer = Coverage(distance, edge);
-        float inner = min(Coverage(distance + stroke.Width, edge), outer);
+        float4 strokeWidths = ResolveStrokeWidths(stroke.Width, input.StrokeWidths.Value);
+        float innerDistance = GetInsetRoundedDistance(input.CornerRadii.Value, strokeWidths, pixel, halfSize);
+        float inner = min(Coverage(innerDistance, Edge(innerDistance)), outer);
         float4 fill = UiColorMath.Premultiply(input.FillColor.Value);
         float4 strokedFill = Over(UiColorMath.Premultiply(stroke.Color), fill);
         return inner * fill + (outer - inner) * strokedFill;
@@ -911,8 +940,62 @@ public static class UiRectangleShaders
 
     private static float GetBoxDistance(float2 pixel, float2 halfSize)
     {
-        float2 q = abs(pixel - halfSize) - halfSize;
+        return GetBoxDistance(pixel, halfSize, halfSize);
+    }
+
+    private static float GetBoxDistance(float2 pixel, float2 center, float2 halfSize)
+    {
+        float2 q = abs(pixel - center) - halfSize;
         return length(max(q, 0f)) + min(max(q.x, q.y), 0f);
+    }
+
+    private static float GetInsetBoxDistance(float2 pixel, float2 halfSize, float4 sideWidths)
+    {
+        float2 innerHalfSize = max(
+            halfSize - new float2(
+                (sideWidths.x + sideWidths.z) * 0.5f,
+                (sideWidths.y + sideWidths.w) * 0.5f),
+            new float2(0f));
+        float2 innerCenter = halfSize + new float2(
+            (sideWidths.x - sideWidths.z) * 0.5f,
+            (sideWidths.y - sideWidths.w) * 0.5f);
+        return GetBoxDistance(pixel, innerCenter, innerHalfSize);
+    }
+
+    private static float GetInsetRoundedDistance(
+        float4 cornerRadii,
+        float4 sideWidths,
+        float2 pixel,
+        float2 halfSize)
+    {
+        float2 innerHalfSize = max(
+            halfSize - new float2(
+                (sideWidths.x + sideWidths.z) * 0.5f,
+                (sideWidths.y + sideWidths.w) * 0.5f),
+            new float2(0f));
+        float2 innerCenter = halfSize + new float2(
+            (sideWidths.x - sideWidths.z) * 0.5f,
+            (sideWidths.y - sideWidths.w) * 0.5f);
+        float4 innerRadiiX = max(
+            cornerRadii - new float4(sideWidths.x, sideWidths.z, sideWidths.z, sideWidths.x),
+            new float4(0f));
+        float4 innerRadiiY = max(
+            cornerRadii - new float4(sideWidths.y, sideWidths.y, sideWidths.w, sideWidths.w),
+            new float4(0f));
+        float2 radius = GetCornerRadiusPair(innerRadiiX, innerRadiiY, pixel, innerCenter);
+        float2 q = abs(pixel - innerCenter) - innerHalfSize + radius;
+        float edgeDistance = max(q.x, q.y);
+        float2 safeRadius = max(radius, new float2(0.0001f));
+        float cornerDistance = (length(max(q, new float2(0f)) / safeRadius) - 1f) *
+            max(min(radius.x, radius.y), 0.0001f);
+        float corner = step(0f, min(q.x, q.y));
+        return corner * cornerDistance + (1f - corner) * edgeDistance;
+    }
+
+    private static float4 ResolveStrokeWidths(float width, float4 sideWidths)
+    {
+        float hasSideWidths = step(0.0001f, dot(abs(sideWidths), new float4(1f)));
+        return sideWidths + (1f - hasSideWidths) * new float4(width);
     }
 
     private static float Coverage(float distance)
@@ -935,7 +1018,8 @@ public static class UiRectangleShaders
             geometry.z,
             geometry.w,
             falloff.x,
-            falloff.y);
+            falloff.y,
+            new float4(0f));
 
     private static float4 Over(float4 source, float4 destination)
     {

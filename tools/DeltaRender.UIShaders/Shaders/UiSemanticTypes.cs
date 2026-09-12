@@ -36,6 +36,14 @@ public readonly struct BorderWidth
     public static implicit operator float(BorderWidth value) => value.Value;
 }
 
+public readonly struct BorderWidths
+{
+    public readonly float4 Value;
+    public BorderWidths(float4 value) => Value = value;
+    public static implicit operator BorderWidths(float4 value) => new(value);
+    public static implicit operator float4(BorderWidths value) => value.Value;
+}
+
 public readonly struct ClipRect
 {
     public readonly float4 Value;
