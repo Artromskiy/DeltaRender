@@ -189,6 +189,27 @@ public static class UiRenderHost
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Vertex(),
             TextShaderArtifacts.Abi.TextShaders.SdfTextOuterGlowOnly.Fragment());
 
+    private static GraphicsShaderProgram CreateTextInnerShadowProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextInnerShadow.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextInnerShadow.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextInnerShadow.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextInnerShadow.Fragment());
+
+    private static GraphicsShaderProgram CreateTextInnerGlowOnlyProgram() =>
+        CreateProgram(
+            TextShaderArtifacts.Spv.TextShaders.SdfTextInnerGlowOnly.Vertex(),
+            TextShaderArtifacts.Spv.TextShaders.SdfTextInnerGlowOnly.Fragment(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextInnerGlowOnly.Vertex(),
+            TextShaderArtifacts.Abi.TextShaders.SdfTextInnerGlowOnly.Fragment());
+
+    private static GraphicsShaderProgram CreateRoundedInnerEffectProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.RoundedInnerShadow.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.RoundedInnerShadow.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.RoundedInnerShadow.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.RoundedInnerShadow.Fragment());
+
     internal static UiDisplayListResourceRegistry CreateResourceRegistry(IUiResourceResolver resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -200,6 +221,39 @@ public static class UiRenderHost
 
         foreach (var effect in catalog.GetEffectResources())
         {
+            const UiEffectCapabilities textSupported = UiEffectCapabilities.Stroke |
+                UiEffectCapabilities.OuterShadow | UiEffectCapabilities.InnerShadow |
+                UiEffectCapabilities.OuterGlow | UiEffectCapabilities.InnerGlow;
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities != UiEffectCapabilities.None &&
+                (effect.Set.Capabilities & ~textSupported) == UiEffectCapabilities.None)
+            {
+                var textCapabilities = effect.Set.Capabilities;
+                registry.RegisterTextEffectResourceAllLayers(
+                    effect,
+                    new TextShaderVariant(
+                        textCapabilities.HasFlag(UiEffectCapabilities.Stroke)
+                            ? CreateTextStrokeProgram()
+                            : CreateTextProgram(),
+                        GlyphImageMode.Sdf,
+                        textCapabilities.HasFlag(UiEffectCapabilities.Stroke)
+                            ? TextShaderPath.Stroke
+                            : TextShaderPath.Standard),
+                    textCapabilities.HasFlag(UiEffectCapabilities.OuterShadow)
+                        ? new TextShaderVariant(CreateTextOuterShadowProgram(), GlyphImageMode.Sdf, TextShaderPath.OuterShadow)
+                        : null,
+                    textCapabilities.HasFlag(UiEffectCapabilities.OuterGlow)
+                        ? new TextShaderVariant(CreateTextOuterGlowOnlyProgram(), GlyphImageMode.Sdf, TextShaderPath.OuterGlowOnly)
+                        : null,
+                    textCapabilities.HasFlag(UiEffectCapabilities.InnerShadow)
+                        ? new TextShaderVariant(CreateTextInnerShadowProgram(), GlyphImageMode.Sdf, TextShaderPath.InnerShadow)
+                        : null,
+                    textCapabilities.HasFlag(UiEffectCapabilities.InnerGlow)
+                        ? new TextShaderVariant(CreateTextInnerGlowOnlyProgram(), GlyphImageMode.Sdf, TextShaderPath.InnerGlowOnly)
+                        : null);
+            }
+
             if (effect.Set.Target == UiEffectTarget.Visual &&
                 effect.Set.Quality == UiEffectQuality.Analytic &&
                 effect.Set.Capabilities == UiEffectCapabilities.OuterGlow)
@@ -250,6 +304,22 @@ public static class UiRenderHost
                         CreateRoundedRectangleProgram(),
                         UiVisualKind.RoundedRectangle,
                         UiVisualShaderPath.Standard));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities is UiEffectCapabilities.InnerShadow or UiEffectCapabilities.InnerGlow)
+            {
+                var innerPath = effect.Set.Capabilities == UiEffectCapabilities.InnerShadow
+                    ? UiVisualShaderPath.InnerShadowEffect
+                    : UiVisualShaderPath.InnerGlowEffect;
+                var innerProgram = CreateRoundedInnerEffectProgram();
+                registry.RegisterVisualEffectResource(
+                    effect,
+                    new UiVisualShaderVariant(innerProgram, UiVisualKind.SolidRectangle, innerPath));
+                registry.RegisterVisualEffectResource(
+                    effect,
+                    new UiVisualShaderVariant(innerProgram, UiVisualKind.RoundedRectangle, innerPath));
             }
 
             if (effect.Set.Target == UiEffectTarget.Visual &&
@@ -310,6 +380,40 @@ public static class UiRenderHost
                         CreateTextOuterShadowProgram(),
                         GlyphImageMode.Sdf,
                         TextShaderPath.OuterShadow));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.InnerShadow)
+            {
+                registry.RegisterTextEffectResourceInnerLayers(
+                    effect,
+                    new TextShaderVariant(
+                        CreateTextInnerShadowProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.InnerShadow),
+                    null,
+                    new TextShaderVariant(
+                        CreateTextProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.Standard));
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Text &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.InnerGlow)
+            {
+                registry.RegisterTextEffectResourceInnerLayers(
+                    effect,
+                    null,
+                    new TextShaderVariant(
+                        CreateTextInnerGlowOnlyProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.InnerGlowOnly),
+                    new TextShaderVariant(
+                        CreateTextProgram(),
+                        GlyphImageMode.Sdf,
+                        TextShaderPath.Standard));
             }
 
             if (effect.Set.Target == UiEffectTarget.Text &&

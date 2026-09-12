@@ -140,12 +140,14 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        if (variant.Path == UiVisualShaderPath.InnerShadowEffect &&
+        if (variant.Path is UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.InnerGlowEffect &&
             (effectResource.Set.Quality != UiEffectQuality.Analytic ||
-             effectResource.Set.Capabilities != UiEffectCapabilities.InnerShadow))
+             effectResource.Set.Capabilities != (variant.Path == UiVisualShaderPath.InnerShadowEffect
+                 ? UiEffectCapabilities.InnerShadow
+                 : UiEffectCapabilities.InnerGlow)))
         {
             throw new ArgumentException(
-                "The rounded inner-shadow UI artifact requires an Analytic effect set with InnerShadow only.",
+                "The inner UI artifact requires an Analytic effect set with the matching inner capability only.",
                 nameof(effectResource));
         }
 
@@ -386,19 +388,33 @@ public sealed class UiDisplayListResourceRegistry
         };
         if (isBaseVariant)
         {
-            _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant, null, null);
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, variant, null, null, null, null);
             return;
         }
 
         if (variant.Path == TextShaderPath.OuterShadow &&
             capabilities == UiEffectCapabilities.OuterShadow)
         {
-            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, variant, null);
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, variant, null, null, null);
+            return;
+        }
+
+        if (variant.Path == TextShaderPath.InnerShadow &&
+            capabilities == UiEffectCapabilities.InnerShadow)
+        {
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, null, null, variant, null);
+            return;
+        }
+
+        if (variant.Path == TextShaderPath.InnerGlowOnly &&
+            capabilities == UiEffectCapabilities.InnerGlow)
+        {
+            _textEffectSets[effectResource.Set.Resource] = new(effectResource, null, null, null, null, variant);
             return;
         }
 
         throw new ArgumentException(
-            "Text effects require a generated base or OuterShadow-only variant; use layered glow registration for OuterGlow, while InnerShadow, InnerGlow and CachedMask are unsupported.",
+            "Text effects require a generated base or compatible effect-only variant; InnerShadow and InnerGlow use layered registration.",
             nameof(effectResource));
     }
 
@@ -436,7 +452,43 @@ public sealed class UiDisplayListResourceRegistry
             effectResource,
             baseVariant,
             previous.ShadowVariant,
-            glowVariant);
+            glowVariant,
+            previous.InnerShadowVariant,
+            previous.InnerGlowVariant);
+    }
+
+    /// <summary>Associates one immutable text effect resource with a separate inner-shadow or inner-glow layer and base shader variant.</summary>
+    public void RegisterTextEffectResourceInnerLayers(
+        UiEffectResource effectResource,
+        TextShaderVariant? innerShadowVariant,
+        TextShaderVariant? innerGlowVariant,
+        TextShaderVariant baseVariant)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
+        var capabilities = effectResource.Set.Capabilities;
+        var validCapabilities = capabilities is UiEffectCapabilities.InnerShadow or UiEffectCapabilities.InnerGlow;
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic ||
+            !validCapabilities ||
+            !baseVariant.IsValid || baseVariant.Path is not (TextShaderPath.Standard or TextShaderPath.Stroke or TextShaderPath.Gradient) ||
+            (capabilities == UiEffectCapabilities.InnerShadow &&
+             (innerShadowVariant is not { Path: TextShaderPath.InnerShadow } || innerGlowVariant.HasValue)) ||
+            (capabilities == UiEffectCapabilities.InnerGlow &&
+             (innerGlowVariant is not { Path: TextShaderPath.InnerGlowOnly } || innerShadowVariant.HasValue)) ||
+            innerShadowVariant is { Mode: var shadowMode } && shadowMode != baseVariant.Mode ||
+            innerGlowVariant is { Mode: var glowMode } && glowMode != baseVariant.Mode)
+        {
+            throw new ArgumentException(
+                "Inner text effects require a matching generated inner layer and base variant.",
+                nameof(effectResource));
+        }
+
+        _textEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            baseVariant,
+            null,
+            null,
+            innerShadowVariant,
+            innerGlowVariant);
     }
 
     /// <summary>Associates separate shadow, glow and base variants for one text effect resource.</summary>
@@ -460,8 +512,56 @@ public sealed class UiDisplayListResourceRegistry
                 nameof(effectResource));
         }
 
-        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant, glowVariant);
+        _textEffectSets[effectResource.Set.Resource] = new(effectResource, baseVariant, shadowVariant, glowVariant, null, null);
     }
+
+    /// <summary>Associates all supported analytic text effect layers with one base variant.</summary>
+    public void RegisterTextEffectResourceAllLayers(
+        UiEffectResource effectResource,
+        TextShaderVariant baseVariant,
+        TextShaderVariant? shadowVariant = null,
+        TextShaderVariant? glowVariant = null,
+        TextShaderVariant? innerShadowVariant = null,
+        TextShaderVariant? innerGlowVariant = null)
+    {
+        ValidateEffectResource(effectResource, UiEffectTarget.Text);
+        const UiEffectCapabilities supported = UiEffectCapabilities.Stroke |
+            UiEffectCapabilities.OuterShadow | UiEffectCapabilities.InnerShadow |
+            UiEffectCapabilities.OuterGlow | UiEffectCapabilities.InnerGlow;
+        var capabilities = effectResource.Set.Capabilities;
+        if (effectResource.Set.Quality != UiEffectQuality.Analytic || capabilities == UiEffectCapabilities.None ||
+            (capabilities & ~supported) != UiEffectCapabilities.None ||
+            !baseVariant.IsValid || baseVariant.Path is not (TextShaderPath.Standard or TextShaderPath.Stroke) ||
+            baseVariant.Path == TextShaderPath.Stroke != capabilities.HasFlag(UiEffectCapabilities.Stroke) ||
+            !MatchesLayer(capabilities, UiEffectCapabilities.OuterShadow, shadowVariant, TextShaderPath.OuterShadow) ||
+            !MatchesLayer(capabilities, UiEffectCapabilities.OuterGlow, glowVariant, TextShaderPath.OuterGlowOnly) ||
+            !MatchesLayer(capabilities, UiEffectCapabilities.InnerShadow, innerShadowVariant, TextShaderPath.InnerShadow) ||
+            !MatchesLayer(capabilities, UiEffectCapabilities.InnerGlow, innerGlowVariant, TextShaderPath.InnerGlowOnly) ||
+            shadowVariant is { Mode: var shadowMode } && shadowMode != baseVariant.Mode ||
+            glowVariant is { Mode: var glowMode } && glowMode != baseVariant.Mode ||
+            innerShadowVariant is { Mode: var innerShadowMode } && innerShadowMode != baseVariant.Mode ||
+            innerGlowVariant is { Mode: var innerGlowMode } && innerGlowMode != baseVariant.Mode)
+        {
+            throw new ArgumentException("Text effect layers do not match the declared capabilities and base shader variant.", nameof(effectResource));
+        }
+
+        _textEffectSets[effectResource.Set.Resource] = new(
+            effectResource,
+            baseVariant,
+            shadowVariant,
+            glowVariant,
+            innerShadowVariant,
+            innerGlowVariant);
+    }
+
+    private static bool MatchesLayer(
+        UiEffectCapabilities capabilities,
+        UiEffectCapabilities layer,
+        TextShaderVariant? variant,
+        TextShaderPath path)
+        => capabilities.HasFlag(layer)
+            ? variant is { IsValid: true, Path: var actualPath } && actualPath == path
+            : !variant.HasValue;
 
     /// <summary>Removes one semantic visual type without releasing its shader program.</summary>
     public bool UnregisterVisualType(UiVisualTypeId type) => _visualTypes.Remove(type);
@@ -581,7 +681,7 @@ public sealed class UiDisplayListResourceRegistry
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
             registration.EffectResource.Set == effectSet)
         {
-            variant = registration.ShadowVariant ?? registration.GlowVariant ?? registration.BaseVariant ?? default;
+            variant = registration.ShadowVariant ?? registration.GlowVariant ?? registration.InnerShadowVariant ?? registration.InnerGlowVariant ?? registration.BaseVariant ?? default;
             effectResource = registration.EffectResource;
             return true;
         }
@@ -602,6 +702,8 @@ public sealed class UiDisplayListResourceRegistry
             out baseVariant,
             out shadowVariant,
             out _,
+            out _,
+            out _,
             out effectResource);
         return resolved;
     }
@@ -611,6 +713,8 @@ public sealed class UiDisplayListResourceRegistry
         out TextShaderVariant? baseVariant,
         out TextShaderVariant? shadowVariant,
         out TextShaderVariant? glowVariant,
+        out TextShaderVariant? innerShadowVariant,
+        out TextShaderVariant? innerGlowVariant,
         out UiEffectResource effectResource)
     {
         if (_textEffectSets.TryGetValue(effectSet.Resource, out var registration) &&
@@ -619,6 +723,8 @@ public sealed class UiDisplayListResourceRegistry
             baseVariant = registration.BaseVariant;
             shadowVariant = registration.ShadowVariant;
             glowVariant = registration.GlowVariant;
+            innerShadowVariant = registration.InnerShadowVariant;
+            innerGlowVariant = registration.InnerGlowVariant;
             effectResource = registration.EffectResource;
             return true;
         }
@@ -626,6 +732,8 @@ public sealed class UiDisplayListResourceRegistry
         baseVariant = null;
         shadowVariant = null;
         glowVariant = null;
+        innerShadowVariant = null;
+        innerGlowVariant = null;
         effectResource = default;
         return false;
     }
@@ -729,7 +837,9 @@ public sealed class UiDisplayListResourceRegistry
         UiEffectResource EffectResource,
         TextShaderVariant? BaseVariant,
         TextShaderVariant? ShadowVariant,
-        TextShaderVariant? GlowVariant);
+        TextShaderVariant? GlowVariant,
+        TextShaderVariant? InnerShadowVariant,
+        TextShaderVariant? InnerGlowVariant);
 
     private static void ValidateEffectResource(UiEffectResource effectResource, UiEffectTarget expectedTarget)
     {

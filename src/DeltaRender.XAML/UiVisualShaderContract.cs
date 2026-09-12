@@ -19,6 +19,7 @@ internal enum UiRectangleShaderKind : byte
     RoundedOuterShadowOnly,
     RoundedOuterGlowOnly,
     RoundedInnerShadow,
+    RoundedInnerGlow,
     CachedMaskRounded,
     SolidLinearGradient,
     SolidImage,
@@ -210,9 +211,11 @@ internal static class UiVisualShaderContract
                 expectedFragment = ImageFragmentAbi;
             }
         }
-        else if (path is UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.CachedMask)
+        else if (path is UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.InnerGlowEffect or UiVisualShaderPath.CachedMask)
         {
-            if (visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border))
+            if ((path == UiVisualShaderPath.CachedMask && visualKind is not (UiVisualKind.RoundedRectangle or UiVisualKind.Border)) ||
+                ((path is UiVisualShaderPath.InnerShadowEffect or UiVisualShaderPath.InnerGlowEffect) &&
+                 visualKind is not (UiVisualKind.SolidRectangle or UiVisualKind.RoundedRectangle or UiVisualKind.Border)))
             {
                 diagnostic = $"Visual kind {visualKind} cannot use the selected effect UI artifact.";
                 return false;
@@ -226,7 +229,9 @@ internal static class UiVisualShaderContract
             }
             else
             {
-                shaderKind = UiRectangleShaderKind.RoundedInnerShadow;
+                shaderKind = path == UiVisualShaderPath.InnerGlowEffect
+                    ? UiRectangleShaderKind.RoundedInnerGlow
+                    : UiRectangleShaderKind.RoundedInnerShadow;
                 expectedVertex = RoundedInnerShadowVertexAbi;
                 expectedFragment = RoundedInnerShadowFragmentAbi;
             }
@@ -269,7 +274,8 @@ internal static class UiVisualShaderContract
                 UiRectangleShaderKind.RoundedStroke => "rounded-stroke",
                 UiRectangleShaderKind.RoundedOuterShadowOnly => "rounded-outer-shadow-only",
                 UiRectangleShaderKind.RoundedOuterGlowOnly => "rounded-outer-glow-only",
-                UiRectangleShaderKind.RoundedInnerShadow => "rounded-inner-shadow",
+                UiRectangleShaderKind.RoundedInnerShadow => "rounded-inner-effect",
+                UiRectangleShaderKind.RoundedInnerGlow => "rounded-inner-glow",
                 UiRectangleShaderKind.CachedMaskRounded => "cached-mask-rounded",
                 UiRectangleShaderKind.SolidLinearGradient => "solid-linear-gradient",
                 UiRectangleShaderKind.SolidImage => "solid-image",
@@ -507,9 +513,11 @@ internal static class UiVisualShaderContract
                 destination);
         }
 
-        if (shaderKind == UiRectangleShaderKind.RoundedInnerShadow)
+        if (shaderKind is UiRectangleShaderKind.RoundedInnerShadow or UiRectangleShaderKind.RoundedInnerGlow)
         {
-            var shadow = effectResource.Parameters.InnerShadow;
+            var shadow = shaderKind == UiRectangleShaderKind.RoundedInnerGlow
+                ? effectResource.Parameters.InnerGlow
+                : effectResource.Parameters.InnerShadow;
             return RoundedInnerShadowGraphicsShaderProgram.PackInnerShadowRoundedRectangleVertexInstancesElement(
                 new InnerShadowRoundedRectangleParameters(
                     visual.Bounds,
@@ -575,9 +583,9 @@ internal static class UiVisualShaderContract
     private static float2 RelativeGradientEndpoint(float4 bounds, float angleDegrees, bool end)
     {
         var angle = angleDegrees * (MathF.PI / 180f);
-        var directionX = MathF.Sin(angle);
-        var directionY = -MathF.Cos(angle);
-        var halfLength = 0.5f * (MathF.Abs(bounds.z * directionX) + MathF.Abs(bounds.w * directionY));
+        var directionX = Maths.Sin(angle);
+        var directionY = -Maths.Cos(angle);
+        var halfLength = 0.5f * (Maths.Abs(bounds.z * directionX) + Maths.Abs(bounds.w * directionY));
         var centerX = bounds.x + bounds.z * 0.5f;
         var centerY = bounds.y + bounds.w * 0.5f;
         var sign = end ? 1f : -1f;
@@ -689,7 +697,7 @@ internal static class UiVisualShaderContract
             UiRectangleShaderKind.RoundedStroke => RoundedStrokeGraphicsShaderProgram.PackRoundedStrokeRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedOuterShadowOnly => RoundedOuterShadowOnlyGraphicsShaderProgram.PackRoundedOuterShadowOnlyRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.RoundedOuterGlowOnly => RoundedOuterGlowOnlyGraphicsShaderProgram.PackRoundedOuterGlowOnlyRectangleVertexFrame(in frame, destination),
-            UiRectangleShaderKind.RoundedInnerShadow => RoundedInnerShadowGraphicsShaderProgram.PackInnerShadowRoundedRectangleVertexFrame(in frame, destination),
+            UiRectangleShaderKind.RoundedInnerShadow or UiRectangleShaderKind.RoundedInnerGlow => RoundedInnerShadowGraphicsShaderProgram.PackInnerShadowRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.CachedMaskRounded => CachedMaskRoundedRectangleGraphicsShaderProgram.PackCachedMaskRoundedRectangleVertexFrame(in frame, destination),
             UiRectangleShaderKind.SolidLinearGradient => SolidLinearGradientGraphicsShaderProgram.PackSolidLinearGradientVertexFrame(in frame, destination),
             UiRectangleShaderKind.SolidImage => SolidImageGraphicsShaderProgram.PackSolidImageRectangleVertexFrame(in frame, destination),

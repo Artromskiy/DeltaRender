@@ -31,6 +31,12 @@ internal static class TextShaderPacking
         size = Maths.Max(size, MsdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         size = Maths.Max(size, MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextInnerShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextInnerShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextInnerGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextInnerGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, SdfTextGradientGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
+        size = Maths.Max(size, MsdfTextGradientGraphicsShaderProgram.VertexAbi.PushConstants[0].Size);
         return size;
     }
 
@@ -51,7 +57,11 @@ internal static class TextShaderPacking
             "vertex instance buffer");
         var atlasBinding = FindTextureBinding(program, "fragment atlas texture");
         var pushConstantSize = FindPushConstantSize(program);
-        var expectedPushConstantSize = path == TextShaderPath.Stroke
+        var expectedPushConstantSize = path == TextShaderPath.Gradient
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextGradientGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextGradientGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.Stroke
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
                 : SdfTextStrokeGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
@@ -63,6 +73,14 @@ internal static class TextShaderPacking
             ? mode == GlyphImageMode.Msdf
                 ? MsdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
                 : SdfTextOuterShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.InnerShadow
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextInnerShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextInnerShadowGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+            : path == TextShaderPath.InnerGlowOnly
+            ? mode == GlyphImageMode.Msdf
+                ? MsdfTextInnerGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
+                : SdfTextInnerGlowOnlyGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
             : mode == GlyphImageMode.Msdf
                 ? MsdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size
                 : SdfTextGraphicsShaderProgram.VertexAbi.PushConstants[0].Size;
@@ -122,7 +140,44 @@ internal static class TextShaderPacking
         float distanceRange,
         in TextEffectValues effects,
         Span<byte> destination)
+        => PackTextParameters(path, mode, viewport, distanceRange, effects, TextGradientValues.Empty, destination);
+
+    internal static int PackTextParameters(
+        TextShaderPath path,
+        GlyphImageMode mode,
+        PixelExtent viewport,
+        float distanceRange,
+        in TextEffectValues effects,
+        in TextGradientValues gradient,
+        Span<byte> destination)
     {
+        if (path == TextShaderPath.Gradient)
+        {
+            if (!gradient.IsValid)
+            {
+                throw new ArgumentException("The gradient text path requires a valid gradient payload.", nameof(gradient));
+            }
+
+            var gradientParameters = new TextGradientParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                DistanceRange = distanceRange,
+                GradientLine = new float4(gradient.Line.X, gradient.Line.Y, gradient.Line.Z, gradient.Line.W),
+                Stop0 = new float4(gradient.Stop0.X, gradient.Stop0.Y, gradient.Stop0.Z, gradient.Stop0.W),
+                Stop1 = new float4(gradient.Stop1.X, gradient.Stop1.Y, gradient.Stop1.Z, gradient.Stop1.W),
+                Stop2 = new float4(gradient.Stop2.X, gradient.Stop2.Y, gradient.Stop2.Z, gradient.Stop2.W),
+                Stop3 = new float4(gradient.Stop3.X, gradient.Stop3.Y, gradient.Stop3.Z, gradient.Stop3.W),
+                StopPositions = new float4(gradient.StopPositions.X, gradient.StopPositions.Y, gradient.StopPositions.Z, gradient.StopPositions.W),
+                StopCount = gradient.StopCount,
+                Radial = gradient.Radial,
+                StrokeColor = new float4(effects.StrokeColor.X, effects.StrokeColor.Y, effects.StrokeColor.Z, effects.StrokeColor.W),
+                StrokeWidth = effects.StrokeWidth,
+            };
+            return mode == GlyphImageMode.Msdf
+                ? MsdfTextGradientGraphicsShaderProgram.PackMsdfTextGradientVertexParameters(in gradientParameters, destination)
+                : SdfTextGradientGraphicsShaderProgram.PackSdfTextGradientVertexParameters(in gradientParameters, destination);
+        }
+
         if (path == TextShaderPath.Stroke)
         {
             var strokeParameters = new TextStrokeParameters
@@ -169,6 +224,40 @@ internal static class TextShaderPacking
             return mode == GlyphImageMode.Msdf
                 ? MsdfTextOuterShadowGraphicsShaderProgram.PackMsdfTextOuterShadowVertexParameters(in shadowParameters, destination)
                 : SdfTextOuterShadowGraphicsShaderProgram.PackSdfTextOuterShadowVertexParameters(in shadowParameters, destination);
+        }
+
+        if (path == TextShaderPath.InnerShadow)
+        {
+            var shadowParameters = new TextInnerShadowParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                DistanceRange = distanceRange,
+                InnerShadowColor = new float4(effects.InnerShadowColor.X, effects.InnerShadowColor.Y, effects.InnerShadowColor.Z, effects.InnerShadowColor.W),
+                InnerShadowOffset = new float2(effects.InnerShadowOffset.X, effects.InnerShadowOffset.Y),
+                InnerShadowWidth = effects.InnerShadowWidth,
+                InnerShadowBlurRadius = effects.InnerShadowBlurRadius,
+                InnerShadowSpread = effects.InnerShadowSpread,
+                InnerShadowIntensity = effects.InnerShadowIntensity,
+            };
+            return mode == GlyphImageMode.Msdf
+                ? MsdfTextInnerShadowGraphicsShaderProgram.PackMsdfTextInnerShadowVertexParameters(in shadowParameters, destination)
+                : SdfTextInnerShadowGraphicsShaderProgram.PackSdfTextInnerShadowVertexParameters(in shadowParameters, destination);
+        }
+
+        if (path == TextShaderPath.InnerGlowOnly)
+        {
+            var glowParameters = new TextInnerGlowOnlyParameters
+            {
+                Resolution = new float2(viewport.Width, viewport.Height),
+                DistanceRange = distanceRange,
+                InnerGlowColor = new float4(effects.InnerGlowColor.X, effects.InnerGlowColor.Y, effects.InnerGlowColor.Z, effects.InnerGlowColor.W),
+                InnerGlowRadius = effects.InnerGlowRadius,
+                InnerGlowSpread = effects.InnerGlowSpread,
+                InnerGlowIntensity = effects.InnerGlowIntensity,
+            };
+            return mode == GlyphImageMode.Msdf
+                ? MsdfTextInnerGlowOnlyGraphicsShaderProgram.PackMsdfTextInnerGlowOnlyVertexParameters(in glowParameters, destination)
+                : SdfTextInnerGlowOnlyGraphicsShaderProgram.PackSdfTextInnerGlowOnlyVertexParameters(in glowParameters, destination);
         }
 
         var parameters = new TextParameters

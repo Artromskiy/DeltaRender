@@ -21,6 +21,22 @@ public struct TextParameters
     public float DistanceRange;
 }
 
+public struct TextGradientParameters
+{
+    public float2 Resolution;
+    public float DistanceRange;
+    public float4 GradientLine;
+    public float4 Stop0;
+    public float4 Stop1;
+    public float4 Stop2;
+    public float4 Stop3;
+    public float4 StopPositions;
+    public float StopCount;
+    public float Radial;
+    public float4 StrokeColor;
+    public float StrokeWidth;
+}
+
 public struct TextStrokeParameters
 {
     public float2 Resolution;
@@ -45,6 +61,8 @@ public struct TextVarying
     public Position Position;
     public Uv0 Uv;
     public VertexColor GlyphColor;
+    public Uv0 PaintPosition;
+    public Uv0 PaintUvScale;
 }
 
 
@@ -66,6 +84,15 @@ public readonly struct TextStrokeVertexContext
     public readonly TextStrokeParameters Parameters;
 }
 
+public readonly struct TextGradientVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextGradientParameters Parameters;
+}
+
 public readonly struct SdfTextFragmentContext
 {
     [Layout(0, 3)]
@@ -84,6 +111,15 @@ public readonly struct SdfTextStrokeFragmentContext
     public readonly TextStrokeParameters Parameters;
 }
 
+public readonly struct SdfTextGradientFragmentContext
+{
+    [Layout(0, 3)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextGradientParameters Parameters;
+}
+
 public readonly struct MsdfTextStrokeVertexContext
 {
     [Layout(0, 0)]
@@ -100,6 +136,15 @@ public readonly struct MsdfTextStrokeFragmentContext
 
     [PushConstant]
     public readonly TextStrokeParameters Parameters;
+}
+
+public readonly struct MsdfTextGradientFragmentContext
+{
+    [Layout(0, 4)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextGradientParameters Parameters;
 }
 
 public readonly struct SdfTextOuterGlowOnlyVertexContext
@@ -150,6 +195,28 @@ public struct TextOuterShadowParameters
     public float OuterShadowIntensity;
 }
 
+public struct TextInnerShadowParameters
+{
+    public float2 Resolution;
+    public float DistanceRange;
+    public float4 InnerShadowColor;
+    public float2 InnerShadowOffset;
+    public float InnerShadowWidth;
+    public float InnerShadowBlurRadius;
+    public float InnerShadowSpread;
+    public float InnerShadowIntensity;
+}
+
+public struct TextInnerGlowOnlyParameters
+{
+    public float2 Resolution;
+    public float DistanceRange;
+    public float4 InnerGlowColor;
+    public float InnerGlowRadius;
+    public float InnerGlowSpread;
+    public float InnerGlowIntensity;
+}
+
 public readonly struct SdfTextOuterShadowVertexContext
 {
     [Layout(0, 0)]
@@ -184,6 +251,78 @@ public readonly struct MsdfTextOuterShadowFragmentContext
 
     [PushConstant]
     public readonly TextOuterShadowParameters Parameters;
+}
+
+public readonly struct SdfTextInnerShadowVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextInnerShadowParameters Parameters;
+}
+
+public readonly struct SdfTextInnerShadowFragmentContext
+{
+    [Layout(0, 3)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextInnerShadowParameters Parameters;
+}
+
+public readonly struct MsdfTextInnerShadowVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextInnerShadowParameters Parameters;
+}
+
+public readonly struct MsdfTextInnerShadowFragmentContext
+{
+    [Layout(0, 4)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextInnerShadowParameters Parameters;
+}
+
+public readonly struct SdfTextInnerGlowOnlyVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextInnerGlowOnlyParameters Parameters;
+}
+
+public readonly struct SdfTextInnerGlowOnlyFragmentContext
+{
+    [Layout(0, 3)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextInnerGlowOnlyParameters Parameters;
+}
+
+public readonly struct MsdfTextInnerGlowOnlyVertexContext
+{
+    [Layout(0, 0)]
+    public readonly ReadOnlyStorageBuffer<GlyphInstance> Glyphs;
+
+    [PushConstant]
+    public readonly TextInnerGlowOnlyParameters Parameters;
+}
+
+public readonly struct MsdfTextInnerGlowOnlyFragmentContext
+{
+    [Layout(0, 4)]
+    public readonly SampledTexture2D Atlas;
+
+    [PushConstant]
+    public readonly TextInnerGlowOnlyParameters Parameters;
 }
 
 public readonly struct MsdfTextFragmentContext
@@ -239,6 +378,107 @@ public static class TextShaders
             strokeContribution * PremultiplyProduct(strokeColor, glyphColor);
     }
 
+    private static float4 SampleGradient(
+        float2 pixel,
+        float4 gradientLine,
+        float4 stop0,
+        float4 stop1,
+        float4 stop2,
+        float4 stop3,
+        float4 stopPositions,
+        float stopCount,
+        float radial)
+    {
+        float t;
+        if (radial > 0.5f)
+        {
+            var radii = maths.max(maths.abs(gradientLine.zw), new float2(0.0001f));
+            t = maths.clamp(maths.length((pixel - gradientLine.xy) / radii), 0f, 1f);
+        }
+        else
+        {
+            var direction = gradientLine.zw - gradientLine.xy;
+            var denominator = maths.max(maths.dot(direction, direction), 0.0001f);
+            t = maths.clamp(maths.dot(pixel - gradientLine.xy, direction) / denominator, 0f, 1f);
+        }
+
+        if (t <= stopPositions.x)
+        {
+            return stop0;
+        }
+
+        var color = stop0;
+        var previous = stopPositions.x;
+        if (stopCount > 1f)
+        {
+            var next = stopPositions.y;
+            if (t <= next)
+            {
+                return maths.lerp(color, stop1, (t - previous) / maths.max(next - previous, 0.0001f));
+            }
+
+            color = stop1;
+            previous = next;
+        }
+
+        if (stopCount > 2f)
+        {
+            var next = stopPositions.z;
+            if (t <= next)
+            {
+                return maths.lerp(color, stop2, (t - previous) / maths.max(next - previous, 0.0001f));
+            }
+
+            color = stop2;
+            previous = next;
+        }
+
+        if (stopCount > 3f)
+        {
+            var next = stopPositions.w;
+            if (t <= next)
+            {
+                return maths.lerp(color, stop3, (t - previous) / maths.max(next - previous, 0.0001f));
+            }
+        }
+
+        return stop3;
+    }
+
+    private static float4 RenderGradientText(
+        float signedDistance,
+        float4 glyphColor,
+        float2 pixel,
+        float4 gradientLine,
+        float4 stop0,
+        float4 stop1,
+        float4 stop2,
+        float4 stop3,
+        float4 stopPositions,
+        float stopCount,
+        float radial,
+        float4 strokeColor,
+        float strokeWidth)
+    {
+        var edge = Edge(signedDistance);
+        var fillCoverage = Coverage(signedDistance, edge);
+        var width = maths.max(strokeWidth, 0f);
+        var outerCoverage = Coverage(signedDistance + width, edge);
+        var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
+        var fillColor = SampleGradient(
+            pixel,
+            gradientLine,
+            stop0,
+            stop1,
+            stop2,
+            stop3,
+            stopPositions,
+            stopCount,
+            radial);
+        return fillCoverage * PremultiplyProduct(fillColor, glyphColor) +
+            strokeContribution * PremultiplyProduct(strokeColor, glyphColor);
+    }
+
     private static float4 RenderOuterGlow(
         float signedDistance,
         float4 glyphColor,
@@ -271,6 +511,47 @@ public static class TextShaders
         return (coverage * maths.max(shadowIntensity, 0f)) * PremultiplyProduct(shadowColor, glyphColor);
     }
 
+    private static float4 RenderInnerShadow(
+        float signedDistance,
+        float shiftedDistance,
+        float4 glyphColor,
+        float4 shadowColor,
+        float shadowWidth,
+        float shadowBlurRadius,
+        float shadowSpread,
+        float shadowIntensity)
+    {
+        var edge = Edge(signedDistance);
+        var shapeCoverage = Coverage(signedDistance, edge);
+        var width = maths.max(shadowWidth, 0f);
+        var blur = maths.max(shadowBlurRadius, edge);
+        var depth = maths.max(shiftedDistance - shadowSpread, 0f);
+        var coverage = shapeCoverage * (1f - maths.smoothstep(
+            width,
+            width + blur + intrinsics.fwidth(shiftedDistance),
+            depth));
+        return (coverage * maths.max(shadowIntensity, 0f)) * PremultiplyProduct(shadowColor, glyphColor);
+    }
+
+    private static float4 RenderInnerGlow(
+        float signedDistance,
+        float4 glyphColor,
+        float4 glowColor,
+        float glowRadius,
+        float glowSpread,
+        float glowIntensity)
+    {
+        var edge = Edge(signedDistance);
+        var shapeCoverage = Coverage(signedDistance, edge);
+        var radius = maths.max(glowRadius, edge);
+        var spread = maths.max(glowSpread, 0f);
+        var coverage = shapeCoverage * (1f - maths.smoothstep(
+            spread,
+            spread + radius + edge,
+            maths.max(signedDistance, 0f)));
+        return (coverage * maths.max(glowIntensity, 0f)) * PremultiplyProduct(glowColor, glyphColor);
+    }
+
     [VertexShader("sdf-text")]
     public static TextVarying SdfTextVertex(in TextVertexContext context, in TextVarying input)
     {
@@ -291,6 +572,41 @@ public static class TextShaders
             signedDistance,
             input.GlyphColor.Value,
             context.Parameters.TextColor,
+            context.Parameters.StrokeColor,
+            context.Parameters.StrokeWidth);
+    }
+
+    [VertexShader("sdf-text-gradient")]
+    public static TextVarying SdfTextGradientVertex(
+        in TextGradientVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("sdf-text-gradient")]
+    public static float4 SdfTextGradientFragment(
+        in SdfTextGradientFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        return RenderGradientText(
+            SignedDistance(texel.x, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            input.PaintPosition,
+            context.Parameters.GradientLine,
+            context.Parameters.Stop0,
+            context.Parameters.Stop1,
+            context.Parameters.Stop2,
+            context.Parameters.Stop3,
+            context.Parameters.StopPositions,
+            context.Parameters.StopCount,
+            context.Parameters.Radial,
             context.Parameters.StrokeColor,
             context.Parameters.StrokeWidth);
     }
@@ -439,7 +755,9 @@ public static class TextShaders
         {
             Position = new Position(QuadGeometry.ToClipPosition(pixel, resolution)),
             Uv = uvMin + local * uvSize,
-            GlyphColor = glyph.Color
+            GlyphColor = glyph.Color,
+            PaintPosition = new Uv0(pixel),
+            PaintUvScale = new Uv0(uvSize / maths.max(pixelSize, new float2(1f))),
         };
     }
 
@@ -554,6 +872,161 @@ public static class TextShaders
             context.Parameters.TextColor,
             context.Parameters.StrokeColor,
             context.Parameters.StrokeWidth);
+    }
+
+    [VertexShader("msdf-text-gradient")]
+    public static TextVarying MsdfTextGradientVertex(
+        in TextGradientVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("msdf-text-gradient")]
+    public static float4 MsdfTextGradientFragment(
+        in MsdfTextGradientFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        return RenderGradientText(
+            MsdfSignedDistance(texel, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            input.PaintPosition,
+            context.Parameters.GradientLine,
+            context.Parameters.Stop0,
+            context.Parameters.Stop1,
+            context.Parameters.Stop2,
+            context.Parameters.Stop3,
+            context.Parameters.StopPositions,
+            context.Parameters.StopCount,
+            context.Parameters.Radial,
+            context.Parameters.StrokeColor,
+            context.Parameters.StrokeWidth);
+    }
+
+    [VertexShader("sdf-text-inner-shadow")]
+    public static TextVarying SdfTextInnerShadowVertex(
+        in SdfTextInnerShadowVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("sdf-text-inner-shadow")]
+    public static float4 SdfTextInnerShadowFragment(
+        in SdfTextInnerShadowFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        var shiftedTexel = context.Atlas.Sample<float2, float4>(
+            input.Uv.Value - context.Parameters.InnerShadowOffset * input.PaintUvScale.Value);
+        return RenderInnerShadow(
+            SignedDistance(texel.x, context.Parameters.DistanceRange),
+            SignedDistance(shiftedTexel.x, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            context.Parameters.InnerShadowColor,
+            context.Parameters.InnerShadowWidth,
+            context.Parameters.InnerShadowBlurRadius,
+            context.Parameters.InnerShadowSpread,
+            context.Parameters.InnerShadowIntensity);
+    }
+
+    [VertexShader("msdf-text-inner-shadow")]
+    public static TextVarying MsdfTextInnerShadowVertex(
+        in MsdfTextInnerShadowVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("msdf-text-inner-shadow")]
+    public static float4 MsdfTextInnerShadowFragment(
+        in MsdfTextInnerShadowFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        var shiftedTexel = context.Atlas.Sample<float2, float4>(
+            input.Uv.Value - context.Parameters.InnerShadowOffset * input.PaintUvScale.Value);
+        return RenderInnerShadow(
+            MsdfSignedDistance(texel, context.Parameters.DistanceRange),
+            MsdfSignedDistance(shiftedTexel, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            context.Parameters.InnerShadowColor,
+            context.Parameters.InnerShadowWidth,
+            context.Parameters.InnerShadowBlurRadius,
+            context.Parameters.InnerShadowSpread,
+            context.Parameters.InnerShadowIntensity);
+    }
+
+    [VertexShader("sdf-text-inner-glow-only")]
+    public static TextVarying SdfTextInnerGlowOnlyVertex(
+        in SdfTextInnerGlowOnlyVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("sdf-text-inner-glow-only")]
+    public static float4 SdfTextInnerGlowOnlyFragment(
+        in SdfTextInnerGlowOnlyFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        return RenderInnerGlow(
+            SignedDistance(texel.x, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            context.Parameters.InnerGlowColor,
+            context.Parameters.InnerGlowRadius,
+            context.Parameters.InnerGlowSpread,
+            context.Parameters.InnerGlowIntensity);
+    }
+
+    [VertexShader("msdf-text-inner-glow-only")]
+    public static TextVarying MsdfTextInnerGlowOnlyVertex(
+        in MsdfTextInnerGlowOnlyVertexContext context,
+        in TextVarying input)
+    {
+        var glyph = context.Glyphs[ShaderBuiltins.InstanceIndex];
+        return CreateOffsetTextVarying(
+            glyph,
+            ShaderBuiltins.VertexIndex,
+            context.Parameters.Resolution,
+            ZeroOffset());
+    }
+
+    [FragmentShader("msdf-text-inner-glow-only")]
+    public static float4 MsdfTextInnerGlowOnlyFragment(
+        in MsdfTextInnerGlowOnlyFragmentContext context,
+        in TextVarying input)
+    {
+        var texel = context.Atlas.Sample<float2, float4>(input.Uv.Value);
+        return RenderInnerGlow(
+            MsdfSignedDistance(texel, context.Parameters.DistanceRange),
+            input.GlyphColor.Value,
+            context.Parameters.InnerGlowColor,
+            context.Parameters.InnerGlowRadius,
+            context.Parameters.InnerGlowSpread,
+            context.Parameters.InnerGlowIntensity);
     }
 
 }

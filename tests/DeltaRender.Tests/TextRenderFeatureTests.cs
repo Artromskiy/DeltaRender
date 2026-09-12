@@ -44,6 +44,67 @@ public sealed class TextRenderFeatureTests
     }
 
     [Fact]
+    public void GradientTextVariantPacksGradientGeometryAndStops()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Gradient".AsMemory(), 24, new[] { font }));
+        var gradientProgram = SdfTextGradientGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv);
+        using var feature = new TextRenderFeature(
+            new FakeSession(),
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(320, 80));
+        var variant = new TextShaderVariant(gradientProgram, GlyphImageMode.Sdf, TextShaderPath.Gradient);
+        var gradient = new TextGradientValues(
+            new Vector4(10, 20, 210, 20),
+            new Vector4(1, 0, 0, 1),
+            new Vector4(0, 0, 1, 1),
+            new Vector4(0, 0, 1, 1),
+            new Vector4(0, 0, 1, 1),
+            new Vector4(0, 1, 1, 1),
+            2,
+            0);
+        var effects = new TextEffectValues(
+            new Vector4(0.1f, 0.2f, 0.3f, 1),
+            1.5f,
+            Vector4.Zero,
+            0,
+            0,
+            Vector4.Zero,
+            Vector2.Zero,
+            0,
+            0,
+            0,
+            0);
+
+        feature.QueueCompositeRun(
+            shaped,
+            10,
+            20,
+            Vector4.One,
+            new PixelRect(0, 0, 320, 80),
+            mergeWithPrevious: true,
+            baseShaderVariant: variant,
+            effectValues: effects,
+            gradientValues: gradient);
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = graph.RecordRaster();
+
+        Assert.Single(commands.Draws);
+        Assert.Equal(SdfTextGradientGraphicsShaderProgram.VertexAbi.PushConstants[0].Size, (uint)commands.LastPushConstants.Length);
+        Assert.Equal(10f, ReadFloat(commands.LastPushConstants, 16));
+        Assert.Equal(210f, ReadFloat(commands.LastPushConstants, 24));
+        Assert.Equal(1f, ReadFloat(commands.LastPushConstants, 32));
+        Assert.Equal(1f, ReadFloat(commands.LastPushConstants, 56));
+        Assert.Equal(2f, ReadFloat(commands.LastPushConstants, 112));
+        Assert.Equal(0f, ReadFloat(commands.LastPushConstants, 116));
+        Assert.Equal(0.1f, ReadFloat(commands.LastPushConstants, 128));
+        Assert.Equal(1.5f, ReadFloat(commands.LastPushConstants, 144));
+    }
+
+    [Fact]
     public void InvalidTextVariantIsRejectedWithoutFallback()
     {
         using var textService = new DeltaTextService();
@@ -222,6 +283,75 @@ public sealed class TextRenderFeatureTests
         var firstUvMaxX = ReadFloat(bytes, 24);
         var secondUvMinX = ReadFloat(bytes, 48 + 16);
         Assert.True((secondUvMinX - firstUvMaxX) * 256f >= 1f);
+    }
+
+    [Fact]
+    public void InnerShadowAndGlowUseSeparateTextLayersInsideTheGlyph()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Inner".AsMemory(), 32, new[] { font }));
+        using var session = new FakeSession();
+        using var feature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+            new PixelExtent(400, 120));
+        var effects = new TextEffectValues(
+            Vector4.Zero,
+            0,
+            Vector4.Zero,
+            0,
+            0,
+            Vector4.Zero,
+            Vector2.Zero,
+            0,
+            0,
+            0,
+            0)
+        {
+            InnerShadowColor = new Vector4(0, 0, 0, 0.8f),
+            InnerShadowOffset = new Vector2(1, 2),
+            InnerShadowWidth = 1,
+            InnerShadowBlurRadius = 2,
+            InnerShadowSpread = 0,
+            InnerShadowIntensity = 1,
+            InnerGlowColor = new Vector4(1, 0.2f, 0.8f, 0.7f),
+            InnerGlowRadius = 3,
+            InnerGlowSpread = 0,
+            InnerGlowIntensity = 0.75f,
+        };
+        feature.QueueCompositeRun(
+            shaped,
+            20,
+            40,
+            Vector4.One,
+            new PixelRect(0, 0, 400, 120),
+            mergeWithPrevious: true,
+            baseShaderVariant: new TextShaderVariant(
+                SdfTextGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.Standard),
+            effectValues: effects,
+            innerShadowShaderVariant: new TextShaderVariant(
+                SdfTextInnerShadowGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.InnerShadow),
+            innerGlowShaderVariant: new TextShaderVariant(
+                SdfTextInnerGlowOnlyGraphicsShaderProgram.CreateProgram(MinimalSpirv, MinimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.InnerGlowOnly));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var layers = graph.RecordRasters();
+
+        Assert.Equal(3, layers.Length);
+        Assert.Equal(128, layers[0].LastPushConstants.Length);
+        Assert.Equal(0.8f, ReadFloat(layers[1].LastPushConstants, 28));
+        Assert.Equal(1f, ReadFloat(layers[1].LastPushConstants, 40));
+        Assert.Equal(0.7f, ReadFloat(layers[2].LastPushConstants, 28));
+        Assert.Equal(3f, ReadFloat(layers[2].LastPushConstants, 32));
     }
 
     [Fact]
@@ -826,6 +956,12 @@ public sealed class TextRenderFeatureTests
         Assert.Equal(0, session.ReleasedTextureCount);
     }
 
+    private static FontInstanceId OpenTestFont(DeltaTextService service) =>
+        service.OpenFont(new FontOpenRequest(
+            new FontSourceId(Guid.Parse("6d34a56d-2b0d-4f39-bf55-1f51cf4ee1b7")),
+            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans-Regular.ttf")),
+            0));
+
     private static float ReadFloat(ReadOnlySpan<byte> bytes, int offset)
         => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]));
 
@@ -1052,7 +1188,7 @@ public sealed class TextRenderFeatureTests
 
         public int PushConstantCallCount { get; private set; }
 
-        private readonly byte[] _lastPushConstants = new byte[128];
+        private byte[] _lastPushConstants = new byte[128];
 
         public byte[] LastPushConstants => _lastPushConstants;
 
@@ -1068,6 +1204,11 @@ public sealed class TextRenderFeatureTests
         public void PushConstants(ReadOnlySpan<byte> data, uint offset = 0)
         {
             PushConstantCallCount++;
+            if (data.Length > _lastPushConstants.Length)
+            {
+                _lastPushConstants = new byte[data.Length];
+            }
+
             data.CopyTo(_lastPushConstants);
         }
 

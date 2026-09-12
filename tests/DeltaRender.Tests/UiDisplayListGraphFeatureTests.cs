@@ -524,6 +524,172 @@ public sealed class UiDisplayListGraphFeatureTests
     }
 
     [Fact]
+    public void GradientTextWithOuterShadowAddsShadowThenGradientBasePasses()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Gradient shadow".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(240, 80));
+
+        var gradientId = new UiResourceId(Guid.NewGuid());
+        var shadowId = new UiResourceId(Guid.NewGuid());
+        var shadowSet = new UiEffectSet(
+            shadowId,
+            UiEffectTarget.Text,
+            UiEffectCapabilities.OuterShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var registry = new UiDisplayListResourceRegistry();
+        registry.RegisterLinearGradient(new UiLinearGradientResource(
+            gradientId,
+            new float2(0, 0),
+            new float2(240, 0),
+            PaintUnits.Device,
+            [
+                new UiLinearGradientStop(0, new float4(1, 0.5f, 0, 1)),
+                new UiLinearGradientStop(1, new float4(0.5f, 0, 1, 1)),
+            ]));
+        registry.RegisterTextEffectResource(
+            new UiEffectResource(
+                shadowSet,
+                new XamlEffectParameters(
+                    default,
+                    new UiEffectLayer(new float4(0, 0, 0, 0.8f), default, 1, 2, 0, 1),
+                    default,
+                    default,
+                    default,
+                    default)),
+            new TextShaderVariant(
+                SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.OuterShadow));
+
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(240, 80),
+            registry: registry,
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 30),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with
+            {
+                FillResource = gradientId,
+                EffectSet = shadowSet,
+            },
+            UiClipId.None,
+            new float4(0, 0, 240, 80));
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.Equal(2, graph.RasterDescriptions.Count);
+        Assert.Contains("DeltaRender.XAML.Text.Shadow", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains("DeltaRender.XAML.Text.Base", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GradientTextWithStrokeShadowAndGlowUsesGradientBaseAndAllEffectLayers()
+    {
+        using var textService = new DeltaTextService();
+        var font = OpenTestFont(textService);
+        var shaped = textService.Shape(new TextShapeRequest("Gradient effects".AsMemory(), 24, new[] { font }));
+        using var session = new RecordingSession();
+        using var textFeature = new TextRenderFeature(
+            session,
+            textService,
+            SdfTextGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(280, 90));
+
+        var gradientId = new UiResourceId(Guid.NewGuid());
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Text,
+            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow,
+            UiEffectQuality.Analytic,
+            default);
+        var registry = new UiDisplayListResourceRegistry();
+        registry.RegisterLinearGradient(new UiLinearGradientResource(
+            gradientId,
+            new float2(0, 0),
+            new float2(280, 0),
+            PaintUnits.Device,
+            [
+                new UiLinearGradientStop(0, new float4(1, 0.5f, 0, 1)),
+                new UiLinearGradientStop(1, new float4(0.5f, 0, 1, 1)),
+            ]));
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                new UiEffectLayer(new float4(0.05f, 0.02f, 0.08f, 1), default, 1, 0, 0, 1),
+                new UiEffectLayer(new float4(0, 0, 0, 0.8f), new float2(0, 2), 1, 2, 0, 1),
+                default,
+                new UiEffectLayer(new float4(0.5f, 0.1f, 1, 1), default, 3, 3, 0, 0.7f),
+                default,
+                default));
+        registry.RegisterTextEffectResourceLayers(
+            effectResource,
+            new TextShaderVariant(
+                SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.OuterShadow),
+            new TextShaderVariant(
+                SdfTextOuterGlowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.OuterGlowOnly),
+            new TextShaderVariant(
+                SdfTextStrokeGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.Stroke));
+
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(280, 90),
+            registry: registry,
+            textFeature: textFeature);
+        var text = UiTextDraw.WithPaint(
+            shaped,
+            new float2(10, 32),
+            UiTextPaint.Solid(new float4(1, 1, 1, 1)) with
+            {
+                FillResource = gradientId,
+                EffectSet = effectSet,
+            },
+            UiClipId.None,
+            new float4(0, 0, 280, 90));
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            Array.Empty<UiVisualDraw>(),
+            Array.Empty<UiClipRegion>(),
+            new[] { text },
+            new[] { new UiDrawRef(UiDrawKind.Text, 0) })), string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        graph.RecordRaster(new RecordingRasterCommands());
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.Equal(3, graph.RasterDescriptions.Count);
+        Assert.Contains("DeltaRender.XAML.Text.Shadow", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
+        Assert.Contains("DeltaRender.XAML.Text.Glow", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
+        Assert.Contains("DeltaRender.XAML.Text.Base", graph.RasterDescriptions[2].Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RegisteredCompatibleTextEffectSetIsAccepted()
     {
         using var textService = new DeltaTextService();
@@ -1587,6 +1753,105 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(2, commands.DrawCount);
         Assert.Equal(1u, commands.InstanceCounts[0]);
         Assert.Equal(1u, commands.InstanceCounts[1]);
+    }
+
+    [Fact]
+    public void InnerVisualEffectsSupportSolidAndRoundedRectangles()
+    {
+        var registry = new UiDisplayListResourceRegistry();
+        var effectSet = new UiEffectSet(
+            new UiResourceId(Guid.NewGuid()),
+            UiEffectTarget.Visual,
+            UiEffectCapabilities.InnerShadow,
+            UiEffectQuality.Analytic,
+            default);
+        var effectResource = new UiEffectResource(
+            effectSet,
+            new XamlEffectParameters(
+                default,
+                default,
+                new UiEffectLayer(new float4(0, 0, 0, 0.7f), new float2(1, 1), 1, 2, 0, 1),
+                default,
+                default,
+                default));
+        var innerProgram = RoundedInnerShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv);
+        registry.RegisterVisualEffectResource(
+            effectResource,
+            new UiVisualShaderVariant(innerProgram, UiVisualKind.SolidRectangle, UiVisualShaderPath.InnerShadowEffect));
+        registry.RegisterVisualEffectResource(
+            effectResource,
+            new UiVisualShaderVariant(innerProgram, UiVisualKind.RoundedRectangle, UiVisualShaderPath.InnerShadowEffect));
+        var glowEffectSet = effectSet with
+        {
+            Resource = new UiResourceId(Guid.NewGuid()),
+            Capabilities = UiEffectCapabilities.InnerGlow,
+        };
+        var glowEffectResource = new UiEffectResource(
+            glowEffectSet,
+            new XamlEffectParameters(
+                default,
+                default,
+                default,
+                default,
+                new UiEffectLayer(new float4(1, 0.4f, 0.1f, 0.8f), default, 0, 2, 0, 1),
+                default));
+        registry.RegisterVisualEffectResource(
+            glowEffectResource,
+            new UiVisualShaderVariant(innerProgram, UiVisualKind.SolidRectangle, UiVisualShaderPath.InnerGlowEffect));
+
+        using var session = new RecordingSession();
+        using var feature = new UiDisplayListGraphFeature(
+            session,
+            SolidRectangleGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            new PixelExtent(200, 120),
+            registry: registry);
+        var visuals = new[]
+        {
+            UiVisualDraw.WithPaint(
+                UiVisualKind.SolidRectangle,
+                default,
+                new float4(10, 10, 70, 40),
+                UiVisualPaint.Solid(new float4(0.2f, 0.4f, 0.8f, 1)) with { EffectSet = effectSet },
+                UiClipId.None,
+                UiResourceId.Empty),
+            UiVisualDraw.WithPaint(
+                UiVisualKind.RoundedRectangle,
+                default,
+                new float4(100, 10, 70, 40),
+                UiVisualPaint.Solid(new float4(0.2f, 0.4f, 0.8f, 1)) with
+                {
+                    CornerRadii = new float4(10, 10, 10, 10),
+                    EffectSet = effectSet,
+                },
+                UiClipId.None,
+                UiResourceId.Empty),
+            UiVisualDraw.WithPaint(
+                UiVisualKind.SolidRectangle,
+                default,
+                new float4(10, 70, 70, 40),
+                UiVisualPaint.Solid(new float4(0.2f, 0.4f, 0.8f, 1)) with { EffectSet = glowEffectSet },
+                UiClipId.None,
+                UiResourceId.Empty),
+        };
+
+        Assert.True(feature.Consume(UiDisplayListTestFactory.Create(
+            visuals,
+            Array.Empty<UiClipRegion>(),
+            Array.Empty<UiTextDraw>(),
+            [new UiDrawRef(UiDrawKind.Visual, 0), new UiDrawRef(UiDrawKind.Visual, 1), new UiDrawRef(UiDrawKind.Visual, 2)])),
+            string.Join(" | ", feature.Diagnostics));
+
+        var graph = new RecordingGraphBuilder();
+        feature.AddPasses(graph, 1);
+        var commands = new RecordingRasterCommands();
+        graph.RecordRaster(commands);
+
+        Assert.Empty(feature.Diagnostics);
+        Assert.Single(graph.RasterDescriptions);
+        Assert.All(graph.RasterDescriptions, static description =>
+            Assert.Contains(".Base", description.Name, StringComparison.Ordinal));
+        Assert.Equal(1, commands.DrawCount);
+        Assert.Equal(3u, commands.InstanceCounts[0]);
     }
 
     [Fact]

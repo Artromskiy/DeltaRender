@@ -9,6 +9,8 @@ internal enum TextRenderLayer : byte
     Base,
     Shadow,
     Glow,
+    InnerShadow,
+    InnerGlow,
 }
 
 internal readonly record struct PendingRun(
@@ -22,7 +24,10 @@ internal readonly record struct PendingRun(
     TextShaderVariant? BaseShaderVariant,
     TextShaderVariant? ShadowShaderVariant,
     TextShaderVariant? GlowShaderVariant,
+    TextShaderVariant? InnerShadowShaderVariant,
+    TextShaderVariant? InnerGlowShaderVariant,
     TextEffectValues EffectValues,
+    TextGradientValues GradientValues,
     TextRunCacheKey CacheKey,
     uint Version);
 
@@ -48,7 +53,10 @@ internal sealed class CachedRun
     internal TextShaderVariant? BaseShaderVariant;
     internal TextShaderVariant? ShadowShaderVariant;
     internal TextShaderVariant? GlowShaderVariant;
+    internal TextShaderVariant? InnerShadowShaderVariant;
+    internal TextShaderVariant? InnerGlowShaderVariant;
     internal TextEffectValues EffectValues;
+    internal TextGradientValues GradientValues;
     internal ulong AtlasEpoch;
 }
 

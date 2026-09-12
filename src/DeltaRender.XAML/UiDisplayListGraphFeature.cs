@@ -249,8 +249,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
     /// <summary>
     /// Copies and validates one borrowed display list synchronously. Rectangular parent
-    /// chains are resolved to pixel scissors. Rounded/stroke/gradient forms are rejected
-    /// with diagnostics until their shader artifacts are registered for this adapter.
+    /// chains are resolved to pixel scissors. Paint forms without registered shader
+    /// artifacts are rejected with diagnostics at this boundary.
     /// </summary>
     public bool Consume(UiDisplayList displayList)
     {
@@ -474,22 +474,65 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     TextShaderVariant? baseShaderVariant = null;
                     TextShaderVariant? shadowShaderVariant = null;
                     TextShaderVariant? glowShaderVariant = null;
+                    TextShaderVariant? innerShadowShaderVariant = null;
+                    TextShaderVariant? innerGlowShaderVariant = null;
                     var effectValues = TextEffectValues.Empty;
+                    var gradientValues = TextGradientValues.Empty;
+                    var hasGradientFill = text.Paint.FillResource.IsValid;
+                    if (hasGradientFill)
+                    {
+                        if (!_registry.TryResolveLinearGradient(text.Paint.FillResource, out var gradient) ||
+                            !_textFeature.TryGetGradientVariant(out var gradientVariant))
+                        {
+                            AddDiagnostic($"Text at Order[{index}] has an unsupported gradient paint or effect combination.");
+                            previousTextCanMerge = false;
+                            continue;
+                        }
+
+                        var bounds = _coordinates.ToPhysical(text.Bounds);
+                        if (bounds.z <= 0 || bounds.w <= 0 || !UiDisplayListGeometry.IsFinite(text.Bounds))
+                        {
+                            AddDiagnostic($"Text at Order[{index}] has invalid bounds for gradient geometry.");
+                            previousTextCanMerge = false;
+                            continue;
+                        }
+
+                        baseShaderVariant = gradientVariant;
+                        gradientValues = ToTextGradientValues(gradient, bounds, _dpiScale);
+                    }
                     if (text.Paint.EffectSet.IsValid)
                     {
                         if (!_registry.TryResolveTextEffectPlan(
                                 text.Paint.EffectSet,
-                                out baseShaderVariant,
+                                out var effectBaseShaderVariant,
                                 out shadowShaderVariant,
                                 out glowShaderVariant,
+                                out innerShadowShaderVariant,
+                                out innerGlowShaderVariant,
                                 out var effectResource) ||
-                            baseShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(baseShaderVariant.Value, out _) ||
+                            effectBaseShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(effectBaseShaderVariant.Value, out _) ||
                             shadowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(shadowShaderVariant.Value, out _) ||
-                            glowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(glowShaderVariant.Value, out _))
+                            glowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(glowShaderVariant.Value, out _) ||
+                            innerShadowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(innerShadowShaderVariant.Value, out _) ||
+                            innerGlowShaderVariant.HasValue && !_textFeature.TryResolveTextVariant(innerGlowShaderVariant.Value, out _))
                         {
                             AddDiagnostic($"Text at Order[{index}] effect-set is no longer registered or compatible with the text packer.");
                             previousTextCanMerge = false;
                             continue;
+                        }
+
+                        if (hasGradientFill)
+                        {
+                            if (effectBaseShaderVariant is { Path: not (TextShaderPath.Standard or TextShaderPath.Stroke) })
+                            {
+                                AddDiagnostic($"Text at Order[{index}] has an effect base variant that is incompatible with a gradient fill.");
+                                previousTextCanMerge = false;
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            baseShaderVariant = effectBaseShaderVariant;
                         }
 
                         effectValues = ToTextEffectValues(effectResource, _dpiScale);
@@ -514,8 +557,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                         mergeWithPrevious: previousTextCanMerge && !shadowShaderVariant.HasValue && !glowShaderVariant.HasValue,
                         baseShaderVariant: baseShaderVariant,
                         effectValues: effectValues,
+                        gradientValues: gradientValues,
                         shadowShaderVariant: shadowShaderVariant,
                         glowShaderVariant: glowShaderVariant,
+                        innerShadowShaderVariant: innerShadowShaderVariant,
+                        innerGlowShaderVariant: innerGlowShaderVariant,
                         blendState: textBlendState,
                         producerRunId: identity.Value,
                         producerRunGeneration: identity.Generation,
@@ -597,7 +643,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 var lastRun = firstRun;
                 var hasShadowLayer = _textFeature.HasShadowLayer(firstRun);
                 var hasGlowLayer = _textFeature.HasGlowLayer(firstRun);
-                while (!hasShadowLayer && !hasGlowLayer && end < _orderCount &&
+                var hasInnerShadowLayer = _textFeature.HasInnerShadowLayer(firstRun);
+                var hasInnerGlowLayer = _textFeature.HasInnerGlowLayer(firstRun);
+                while (!hasShadowLayer && !hasGlowLayer && !hasInnerShadowLayer && !hasInnerGlowLayer && end < _orderCount &&
                        _order.RefAt(end).Kind == UiDrawKind.Text &&
                        !_commandClips.RefAt(end).IsEmpty &&
                        _textRunIndices.RefAt(end) == lastRun + 1 &&
@@ -610,7 +658,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
                 if (hasShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Shadow) ||
                     hasGlowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Glow) ||
-                    !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base))
+                    !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base) ||
+                    hasInnerShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.InnerShadow) ||
+                    hasInnerGlowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.InnerGlow))
                 {
                     AddDiagnostic($"Text at Order[{index}] has no compatible prepared shader variant.");
                     index = end - 1;
@@ -1926,7 +1976,92 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             outerShadow.Width * scale,
             outerShadow.BlurRadius * scale,
             outerShadow.Spread * scale,
-            outerShadow.Intensity);
+            outerShadow.Intensity)
+        {
+            InnerShadowColor = new Vector4(
+                effectResource.Parameters.InnerShadow.Color.x,
+                effectResource.Parameters.InnerShadow.Color.y,
+                effectResource.Parameters.InnerShadow.Color.z,
+                effectResource.Parameters.InnerShadow.Color.w),
+            InnerShadowOffset = new Vector2(
+                effectResource.Parameters.InnerShadow.Offset.x * scale,
+                effectResource.Parameters.InnerShadow.Offset.y * scale),
+            InnerShadowWidth = effectResource.Parameters.InnerShadow.Width * scale,
+            InnerShadowBlurRadius = effectResource.Parameters.InnerShadow.BlurRadius * scale,
+            InnerShadowSpread = effectResource.Parameters.InnerShadow.Spread * scale,
+            InnerShadowIntensity = effectResource.Parameters.InnerShadow.Intensity,
+            InnerGlowColor = new Vector4(
+                effectResource.Parameters.InnerGlow.Color.x,
+                effectResource.Parameters.InnerGlow.Color.y,
+                effectResource.Parameters.InnerGlow.Color.z,
+                effectResource.Parameters.InnerGlow.Color.w),
+            InnerGlowRadius = effectResource.Parameters.InnerGlow.BlurRadius * scale,
+            InnerGlowSpread = effectResource.Parameters.InnerGlow.Spread * scale,
+            InnerGlowIntensity = effectResource.Parameters.InnerGlow.Intensity,
+        };
+    }
+
+    private static TextGradientValues ToTextGradientValues(
+        UiLinearGradientResource gradient,
+        float4 bounds,
+        float dpiScale)
+    {
+        var start = gradient.IsRadial
+            ? ResolveRadialCenter(bounds, gradient.Start, gradient.Units, dpiScale)
+            : gradient.IsRelativeToBounds
+                ? RelativeGradientEndpoint(bounds, gradient.AngleDegrees, end: false)
+                : ToPhysical(gradient.Start, gradient.Units, dpiScale);
+        var end = gradient.IsRadial
+            ? ResolveRadialRadii(bounds, gradient.End, gradient.Units, dpiScale)
+            : gradient.IsRelativeToBounds
+                ? RelativeGradientEndpoint(bounds, gradient.AngleDegrees, end: true)
+                : ToPhysical(gradient.End, gradient.Units, dpiScale);
+        var stop0 = gradient.Stops[0];
+        var stop1 = gradient.Stops.Count > 1 ? gradient.Stops[1] : stop0;
+        var stop2 = gradient.Stops.Count > 2 ? gradient.Stops[2] : stop1;
+        var stop3 = gradient.Stops.Count > 3 ? gradient.Stops[3] : stop2;
+        return new TextGradientValues(
+            new Vector4(start.x, start.y, end.x, end.y),
+            ToVector(stop0.Color),
+            ToVector(stop1.Color),
+            ToVector(stop2.Color),
+            ToVector(stop3.Color),
+            new Vector4(stop0.Position, stop1.Position, stop2.Position, stop3.Position),
+            gradient.Stops.Count,
+            gradient.IsRadial ? 1f : 0f);
+    }
+
+    private static Vector4 ToVector(float4 value) => new(value.x, value.y, value.z, value.w);
+
+    private static float2 ToPhysical(float2 value, PaintUnits units, float dpiScale)
+        => units == PaintUnits.Logical ? value * dpiScale : value;
+
+    private static float2 ResolveRadialCenter(float4 bounds, float2 center, PaintUnits units, float dpiScale)
+        => units switch
+        {
+            PaintUnits.Percent => new(bounds.x + center.x * bounds.z, bounds.y + center.y * bounds.w),
+            PaintUnits.Logical => new(bounds.x + center.x * dpiScale, bounds.y + center.y * dpiScale),
+            PaintUnits.Device => new(bounds.x + center.x, bounds.y + center.y),
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown radial gradient unit system."),
+        };
+
+    private static float2 ResolveRadialRadii(float4 bounds, float2 radii, PaintUnits units, float dpiScale)
+        => units switch
+        {
+            PaintUnits.Percent => new(radii.x * bounds.z, radii.y * bounds.w),
+            PaintUnits.Logical => radii * dpiScale,
+            PaintUnits.Device => radii,
+            _ => throw new ArgumentOutOfRangeException(nameof(units), units, "Unknown radial gradient unit system."),
+        };
+
+    private static float2 RelativeGradientEndpoint(float4 bounds, float angleDegrees, bool end)
+    {
+        var angle = angleDegrees * (MathF.PI / 180f);
+        var direction = new float2(Maths.Sin(angle), -Maths.Cos(angle));
+        var halfLength = 0.5f * (Maths.Abs(bounds.z * direction.x) + Maths.Abs(bounds.w * direction.y));
+        var center = new float2(bounds.x + bounds.z * 0.5f, bounds.y + bounds.w * 0.5f);
+        var sign = end ? 1f : -1f;
+        return center + sign * direction * halfLength;
     }
 
     private bool ValidateText(UiTextDraw text, int orderIndex, out PixelRect clip)
@@ -1938,9 +2073,18 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         if (text.Text is null || !UiDisplayListGeometry.IsFinite(text.BaselineOrigin) ||
-            !UiDisplayListGeometry.IsFinite(text.Paint.FillColor))
+            !UiDisplayListGeometry.IsFinite(text.Paint.FillColor) ||
+            !UiDisplayListGeometry.IsFinite(text.Bounds))
         {
             AddDiagnostic($"Text at Order[{orderIndex}] contains an invalid shaped value or paint.");
+            return false;
+        }
+
+        if (text.Paint.FillResource.IsValid &&
+            (!_registry.TryResolveLinearGradient(text.Paint.FillResource, out var gradient) ||
+             gradient.Stops.Count is < 2 or > 4 || text.Bounds.z <= 0 || text.Bounds.w <= 0))
+        {
+            AddDiagnostic($"Text at Order[{orderIndex}] references an invalid gradient fill resource.");
             return false;
         }
 
