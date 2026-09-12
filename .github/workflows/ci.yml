@@ -91,6 +91,31 @@ jobs:
           path: ${{ env.NUGET_PACKAGES }}
           key: delta-render-nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
           restore-keys: delta-render-nuget-${{ runner.os }}-
+      - name: Clear cached first-party packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in \
+            delta.diagnostics.contract \
+            deltamaths \
+            deltashader.analyzers \
+            deltashader.compiler \
+            deltashader.contract \
+            deltashader.tool \
+            deltatext \
+            deltaxaml \
+            deltaxaml.compiler \
+            deltaxaml.contract \
+            deltaxaml.generator \
+            deltarender \
+            deltarender.platform.sdl3 \
+            deltarender.vulkan \
+            deltarender.ui; do
+            package_dir="$NUGET_PACKAGES/$package"
+            if [[ -d "$package_dir" ]]; then
+              find "$package_dir" -mindepth 1 -maxdepth 1 -type d -exec rm -rf -- {} +
+            fi
+          done
       - name: Install software Vulkan build dependencies
         run: sudo apt-get update && sudo apt-get install -y jq glslang-tools mesa-vulkan-drivers ripgrep spirv-tools vulkan-tools
       - name: Select lavapipe Vulkan backend
