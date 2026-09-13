@@ -984,7 +984,10 @@ public static class UiRectangleShaders
             new float4(0f));
         float2 radius = GetCornerRadiusPair(innerRadiiX, innerRadiiY, pixel, innerCenter);
         float2 q = abs(pixel - innerCenter) - innerHalfSize + radius;
-        float edgeDistance = max(q.x, q.y);
+        // The rounded SDF adds each axis radius to q. Subtract those radii
+        // again for the straight-edge branch; otherwise the inner contour is
+        // displaced by the corner radius and a stroke paints large solid bands.
+        float edgeDistance = max(q.x - radius.x, q.y - radius.y);
         float2 safeRadius = max(radius, new float2(0.0001f));
         float cornerDistance = (length(max(q, new float2(0f)) / safeRadius) - 1f) *
             max(min(radius.x, radius.y), 0.0001f);

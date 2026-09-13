@@ -87,8 +87,8 @@ intentionally not duplicated here. The slice belongs in
   producer's cached ABI accessors and reusable feature-owned storage. A
   mismatched or unknown program is rejected with a deterministic diagnostic.
 - [x] Support the current solid/rounded/text path when the matching generated
-  rectangle or text artifact is supplied. Image, gradient and non-rectangular
-  clip values are tracked as explicit renderer gaps below and must not
+  rectangle or text artifact is supplied. Image and non-rectangular clip
+  values are tracked as explicit renderer gaps below and must not
   silently fall back.
 - [x] Headless evidence for borrowed lifetime, paint-only updates, registry cache
   hits and zero-allocation unchanged frames is covered. Tests include synchronous
@@ -112,11 +112,10 @@ to duplicate XAML state or silently fall back to a solid rectangle.
   image ABI classifier, so `AddPasses` currently diagnoses the visual as an
   unsupported kind before recording it. Add a generated image artifact mapping,
   typed payload packing and ordered texture binding.
-- [ ] Complete custom and gradient visuals: `UiBrush` emits stable linear/radial
-  gradient identities through `UiVisualKind.Custom`, while the registry can store
-  a program; the current classifier still rejects `Custom` and does not pack
-  gradient parameters or resolve gradient resources. Add explicit generated
-  artifact/resource mappings with diagnostics for incompatible payloads.
+- [ ] Complete arbitrary custom visuals: the registry can store a program, but
+  the adapter still requires an explicit generated artifact/resource mapping
+  and diagnostics for incompatible payloads. Canonical linear/radial gradients
+  are handled by the dedicated registered resource path above.
 - [ ] Render rounded clips. `DeltaXAML` can emit `UiClipKind.RoundedRectangle`
   with four radii and parent links, but `UiClipResolver` currently accepts only
   rectangular regions and reports rounded clips as unsupported. Add the
