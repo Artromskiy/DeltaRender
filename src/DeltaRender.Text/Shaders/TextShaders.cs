@@ -522,13 +522,19 @@ public static class TextShaders
         float shadowIntensity)
     {
         var edge = Edge(signedDistance);
-        var shapeCoverage = Coverage(signedDistance, edge);
+        // The base text pass already applies the SDF antialias coverage. Carry
+        // the shadow clip through the AA boundary so source-over does not
+        // leave a pale pixel between the fill and shadow.
+        var shapeCoverage = maths.step(-edge, signedDistance);
         var width = maths.max(shadowWidth, 0f);
-        var blur = maths.max(shadowBlurRadius, edge);
-        var depth = maths.max(shiftedDistance - shadowSpread, 0f);
+        var shiftedEdge = Edge(shiftedDistance);
+        var blur = maths.max(shadowBlurRadius, shiftedEdge);
+        // Compensate the shifted SDF's antialias band as well; the shadow must
+        // meet the glyph boundary even when the offset samples that band.
+        var depth = maths.max(shiftedDistance - shadowSpread - shiftedEdge, 0f);
         var coverage = shapeCoverage * (1f - maths.smoothstep(
             width,
-            width + blur + intrinsics.fwidth(shiftedDistance),
+            width + blur + shiftedEdge,
             depth));
         return (coverage * maths.max(shadowIntensity, 0f)) * PremultiplyProduct(shadowColor, glyphColor);
     }

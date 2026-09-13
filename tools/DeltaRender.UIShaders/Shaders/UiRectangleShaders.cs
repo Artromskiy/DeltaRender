@@ -1080,7 +1080,10 @@ public static class UiRectangleShaders
         UiEffectLayerParameters outerGlow)
     {
         float edge = Edge(distance);
-        float outside = smoothstep(-edge, edge, distance);
+        // Keep the glow fully covered under the stroke's antialias band. The
+        // stroke is composited afterward, so fading glow across the same band
+        // would attenuate it twice and leave a dark seam at the contour.
+        float outside = smoothstep(-edge, 0f, distance);
         float coverage = OuterGlowCoverage(distance, outerGlow) * outside;
         return UiColorMath.Premultiply(outerGlow.Color, coverage);
     }
