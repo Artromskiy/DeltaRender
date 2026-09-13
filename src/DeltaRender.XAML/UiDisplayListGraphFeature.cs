@@ -750,9 +750,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             instanceCount,
             program,
             layer,
-            layer == UiVisualRenderLayer.Glow
-                ? RenderBlendState.FromMode(RenderBlendMode.Additive)
-                : _visualBlendStates.RefAt(firstOrderIndex));
+            _visualBlendStates.RefAt(firstOrderIndex));
         var pass = graph.AddRasterPass(visualPass.Description, visualPass);
         graph.UseColorAttachment(
             pass,

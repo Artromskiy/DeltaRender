@@ -218,12 +218,13 @@ operations independently for color and alpha.
 
 - `Opaque`: blending disabled.
 - `Alpha`: `src * srcAlpha + dst * (1 - srcAlpha)`.
-- `PremultipliedAlpha`: `src + dst * (1 - srcAlpha)`; use this for premultiplied UI/text/glow output.
+- `PremultipliedAlpha`: `src + dst * (1 - srcAlpha)`; this is the default for premultiplied UI/text/effect output.
 - `Additive`: existing straight-alpha additive behavior, `src * srcAlpha + dst`. It is not a premultiplied-additive mode and must not be used for premultiplied glow without an explicitly approved future mode.
 - `Multiply`: `src * dst + dst * (1 - srcAlpha)`.
 
-For premultiplied additive glow, use `RenderBlendState.PremultipliedAdditive`
-(`src + dst`) instead of changing the existing `Additive` preset.
+Effect layers inherit the source paint's blend state. The default UI glow path
+therefore uses ordinary premultiplied alpha blending; additive or other custom
+fixed-function behavior must be selected explicitly by the caller.
 
 The blend state is part of `RasterPipelineDescription`, so changing it selects
 an independent cached Vulkan pipeline. Blend modes do not require a shader
