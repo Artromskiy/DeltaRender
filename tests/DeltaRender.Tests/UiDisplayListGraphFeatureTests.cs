@@ -601,8 +601,10 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Contains("DeltaRender.XAML.Text.Base", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void GradientTextWithStrokeShadowAndGlowUsesGradientBaseAndAllEffectLayers()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GradientTextWithStrokeShadowAndGlowUsesGradientBaseAndAllEffectLayers(bool innerShadow)
     {
         using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
@@ -618,7 +620,8 @@ public sealed class UiDisplayListGraphFeatureTests
         var effectSet = new UiEffectSet(
             new UiResourceId(Guid.NewGuid()),
             UiEffectTarget.Text,
-            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow,
+            UiEffectCapabilities.Stroke | UiEffectCapabilities.OuterShadow | UiEffectCapabilities.OuterGlow |
+                (innerShadow ? UiEffectCapabilities.InnerShadow : UiEffectCapabilities.None),
             UiEffectQuality.Analytic,
             default);
         var registry = new UiDisplayListResourceRegistry();
@@ -636,12 +639,16 @@ public sealed class UiDisplayListGraphFeatureTests
             new XamlEffectParameters(
                 new UiEffectLayer(new float4(0.05f, 0.02f, 0.08f, 1), default, 1, 0, 0, 1),
                 new UiEffectLayer(new float4(0, 0, 0, 0.8f), new float2(0, 2), 1, 2, 0, 1),
-                default,
+                innerShadow ? new UiEffectLayer(new float4(0.1f, 0.1f, 0.1f, 1), new float2(0, 2), 0, 1, 0, 1) : default,
                 new UiEffectLayer(new float4(0.5f, 0.1f, 1, 1), default, 3, 3, 0, 0.7f),
                 default,
                 default));
-        registry.RegisterTextEffectResourceLayers(
+        registry.RegisterTextEffectResourceAllLayers(
             effectResource,
+            new TextShaderVariant(
+                SdfTextStrokeGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+                GlyphImageMode.Sdf,
+                TextShaderPath.Stroke),
             new TextShaderVariant(
                 SdfTextOuterShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                 GlyphImageMode.Sdf,
@@ -650,10 +657,10 @@ public sealed class UiDisplayListGraphFeatureTests
                 SdfTextOuterGlowOnlyGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                 GlyphImageMode.Sdf,
                 TextShaderPath.OuterGlowOnly),
-            new TextShaderVariant(
-                SdfTextStrokeGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
+            innerShadow ? new TextShaderVariant(
+                SdfTextInnerShadowGraphicsShaderProgram.CreateProgram(_minimalSpirv, _minimalSpirv),
                 GlyphImageMode.Sdf,
-                TextShaderPath.Stroke));
+                TextShaderPath.InnerShadow) : null);
 
         using var feature = new UiDisplayListGraphFeature(
             session,
@@ -686,7 +693,8 @@ public sealed class UiDisplayListGraphFeatureTests
         Assert.Equal(3, graph.RasterDescriptions.Count);
         Assert.Contains("DeltaRender.XAML.Text.Shadow", graph.RasterDescriptions[0].Name, StringComparison.Ordinal);
         Assert.Contains("DeltaRender.XAML.Text.Glow", graph.RasterDescriptions[1].Name, StringComparison.Ordinal);
-        Assert.Contains("DeltaRender.XAML.Text.Base", graph.RasterDescriptions[2].Name, StringComparison.Ordinal);
+        Assert.Contains(innerShadow ? "DeltaRender.XAML.Text.InnerShadow" : "DeltaRender.XAML.Text.Base",
+            graph.RasterDescriptions[2].Name, StringComparison.Ordinal);
     }
 
     [Fact]

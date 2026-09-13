@@ -286,7 +286,7 @@ public sealed class TextRenderFeatureTests
     }
 
     [Fact]
-    public void InnerShadowAndGlowUseSeparateTextLayersInsideTheGlyph()
+    public void InnerShadowCompositesBaseBeforeSeparateInnerGlow()
     {
         using var textService = new DeltaTextService();
         var font = OpenTestFont(textService);
@@ -346,12 +346,12 @@ public sealed class TextRenderFeatureTests
         feature.AddPasses(graph, 1);
         var layers = graph.RecordRasters();
 
-        Assert.Equal(3, layers.Length);
-        Assert.Equal(128, layers[0].LastPushConstants.Length);
-        Assert.Equal(0.8f, ReadFloat(layers[1].LastPushConstants, 28));
-        Assert.Equal(1f, ReadFloat(layers[1].LastPushConstants, 40));
-        Assert.Equal(0.7f, ReadFloat(layers[2].LastPushConstants, 28));
-        Assert.Equal(3f, ReadFloat(layers[2].LastPushConstants, 32));
+        Assert.Equal(2, layers.Length);
+        Assert.Equal(208, layers[0].LastPushConstants.Length);
+        Assert.Equal(0.8f, ReadFloat(layers[0].LastPushConstants, 172));
+        Assert.Equal(1f, ReadFloat(layers[0].LastPushConstants, 184));
+        Assert.Equal(0.7f, ReadFloat(layers[1].LastPushConstants, 28));
+        Assert.Equal(3f, ReadFloat(layers[1].LastPushConstants, 32));
     }
 
     [Fact]

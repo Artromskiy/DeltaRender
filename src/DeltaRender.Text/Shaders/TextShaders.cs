@@ -199,6 +199,16 @@ public struct TextInnerShadowParameters
 {
     public float2 Resolution;
     public float DistanceRange;
+    public float4 GradientLine;
+    public float4 Stop0;
+    public float4 Stop1;
+    public float4 Stop2;
+    public float4 Stop3;
+    public float4 StopPositions;
+    public float StopCount;
+    public float Radial;
+    public float4 StrokeColor;
+    public float StrokeWidth;
     public float4 InnerShadowColor;
     public float2 InnerShadowOffset;
     public float InnerShadowWidth;
@@ -344,6 +354,9 @@ public static class TextShaders
         float alpha = color.w * glyphColor.w;
         return new float4(alpha * color.xyz * glyphColor.xyz, alpha);
     }
+
+    private static float4 Over(float4 source, float4 destination) =>
+        source + destination * (1f - source.w);
 
     private static float SignedDistance(float sample, float distanceRange) =>
         (sample - 0.5f) * (2f * distanceRange);
@@ -515,6 +528,17 @@ public static class TextShaders
         float signedDistance,
         float shiftedDistance,
         float4 glyphColor,
+        float2 pixel,
+        float4 gradientLine,
+        float4 stop0,
+        float4 stop1,
+        float4 stop2,
+        float4 stop3,
+        float4 stopPositions,
+        float stopCount,
+        float radial,
+        float4 strokeColor,
+        float strokeWidth,
         float4 shadowColor,
         float shadowWidth,
         float shadowBlurRadius,
@@ -522,21 +546,36 @@ public static class TextShaders
         float shadowIntensity)
     {
         var edge = Edge(signedDistance);
-        // The base text pass already applies the SDF antialias coverage. Carry
-        // the shadow clip through the AA boundary so source-over does not
-        // leave a pale pixel between the fill and shadow.
-        var shapeCoverage = maths.step(-edge, signedDistance);
+        var fillCoverage = Coverage(signedDistance, edge);
+        var stroke = maths.max(strokeWidth, 0f);
+        var outerCoverage = Coverage(signedDistance + stroke, edge);
+        var strokeContribution = maths.max(outerCoverage - fillCoverage, 0f);
+        var fillColor = stopCount > 1f
+            ? SampleGradient(
+                pixel,
+                gradientLine,
+                stop0,
+                stop1,
+                stop2,
+                stop3,
+                stopPositions,
+                stopCount,
+                radial)
+            : new float4(1f, 1f, 1f, 1f);
+        var fill = PremultiplyProduct(fillColor, glyphColor);
+
         var width = maths.max(shadowWidth, 0f);
-        var shiftedEdge = Edge(shiftedDistance);
-        var blur = maths.max(shadowBlurRadius, shiftedEdge);
-        // Compensate the shifted SDF's antialias band as well; the shadow must
-        // meet the glyph boundary even when the offset samples that band.
-        var depth = maths.max(shiftedDistance - shadowSpread - shiftedEdge, 0f);
-        var coverage = shapeCoverage * (1f - maths.smoothstep(
+        var blur = maths.max(shadowBlurRadius, 0.0001f);
+        var depth = maths.max(shiftedDistance - shadowSpread, 0f);
+        var shadowCoverage = 1f - maths.smoothstep(
             width,
-            width + blur + shiftedEdge,
-            depth));
-        return (coverage * maths.max(shadowIntensity, 0f)) * PremultiplyProduct(shadowColor, glyphColor);
+            width + blur + intrinsics.fwidth(shiftedDistance),
+            depth);
+        var shadow = (shadowCoverage * maths.max(shadowIntensity, 0f)) *
+            PremultiplyProduct(shadowColor, glyphColor);
+        var compositedFill = Over(shadow, fill);
+        return fillCoverage * compositedFill +
+            strokeContribution * PremultiplyProduct(strokeColor, glyphColor);
     }
 
     private static float4 RenderInnerGlow(
@@ -940,6 +979,17 @@ public static class TextShaders
             SignedDistance(texel.x, context.Parameters.DistanceRange),
             SignedDistance(shiftedTexel.x, context.Parameters.DistanceRange),
             input.GlyphColor.Value,
+            input.PaintPosition,
+            context.Parameters.GradientLine,
+            context.Parameters.Stop0,
+            context.Parameters.Stop1,
+            context.Parameters.Stop2,
+            context.Parameters.Stop3,
+            context.Parameters.StopPositions,
+            context.Parameters.StopCount,
+            context.Parameters.Radial,
+            context.Parameters.StrokeColor,
+            context.Parameters.StrokeWidth,
             context.Parameters.InnerShadowColor,
             context.Parameters.InnerShadowWidth,
             context.Parameters.InnerShadowBlurRadius,
@@ -972,6 +1022,17 @@ public static class TextShaders
             MsdfSignedDistance(texel, context.Parameters.DistanceRange),
             MsdfSignedDistance(shiftedTexel, context.Parameters.DistanceRange),
             input.GlyphColor.Value,
+            input.PaintPosition,
+            context.Parameters.GradientLine,
+            context.Parameters.Stop0,
+            context.Parameters.Stop1,
+            context.Parameters.Stop2,
+            context.Parameters.Stop3,
+            context.Parameters.StopPositions,
+            context.Parameters.StopCount,
+            context.Parameters.Radial,
+            context.Parameters.StrokeColor,
+            context.Parameters.StrokeWidth,
             context.Parameters.InnerShadowColor,
             context.Parameters.InnerShadowWidth,
             context.Parameters.InnerShadowBlurRadius,

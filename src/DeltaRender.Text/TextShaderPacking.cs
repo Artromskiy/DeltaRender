@@ -228,10 +228,41 @@ internal static class TextShaderPacking
 
         if (path == TextShaderPath.InnerShadow)
         {
+            var hasGradient = gradient.IsValid;
             var shadowParameters = new TextInnerShadowParameters
             {
                 Resolution = new float2(viewport.Width, viewport.Height),
                 DistanceRange = distanceRange,
+                GradientLine = hasGradient
+                    ? new float4(gradient.Line.X, gradient.Line.Y, gradient.Line.Z, gradient.Line.W)
+                    : default,
+                Stop0 = hasGradient
+                    ? new float4(gradient.Stop0.X, gradient.Stop0.Y, gradient.Stop0.Z, gradient.Stop0.W)
+                    : default,
+                Stop1 = hasGradient
+                    ? new float4(gradient.Stop1.X, gradient.Stop1.Y, gradient.Stop1.Z, gradient.Stop1.W)
+                    : default,
+                Stop2 = hasGradient
+                    ? new float4(gradient.Stop2.X, gradient.Stop2.Y, gradient.Stop2.Z, gradient.Stop2.W)
+                    : default,
+                Stop3 = hasGradient
+                    ? new float4(gradient.Stop3.X, gradient.Stop3.Y, gradient.Stop3.Z, gradient.Stop3.W)
+                    : default,
+                StopPositions = hasGradient
+                    ? new float4(
+                        gradient.StopPositions.X,
+                        gradient.StopPositions.Y,
+                        gradient.StopPositions.Z,
+                        gradient.StopPositions.W)
+                    : default,
+                StopCount = hasGradient ? gradient.StopCount : 0,
+                Radial = hasGradient ? gradient.Radial : 0,
+                StrokeColor = new float4(
+                    effects.StrokeColor.X,
+                    effects.StrokeColor.Y,
+                    effects.StrokeColor.Z,
+                    effects.StrokeColor.W),
+                StrokeWidth = effects.StrokeWidth,
                 InnerShadowColor = new float4(effects.InnerShadowColor.X, effects.InnerShadowColor.Y, effects.InnerShadowColor.Z, effects.InnerShadowColor.W),
                 InnerShadowOffset = new float2(effects.InnerShadowOffset.X, effects.InnerShadowOffset.Y),
                 InnerShadowWidth = effects.InnerShadowWidth,

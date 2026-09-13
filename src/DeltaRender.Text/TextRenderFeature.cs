@@ -457,10 +457,13 @@ public sealed class TextRenderFeature : IRenderFeature, IDisposable
 
             if (HasInnerShadowLayer(runIndex) || HasInnerGlowLayer(runIndex))
             {
-                AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.Base);
                 if (HasInnerShadowLayer(runIndex))
                 {
                     AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.InnerShadow);
+                }
+                else
+                {
+                    AddCompositePass(graph, target, runIndex, 1, TextRenderLayer.Base);
                 }
 
                 if (HasInnerGlowLayer(runIndex))

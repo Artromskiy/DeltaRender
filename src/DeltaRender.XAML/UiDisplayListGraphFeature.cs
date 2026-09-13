@@ -656,9 +656,11 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                     end++;
                 }
 
+                // InnerShadow already contains the fill; a base pass would leak
+                // its color through the composite's antialiased edge.
                 if (hasShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Shadow) ||
                     hasGlowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Glow) ||
-                    !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base) ||
+                    !hasInnerShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.Base) ||
                     hasInnerShadowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.InnerShadow) ||
                     hasInnerGlowLayer && !TryAddTextPass(graph, target, firstRun, runCount, TextRenderLayer.InnerGlow))
                 {
