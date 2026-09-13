@@ -84,9 +84,7 @@ internal static class UiRenderRunner
         if (contentFactory is null)
         {
             var sourcePath = xamlPath ?? throw new InvalidOperationException("A XAML source path is required.");
-            documentState = new LoadedDocumentState(
-                LoadDocument(sourcePath, textService, fontResolver, in loadContextValue),
-                GetPathStamp(sourcePath));
+            documentState = LoadDocumentState(sourcePath, textService, fontResolver, in loadContextValue);
         }
         else
         {
@@ -230,7 +228,7 @@ internal static class UiRenderRunner
         var extent = initialExtent;
         session.ResizeTarget(in extent);
         using var textFeature = UiRenderHost.CreateTextFeature(session, textService, extent);
-        var resourceRegistry = UiRenderHost.CreateResourceRegistry(loadContext.Resources);
+        UiDisplayListResourceRegistry resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? loadContext.Resources);
         var uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature, resourceRegistry);
         var clearFeature = new ClearFeature(session.Target, extent, UiRenderHost.CreateSolidRectangleProgram());
         var readbackFeature = window is null && readbackPath is not null
@@ -294,6 +292,10 @@ internal static class UiRenderRunner
                         in loadContext))
                 {
                     Console.WriteLine($"[watch] Reloaded {sourcePath}");
+                    resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? loadContext.Resources);
+                    uiFeature.Dispose();
+                    uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature, resourceRegistry);
+                    features = CreateFeatures(clearFeature, uiFeature, readbackFeature);
                     diagnosticsPending = layoutPath is not null;
                 }
 
@@ -407,7 +409,7 @@ internal static class UiRenderRunner
         return window.Metrics;
     }
 
-    private static UiDocument LoadDocument(
+    private static LoadedDocumentState LoadDocumentState(
         string xamlPath,
         ITextService textService,
         IUiFontResolver fontResolver,
@@ -422,7 +424,10 @@ internal static class UiRenderRunner
             throw new InvalidOperationException($"{xamlPath} failed to load: {diagnostics}");
         }
 
-        return new UiDocument(root, textService, fontResolver);
+        return new LoadedDocumentState(
+            new UiDocument(root, textService, fontResolver, result.Theme),
+            result.Resources,
+            GetPathStamp(xamlPath));
     }
 
     private static bool TryReloadDocument(
@@ -445,7 +450,8 @@ internal static class UiRenderRunner
 
         try
         {
-            loadedState.Replace(LoadDocument(sourcePath, textService, fontResolver, in loadContext), nextStamp);
+            var replacement = LoadDocumentState(sourcePath, textService, fontResolver, in loadContext);
+            loadedState.Replace(replacement.Document, replacement.Resources, nextStamp);
             return true;
         }
         catch (Exception exception)
@@ -604,21 +610,25 @@ internal static class UiRenderRunner
     {
         UiDocument Document { get; }
 
+        UiResourceCatalog? Resources { get; }
+
         void AdvanceFrame();
 
         void HandleInput(in UiInputEvent input);
     }
 
-    private sealed class LoadedDocumentState(UiDocument document, long sourceStamp) : IHostDocument
+    private sealed class LoadedDocumentState(UiDocument document, UiResourceCatalog? resources, long sourceStamp) : IHostDocument
     {
         public UiDocument Document { get; private set; } = document;
+        public UiResourceCatalog? Resources { get; private set; } = resources;
         internal long SourceStamp { get; set; } = sourceStamp;
 
-        internal void Replace(UiDocument document, long sourceStamp)
+        internal void Replace(UiDocument document, UiResourceCatalog? resources, long sourceStamp)
         {
             ArgumentNullException.ThrowIfNull(document);
             var previous = Document;
             Document = document;
+            Resources = resources;
             SourceStamp = sourceStamp;
             previous.Dispose();
         }
@@ -642,6 +652,8 @@ internal static class UiRenderRunner
         }
 
         public UiDocument Document => _content.Document;
+
+        public UiResourceCatalog? Resources => null;
 
         public void AdvanceFrame() => _content.AdvanceFrame();
 

@@ -112,6 +112,13 @@ public static class UiRenderHost
             UiShaders.Abi.UiRectangleShaders.RoundedStroke.Vertex(),
             UiShaders.Abi.UiRectangleShaders.RoundedStroke.Fragment());
 
+    private static GraphicsShaderProgram CreateSolidStrokeProgram() =>
+        CreateProgram(
+            UiShaders.Spv.UiRectangleShaders.SolidStroke.Vertex(),
+            UiShaders.Spv.UiRectangleShaders.SolidStroke.Fragment(),
+            UiShaders.Abi.UiRectangleShaders.SolidStroke.Vertex(),
+            UiShaders.Abi.UiRectangleShaders.SolidStroke.Fragment());
+
     /// <summary>Creates the generated solid outer-shadow-only graphics program.</summary>
     public static GraphicsShaderProgram CreateSolidOuterShadowOnlyProgram() =>
         CreateProgram(
@@ -219,6 +226,16 @@ public static class UiRenderHost
             return registry;
         }
 
+        foreach (var gradient in catalog.GetLinearGradientResources())
+        {
+            UiLinearGradientAdapter.RegisterLinearGradient(registry, gradient.Resource, gradient.Gradient);
+        }
+
+        foreach (var gradient in catalog.GetRadialGradientResources())
+        {
+            UiLinearGradientAdapter.RegisterRadialGradient(registry, gradient.Resource, gradient.Gradient);
+        }
+
         foreach (var effect in catalog.GetEffectResources())
         {
             const UiEffectCapabilities textSupported = UiEffectCapabilities.Stroke |
@@ -252,6 +269,24 @@ public static class UiRenderHost
                     textCapabilities.HasFlag(UiEffectCapabilities.InnerGlow)
                         ? new TextShaderVariant(CreateTextInnerGlowOnlyProgram(), GlyphImageMode.Sdf, TextShaderPath.InnerGlowOnly)
                         : null);
+            }
+
+            if (effect.Set.Target == UiEffectTarget.Visual &&
+                effect.Set.Quality == UiEffectQuality.Analytic &&
+                effect.Set.Capabilities == UiEffectCapabilities.Stroke)
+            {
+                registry.RegisterVisualEffectResource(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateSolidStrokeProgram(),
+                        UiVisualKind.SolidRectangle,
+                        UiVisualShaderPath.SolidStrokeEffect));
+                registry.RegisterVisualEffectResource(
+                    effect,
+                    new UiVisualShaderVariant(
+                        CreateRoundedStrokeProgram(),
+                        UiVisualKind.RoundedRectangle,
+                        UiVisualShaderPath.RoundedStrokeEffect));
             }
 
             if (effect.Set.Target == UiEffectTarget.Visual &&
