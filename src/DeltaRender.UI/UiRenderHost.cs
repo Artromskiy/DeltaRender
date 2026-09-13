@@ -29,13 +29,13 @@ public static class UiRenderHost
         string[] args,
         UiRenderHostOptions options,
         IUiFontResolver fontResolver,
-        XamlLoadContext? loadContext = null,
+        XamlRuntimeContext? runtimeContext = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(fontResolver);
-        return UiRenderRunner.RunAsync(args, options, fontResolver, loadContext, cancellationToken);
+        return UiRenderRunner.RunAsync(args, options, fontResolver, runtimeContext, cancellationToken);
     }
 
     /// <summary>

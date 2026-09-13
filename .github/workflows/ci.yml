@@ -104,9 +104,7 @@ jobs:
             deltashader.tool \
             deltatext \
             deltaxaml \
-            deltaxaml.compiler \
             deltaxaml.contract \
-            deltaxaml.generator \
             deltarender \
             deltarender.platform.sdl3 \
             deltarender.vulkan \

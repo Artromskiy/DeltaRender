@@ -64,9 +64,7 @@ done
 
 for project in \
     "$xaml_root/src/DeltaXAML.Contract/DeltaXAML.Contract.csproj" \
-    "$xaml_root/src/DeltaXAML/DeltaXAML.csproj" \
-    "$xaml_root/src/DeltaXAML.Compiler/DeltaXAML.Compiler.csproj" \
-    "$xaml_root/src/DeltaXAML.Generator/DeltaXAML.Generator.csproj"; do
+    "$xaml_root/src/DeltaXAML/DeltaXAML.csproj"; do
     dotnet restore "$project" "${msbuild_args[@]}"
     pack_project "$project" 0.0.17.9999
 done

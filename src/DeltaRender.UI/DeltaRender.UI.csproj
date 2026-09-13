@@ -30,7 +30,6 @@
     <PackageReference Include="DeltaShader.Contract" />
     <PackageReference Include="DeltaText" />
     <PackageReference Include="DeltaXAML" />
-    <PackageReference Include="DeltaXAML.Generator" PrivateAssets="all" GeneratePathProperty="true" />
     <PackageReference Include="DeltaRender" />
     <PackageReference Include="DeltaRender.Platform.SDL3" />
     <PackageReference Include="DeltaRender.Vulkan" />
@@ -42,17 +41,8 @@
     <ProjectReference Include="../../tools/DeltaRender.UIShaders/DeltaRender.UIShaders.csproj" PrivateAssets="all" />
   </ItemGroup>
   <PropertyGroup>
-    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectDeltaXamlGeneratorFiles;CollectUiBundleFiles</TargetsForTfmSpecificContentInPackage>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CollectUiBundleFiles</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
-
-  <Target Name="CollectDeltaXamlGeneratorFiles" Returns="@(TfmSpecificPackageFile)">
-    <ItemGroup>
-      <_DeltaXamlGeneratorFile Include="$(PkgDeltaXAML_Generator)/analyzers/dotnet/cs/**/*.dll" />
-      <TfmSpecificPackageFile Include="@(_DeltaXamlGeneratorFile)">
-        <PackagePath>analyzers/dotnet/cs/%(Filename)%(Extension)</PackagePath>
-      </TfmSpecificPackageFile>
-    </ItemGroup>
-  </Target>
 
   <Target Name="CollectUiBundleFiles" Returns="@(TfmSpecificPackageFile)">
     <ItemGroup>

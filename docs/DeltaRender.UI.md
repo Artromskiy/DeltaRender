@@ -7,8 +7,12 @@ applications own their render session and frame loop, then compose
 `UiDisplayListGraphFeature` directly.
 
 The package does not contain samples or discover sample files. A consumer owns
-its `.dxaml`, generated document artifact, renderer lifetime and frame loop.
-The following compatibility factory calls remain available only for migration:
+its `.dxaml`, static `XamlSchemaRegistry`, `XamlRuntimeContext`, renderer
+lifetime and frame loop. Every XAML load, including a watch reload, parses and
+executes the source into the `UiDocument` returned by `XamlLoader`; there is no
+generated document artifact. The host derives a stable `SourceId` from the
+resolved XAML path, so watch edits keep resource identities stable. The
+following compatibility factory calls remain available only for migration:
 
 ```csharp
 using var textFeature = UiRenderHost.CreateTextFeature(session, textService, extent);
@@ -25,9 +29,11 @@ var options = new UiRenderHostOptions("Main.dxaml", "My UI", Width: 1280, Height
 return await UiRenderHost.RunAsync(args, options, fonts);
 ```
 
-Legacy dynamic samples can use the same host with an application-owned content hook. The
-factory runs once during setup; the sample keeps its model and calls its own
-document update code before each host layout pass:
+Legacy dynamic samples can use the same host with an application-owned
+lifecycle hook around a `UiDocument` loaded by `XamlLoader`. The factory runs
+once during setup; the sample keeps its model and calls its own document update
+code before each host layout pass. The hook does not parse XAML or materialize
+another document inside the host:
 
 ```csharp
 return await UiRenderHost.RunAsync(

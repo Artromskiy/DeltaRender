@@ -1,7 +1,9 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Delta;
+using Delta.Diagnostics;
 using Delta.Render.Platform.SDL3;
 using Delta.Render.RenderGraph;
 using Delta.Render.Text;
@@ -23,7 +25,7 @@ internal static class UiRenderRunner
         string[] args,
         UiRenderHostOptions options,
         IUiFontResolver fontResolver,
-        XamlLoadContext? loadContext,
+        XamlRuntimeContext? runtimeContext,
         CancellationToken cancellationToken)
     {
         return await RunAsync(
@@ -31,7 +33,7 @@ internal static class UiRenderRunner
             options,
             fontResolver,
             contentFactory: null,
-            loadContext,
+            runtimeContext,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -48,7 +50,7 @@ internal static class UiRenderRunner
             options,
             fontResolver,
             contentFactory,
-            loadContext: null,
+            runtimeContext: null,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -57,7 +59,7 @@ internal static class UiRenderRunner
         UiRenderHostOptions options,
         IUiFontResolver fontResolver,
         UiRenderHostContentFactory? contentFactory,
-        XamlLoadContext? loadContext,
+        XamlRuntimeContext? runtimeContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -77,14 +79,22 @@ internal static class UiRenderRunner
         var profile = HasFlag(args, "--profile");
         var readbackPath = ParseOptionalPath(args, "--readback");
         var layoutPath = ParseOptionalPath(args, "--layout-json");
-        var loadContextValue = loadContext ?? new XamlLoadContext(new EmptyTypeResolver(), new EmptyResourceResolver());
-
         using var textService = new DeltaTextService();
+        var sourceContext = runtimeContext ?? new XamlRuntimeContext(
+            XamlSchemaRegistry.CreateDefault(),
+            new UiResourceCatalog());
+        var activeContext = new XamlRuntimeContext(
+            sourceContext.Schema,
+            sourceContext.Resources,
+            textService,
+            fontResolver,
+            sourceContext.ImageMetadataResolver,
+            sourceContext.BindingContext);
         IHostDocument documentState;
         if (contentFactory is null)
         {
             var sourcePath = xamlPath ?? throw new InvalidOperationException("A XAML source path is required.");
-            documentState = LoadDocumentState(sourcePath, textService, fontResolver, in loadContextValue);
+            documentState = LoadDocumentState(sourcePath, in activeContext);
         }
         else
         {
@@ -96,10 +106,9 @@ internal static class UiRenderRunner
             return await RunHostAsync(
                 args,
                 options,
-                fontResolver,
                 textService,
                 documentState,
-                loadContextValue,
+                activeContext,
                 xamlPath,
                 width,
                 height,
@@ -116,10 +125,9 @@ internal static class UiRenderRunner
     private static async Task<int> RunHostAsync(
         string[] args,
         UiRenderHostOptions options,
-        IUiFontResolver fontResolver,
         ITextService textService,
         IHostDocument documentState,
-        XamlLoadContext loadContext,
+        XamlRuntimeContext runtimeContext,
         string? sourcePath,
         uint width,
         uint height,
@@ -146,8 +154,7 @@ internal static class UiRenderRunner
                 session,
                 documentState,
                 textService,
-                fontResolver,
-                loadContext,
+                runtimeContext,
                 extent,
                 width,
                 height,
@@ -187,8 +194,7 @@ internal static class UiRenderRunner
             windowSession,
             documentState,
             textService,
-            fontResolver,
-            loadContext,
+            runtimeContext,
             windowExtent,
             metrics.Width,
             metrics.Height,
@@ -207,8 +213,7 @@ internal static class UiRenderRunner
         IRenderFrameSession session,
         IHostDocument documentState,
         ITextService textService,
-        IUiFontResolver fontResolver,
-        XamlLoadContext loadContext,
+        XamlRuntimeContext runtimeContext,
         PixelExtent initialExtent,
         uint headlessWidth,
         uint headlessHeight,
@@ -224,11 +229,10 @@ internal static class UiRenderRunner
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(documentState);
         ArgumentNullException.ThrowIfNull(textService);
-        ArgumentNullException.ThrowIfNull(fontResolver);
         var extent = initialExtent;
         session.ResizeTarget(in extent);
         using var textFeature = UiRenderHost.CreateTextFeature(session, textService, extent);
-        UiDisplayListResourceRegistry resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? loadContext.Resources);
+        UiDisplayListResourceRegistry resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? runtimeContext.Resources);
         var uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature, resourceRegistry);
         var clearFeature = new ClearFeature(session.Target, extent, UiRenderHost.CreateSolidRectangleProgram());
         var readbackFeature = window is null && readbackPath is not null
@@ -287,12 +291,10 @@ internal static class UiRenderRunner
                 if (watch && TryReloadDocument(
                         sourcePath,
                         documentState,
-                        textService,
-                        fontResolver,
-                        in loadContext))
+                        in runtimeContext))
                 {
                     Console.WriteLine($"[watch] Reloaded {sourcePath}");
-                    resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? loadContext.Resources);
+                    resourceRegistry = UiRenderHost.CreateResourceRegistry(documentState.Resources ?? runtimeContext.Resources);
                     uiFeature.Dispose();
                     uiFeature = UiRenderHost.CreateDisplayListFeature(session, extent, textFeature, resourceRegistry);
                     features = CreateFeatures(clearFeature, uiFeature, readbackFeature);
@@ -411,12 +413,11 @@ internal static class UiRenderRunner
 
     private static LoadedDocumentState LoadDocumentState(
         string xamlPath,
-        ITextService textService,
-        IUiFontResolver fontResolver,
-        in XamlLoadContext loadContext)
+        in XamlRuntimeContext runtimeContext)
     {
-        var result = new XamlLoader().Load(File.ReadAllText(xamlPath), in loadContext);
-        if (!result.Success || result.Root is not { } root)
+        var sourceId = CreateXamlSourceId(xamlPath);
+        var result = new XamlLoader().Load(sourceId, File.ReadAllText(xamlPath), in runtimeContext);
+        if (!result.Success || result.Document is not { } document)
         {
             var diagnostics = result.Diagnostics.IsEmpty
                 ? "unknown XAML load failure"
@@ -425,17 +426,24 @@ internal static class UiRenderRunner
         }
 
         return new LoadedDocumentState(
-            new UiDocument(root, textService, fontResolver, result.Theme),
+            document,
             result.Resources,
             GetPathStamp(xamlPath));
+    }
+
+    private static SourceId CreateXamlSourceId(string path)
+    {
+        Span<byte> digest = stackalloc byte[32];
+        SHA256.HashData(Encoding.UTF8.GetBytes("DeltaRender.UI.Xaml\0" + Path.GetFullPath(path)), digest);
+        digest[6] = (byte)((digest[6] & 0x0F) | 0x50);
+        digest[8] = (byte)((digest[8] & 0x3F) | 0x80);
+        return new SourceId(new Guid(digest[..16]));
     }
 
     private static bool TryReloadDocument(
         string? sourcePath,
         IHostDocument state,
-        ITextService textService,
-        IUiFontResolver fontResolver,
-        in XamlLoadContext loadContext)
+        in XamlRuntimeContext runtimeContext)
     {
         if (sourcePath is null || state is not LoadedDocumentState loadedState)
         {
@@ -450,7 +458,7 @@ internal static class UiRenderRunner
 
         try
         {
-            var replacement = LoadDocumentState(sourcePath, textService, fontResolver, in loadContext);
+            var replacement = LoadDocumentState(sourcePath, in runtimeContext);
             loadedState.Replace(replacement.Document, replacement.Resources, nextStamp);
             return true;
         }
@@ -660,30 +668,6 @@ internal static class UiRenderRunner
         public void HandleInput(in UiInputEvent input) => _content.HandleInput(in input);
 
         public void Dispose() => _content.Dispose();
-    }
-
-    private sealed class EmptyTypeResolver : IXamlTypeResolver
-    {
-        public bool TryResolveName(in XamlQualifiedName name, out UiTypeId type)
-        {
-            type = default;
-            return false;
-        }
-
-        public bool TryCreate(UiTypeId type, [NotNullWhen(true)] out UiElement? element)
-        {
-            element = null;
-            return false;
-        }
-    }
-
-    private sealed class EmptyResourceResolver : IUiResourceResolver
-    {
-        public bool TryResolve(UiResourceId resource, out object? value)
-        {
-            value = null;
-            return false;
-        }
     }
 
     private sealed class ClearFeature(RenderTargetHandle target, PixelExtent extent, GraphicsShaderProgram program) : IRenderFeature
