@@ -102,6 +102,48 @@ internal static class UiVisualShaderContract
         throw new InvalidOperationException("The image fragment ABI must expose a sampled fragment texture.");
     }
 
+    /// <summary>
+    /// Finds the optional sampled fragment texture exposed by a resource shader.
+    /// The current gradient ABI is analytic and therefore returns no binding; the
+    /// renderer can start consuming the LUT when the generated ABI adds it.
+    /// </summary>
+    internal static bool TryGetSampledFragmentTextureBinding(
+        IGraphicsShaderProgram program,
+        out ShaderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(program);
+        binding = default;
+        if (program.Fragment is null)
+        {
+            return false;
+        }
+
+        ShaderResourceBinding? sampled = null;
+        foreach (var resource in program.Fragment.Abi.Resources)
+        {
+            if (resource.Kind != ShaderResourceKind.SampledTexture ||
+                !resource.Stages.HasFlag(ShaderStageMask.Fragment))
+            {
+                continue;
+            }
+
+            if (sampled is not null)
+            {
+                return false;
+            }
+
+            sampled = resource;
+        }
+
+        if (sampled is not { } resolved)
+        {
+            return false;
+        }
+
+        binding = resolved.Binding;
+        return true;
+    }
+
     internal static bool TryDescribe(
         IGraphicsShaderProgram program,
         UiVisualKind visualKind,

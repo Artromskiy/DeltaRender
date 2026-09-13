@@ -29,6 +29,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private readonly UiDisplayListResourceRegistry _registry;
     private readonly TextRenderFeature? _textFeature;
     private readonly UiTextVisualUploadPass _textVisualUploadPass;
+    private readonly UiGradientTextureCache? _gradientTextureCache;
     private readonly UiClipResolver _clipResolver;
     private readonly PixelExtent _viewport;
     private readonly List<string> _diagnostics = [];
@@ -85,6 +86,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private RenderSamplerHandle[] _visualImageSamplers = [];
     private ShaderBinding?[] _visualImageBindings = [];
     private UiLinearGradientResource?[] _visualGradientResources = [];
+    private RenderGraphTextureHandle?[] _visualGradientTextures = [];
+    private RenderSamplerHandle[] _visualGradientSamplers = [];
+    private ShaderBinding?[] _visualGradientBindings = [];
     private RenderGraphTextureHandle?[] _visualMaskTextures = [];
     private RenderTextureHandle[] _visualMaskResources = [];
     private RenderSamplerHandle[] _visualMaskSamplers = [];
@@ -101,6 +105,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
     private ulong[] _visualEffectRevisionsByIndex = [];
     private BufferRange[] _visualUploadRanges = [];
     private int _visualUploadRangeCount;
+    private readonly List<UiGradientTextureUpload> _gradientTextureUploads = [];
     private int _visualInstanceByteCount;
     private int _uploadedVisualInstanceByteCount;
     private ulong _visualInstanceBufferCapacity;
@@ -183,6 +188,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _registry = registry ?? new UiDisplayListResourceRegistry();
         _textFeature = textFeature;
         _textVisualUploadPass = new UiTextVisualUploadPass(this);
+        _gradientTextureCache = session is null ? null : new UiGradientTextureCache(session);
         _clipResolver = new UiClipResolver(viewport, _diagnostics, _warnings);
         _coordinates = new UiCoordinateMapper(1f, viewport);
         if (session is not null)
@@ -320,6 +326,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         EnsureCapacity(ref _visualImageSamplers, displayList.Order.Length);
         EnsureCapacity(ref _visualImageBindings, displayList.Order.Length);
         EnsureCapacity(ref _visualGradientResources, displayList.Order.Length);
+        EnsureCapacity(ref _visualGradientTextures, displayList.Order.Length);
+        EnsureCapacity(ref _visualGradientSamplers, displayList.Order.Length);
+        EnsureCapacity(ref _visualGradientBindings, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskTextures, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskResources, displayList.Order.Length);
         EnsureCapacity(ref _visualMaskSamplers, displayList.Order.Length);
@@ -449,6 +458,7 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
 
         EnsureCapacity(ref _visualFramePushConstants, UiVisualShaderContract.MaxPushConstantSize);
         var target = graph.ImportTarget(_session.Target);
+        _gradientTextureUploads.Clear();
         var textPrepared = false;
         if (_textCount != 0)
         {
@@ -612,7 +622,8 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         var textUploadPending = textPrepared && _textFeature?.CompositeUploadPending == true;
-        if (visualUploadPending || textUploadPending)
+        var gradientUploadPending = _gradientTextureUploads.Count != 0;
+        if (visualUploadPending || textUploadPending || gradientUploadPending)
         {
             var upload = graph.AddTransferPass("DeltaRender.XAML.TextVisualUpload", _textVisualUploadPass);
             if (visualUploadPending)
@@ -623,6 +634,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             if (textUploadPending)
             {
                 _textFeature!.ConfigureCompositeUploadPass(graph, upload);
+            }
+
+            for (var uploadIndex = 0; uploadIndex < _gradientTextureUploads.Count; uploadIndex++)
+            {
+                var gradient = _gradientTextureUploads[uploadIndex];
+                graph.UseTexture(upload, gradient.GraphTexture, RenderResourceAccess.Write, RenderPipelineStages.Transfer);
             }
         }
 
@@ -773,6 +790,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 if (_visualMaskTextures.RefAt(visualIndex).HasValue)
                 {
                     var graphTexture = _visualMaskTextures.RefAt(visualIndex) ?? throw new InvalidOperationException("The mask graph resource was not imported.");
+                    graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
+                }
+
+                if (_visualGradientTextures.RefAt(visualIndex).HasValue)
+                {
+                    var graphTexture = _visualGradientTextures.RefAt(visualIndex) ?? throw new InvalidOperationException("The gradient graph resource was not imported.");
                     graph.UseTexture(pass, graphTexture, RenderResourceAccess.Read, RenderPipelineStages.Fragment);
                 }
             }
@@ -945,6 +968,9 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         _visualImageSamplers.RefAt(orderIndex) = default;
         _visualImageBindings.RefAt(orderIndex) = null;
         _visualGradientResources.RefAt(orderIndex) = null;
+        _visualGradientTextures.RefAt(orderIndex) = null;
+        _visualGradientSamplers.RefAt(orderIndex) = default;
+        _visualGradientBindings.RefAt(orderIndex) = null;
         _visualMaskTextures.RefAt(orderIndex) = null;
         _visualMaskResources.RefAt(orderIndex) = default;
         _visualMaskSamplers.RefAt(orderIndex) = default;
@@ -995,6 +1021,22 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
             }
 
             _visualGradientResources.RefAt(orderIndex) = gradient;
+            if (_gradientTextureCache is not null &&
+                UiVisualShaderContract.TryGetSampledFragmentTextureBinding(program, out var gradientBinding))
+            {
+                var lease = _gradientTextureCache.Prepare(visual.Resource, gradient);
+                var graphTexture = graph.ImportTexture(lease.Texture);
+                _visualGradientTextures.RefAt(orderIndex) = graphTexture;
+                _visualGradientSamplers.RefAt(orderIndex) = lease.Sampler;
+                _visualGradientBindings.RefAt(orderIndex) = gradientBinding;
+                if (lease.NeedsUpload && !IsGradientTextureUploadQueued(lease.Resource))
+                {
+                    _gradientTextureUploads.Add(new UiGradientTextureUpload(
+                        lease.Resource,
+                        graphTexture,
+                        lease.Pixels));
+                }
+            }
         }
 
         if (shaderPath == UiVisualShaderPath.CachedMask)
@@ -1495,6 +1537,40 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         {
             RecordVisualUpload(commands);
         }
+
+        RecordGradientTextureUploads(commands);
+    }
+
+    private void RecordGradientTextureUploads(ITransferCommandContext commands)
+    {
+        if (_gradientTextureCache is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < _gradientTextureUploads.Count; index++)
+        {
+            var upload = _gradientTextureUploads[index];
+            commands.UploadTexture(
+                upload.GraphTexture,
+                new PixelRect(0, 0, checked((int)UiGradientTexture.Width), checked((int)UiGradientTexture.Height)),
+                upload.Pixels,
+                checked(UiGradientTexture.Width * UiGradientTexture.BytesPerPixel));
+            _gradientTextureCache.MarkUploaded(upload.Resource);
+        }
+    }
+
+    private bool IsGradientTextureUploadQueued(UiResourceId resource)
+    {
+        for (var index = 0; index < _gradientTextureUploads.Count; index++)
+        {
+            if (_gradientTextureUploads[index].Resource == resource)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void SetFullVisualUploadRange()
@@ -1564,6 +1640,12 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                    _visualImageSamplers.RefAt(firstOrderIndex) == _visualImageSamplers.RefAt(nextOrderIndex);
         }
 
+        if (_visualShaderPaths.RefAt(firstOrderIndex) == UiVisualShaderPath.SolidLinearGradient)
+        {
+            return _visualGradientTextures.RefAt(firstOrderIndex) == _visualGradientTextures.RefAt(nextOrderIndex) &&
+                   _visualGradientSamplers.RefAt(firstOrderIndex) == _visualGradientSamplers.RefAt(nextOrderIndex);
+        }
+
         if (_visualShaderPaths.RefAt(firstOrderIndex) != UiVisualShaderPath.CachedMask)
         {
             return true;
@@ -1626,6 +1708,17 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
                 UiVisualShaderContract.ImageTextureBinding,
                 imageTexture,
                 _visualImageSamplers.RefAt(firstOrderIndex));
+        }
+
+        if (!isShadow && kinds.RefAt(firstOrderIndex) == UiRectangleShaderKind.SolidLinearGradient &&
+            _visualGradientTextures.RefAt(firstOrderIndex) is { } gradientTexture)
+        {
+            var gradientBinding = _visualGradientBindings.RefAt(firstOrderIndex)
+                ?? throw new InvalidOperationException("The gradient shader did not expose a sampled texture binding.");
+            commands.BindTexture(
+                gradientBinding,
+                gradientTexture,
+                _visualGradientSamplers.RefAt(firstOrderIndex));
         }
 
         if (UiVisualShaderContract.UsesShaderClip(kinds.RefAt(firstOrderIndex)))
@@ -1698,7 +1791,13 @@ public sealed class UiDisplayListGraphFeature : IRenderFeature, IDisposable
         }
 
         _disposed = true;
+        _gradientTextureCache?.Dispose();
     }
+
+    private readonly record struct UiGradientTextureUpload(
+        UiResourceId Resource,
+        RenderGraphTextureHandle GraphTexture,
+        byte[] Pixels);
 
     private void ResolveVisualPlan(
         UiVisualDraw visual,
